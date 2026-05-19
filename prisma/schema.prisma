@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  OPERACIONAL
+  COMERCIAL
+}
+
+enum LeadStatus {
+  NOVO
+  QUALIFICADO
+  PROPOSTA
+  NEGOCIACAO
+  GANHO
+  PERDIDO
+}
+
+enum DealStage {
+  PROSPECCAO
+  QUALIFICACAO
+  PROPOSTA
+  NEGOCIACAO
+  FECHAMENTO
+  GANHO
+  PERDIDO
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(COMERCIAL)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leads      Lead[]     @relation("LeadOwner")
+  deals      Deal[]     @relation("DealOwner")
+  activities Activity[]
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  position  String?
+  source    String?
+  status    LeadStatus @default(NOVO)
+  value     Float?
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  ownerId    String
+  owner      User       @relation("LeadOwner", fields: [ownerId], references: [id])
+  deals      Deal[]
+  activities Activity[]
+}
+
+model Deal {
+  id          String    @id @default(cuid())
+  title       String
+  value       Float
+  stage       DealStage @default(PROSPECCAO)
+  probability Int       @default(0)
+  notes       String?
+  expectedAt  DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  ownerId    String
+  owner      User       @relation("DealOwner", fields: [ownerId], references: [id])
+  leadId     String?
+  lead       Lead?      @relation(fields: [leadId], references: [id])
+  activities Activity[]
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  type        String
+  description String
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  leadId String?
+  lead   Lead?  @relation(fields: [leadId], references: [id])
+  dealId String?
+  deal   Deal?  @relation(fields: [dealId], references: [id])
+}
