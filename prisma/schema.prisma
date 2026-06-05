@@ -31,6 +31,26 @@ enum DealStage {
   PERDIDO
 }
 
+enum ModeloOperacional {
+  API
+  WHITE_LABEL
+}
+
+enum ClienteStatus {
+  ATIVO
+  INATIVO
+  PROSPECCAO
+  ENCERRADO
+}
+
+enum MetaTipo {
+  RECEITA
+  TPV
+  MRR
+  FLOATING
+  CLIENTES_ATIVOS
+}
+
 model User {
   id        String   @id @default(cuid())
   name      String
@@ -44,6 +64,7 @@ model User {
   leads      Lead[]     @relation("LeadOwner")
   deals      Deal[]     @relation("DealOwner")
   activities Activity[]
+  clientes   Cliente[]
 }
 
 model Lead {
@@ -97,4 +118,87 @@ model Activity {
   lead   Lead?  @relation(fields: [leadId], references: [id])
   dealId String?
   deal   Deal?  @relation(fields: [dealId], references: [id])
+}
+
+model Cliente {
+  id                    String            @id @default(cuid())
+  nome                  String
+  cnpj                  String?
+  email                 String?
+  telefone              String?
+  modeloOperacional     ModeloOperacional
+  status                ClienteStatus     @default(PROSPECCAO)
+  dataFechamento        DateTime?
+  dataEncerramento      DateTime?
+  mensalidadeApi        Float?
+  sustentacaoWhiteLabel Float?
+  setup                 Float?
+  tpvEsperado           Float?
+  qtdTransacoesEsperada Int?
+  qtdMedEsperada        Int?
+  receitaPrevistaMensal Float?
+  notas                 String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  ownerId        String
+  owner          User            @relation(fields: [ownerId], references: [id])
+  processamentos Processamento[]
+  forecasts      Forecast[]
+}
+
+model Processamento {
+  id               String   @id @default(cuid())
+  mesRef           String
+  tpv              Float    @default(0)
+  qtdTransacoes    Int      @default(0)
+  qtdMed           Int      @default(0)
+  receitaTarifaria Float    @default(0)
+  floating         Float    @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, mesRef])
+}
+
+model Forecast {
+  id               String   @id @default(cuid())
+  mesRef           String
+  tpvPrevisto      Float    @default(0)
+  qtdPrevista      Int      @default(0)
+  taxaMedia        Float    @default(0)
+  receitaPrevista  Float    @default(0)
+  tpvRealizado     Float?
+  receitaRealizada Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, mesRef])
+}
+
+model ReceitaRealizada {
+  id                String   @id @default(cuid())
+  mesRef            String   @unique
+  receitaTarifaria  Float    @default(0)
+  floatingRealizado Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Meta {
+  id        String   @id @default(cuid())
+  tipo      MetaTipo
+  valor     Float
+  periodo   String
+  realizado Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tipo, periodo])
 }
