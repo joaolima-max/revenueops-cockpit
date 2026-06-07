@@ -342,3 +342,15 @@ model Auditoria {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 }
+
+model Parametro {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  valor     String
+  label     String
+  descricao String?
+  grupo     String   @default("GERAL")
+  tipo      String   @default("NUMBER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
