@@ -8,18 +8,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params
   const body = await request.json()
-  const { titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas } = body
+  const { titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, frequenciaDias, ultimoContato, proximoContato } = body
 
   const followUp = await prisma.followUp.update({
     where: { id },
     data: {
-      titulo, descricao: descricao || null, tipo,
-      recorrente: !!recorrente,
-      diaSemana: recorrente && diaSemana !== undefined ? parseInt(diaSemana) : null,
-      horaInicio: horaInicio || null, horaFim: horaFim || null,
-      dataInicio: !recorrente && dataInicio ? new Date(dataInicio) : null,
-      dataFim: !recorrente && dataFim ? new Date(dataFim) : null,
-      notas: notas || null,
+      ...(titulo !== undefined && { titulo }),
+      descricao: descricao !== undefined ? descricao || null : undefined,
+      ...(tipo !== undefined && { tipo }),
+      ...(recorrente !== undefined && { recorrente: !!recorrente }),
+      ...(recorrente !== undefined && { diaSemana: recorrente && diaSemana !== undefined ? parseInt(diaSemana) : null }),
+      horaInicio: horaInicio !== undefined ? horaInicio || null : undefined,
+      horaFim: horaFim !== undefined ? horaFim || null : undefined,
+      ...(dataInicio !== undefined && { dataInicio: !recorrente && dataInicio ? new Date(dataInicio) : null }),
+      ...(dataFim !== undefined && { dataFim: !recorrente && dataFim ? new Date(dataFim) : null }),
+      notas: notas !== undefined ? notas || null : undefined,
+      frequenciaDias: frequenciaDias !== undefined ? (frequenciaDias ? parseInt(frequenciaDias) : null) : undefined,
+      ultimoContato: ultimoContato !== undefined ? (ultimoContato ? new Date(ultimoContato) : null) : undefined,
+      proximoContato: proximoContato !== undefined ? (proximoContato ? new Date(proximoContato) : null) : undefined,
     },
     include: { cliente: { select: { id: true, nome: true, segmento: true, modeloOperacional: true } } },
   })

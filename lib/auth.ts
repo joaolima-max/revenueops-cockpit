@@ -8,6 +8,7 @@ export interface TokenPayload {
   email: string
   role: string
   name: string
+  permissoes?: string[]
 }
 
 export function signToken(payload: TokenPayload): string {

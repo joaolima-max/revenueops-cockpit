@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
 
 interface Cliente { id: string; nome: string; segmento: string | null; modeloOperacional: string }
 
@@ -16,6 +19,9 @@ interface FollowUp {
   dataInicio: string | null
   dataFim: string | null
   notas: string | null
+  frequenciaDias: number | null
+  ultimoContato: string | null
+  proximoContato: string | null
   cliente: { id: string; nome: string; segmento: string | null; modeloOperacional: string }
 }
 
@@ -23,6 +29,7 @@ interface Props { clientes: Cliente[] }
 
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const DIAS_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
+const WEEK_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
 const TIPO_LABELS: Record<string, string> = {
   PICO_OPERACIONAL: 'Pico Operacional',
@@ -54,7 +61,11 @@ const TIPO_BG: Record<string, string> = {
 const emptyForm = {
   clienteId: '', titulo: '', descricao: '', tipo: 'FOLLOW_UP',
   recorrente: false, diaSemana: '1', horaInicio: '', horaFim: '',
-  dataInicio: '', dataFim: '', notas: '',
+  dataInicio: '', dataFim: '', notas: '', frequenciaDias: '',
+}
+
+const emptyFreqForm = {
+  clienteId: '', titulo: '', tipo: 'FOLLOW_UP', frequenciaDias: '',
 }
 
 function getMondayOfWeek(offset = 0): Date {
@@ -71,15 +82,33 @@ function fmtDate(d: Date): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
+function fmtDateFull(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function proximoContatoColor(iso: string | null): string {
+  if (!iso) return 'text-gray-500'
+  const d = new Date(iso)
+  const now = new Date()
+  const diffMs = d.getTime() - now.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  if (diffDays < 0) return 'text-red-400'
+  if (diffDays <= 1) return 'text-amber-400'
+  return 'text-emerald-400'
+}
+
 export default function FollowUpClient({ clientes }: Props) {
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'calendario' | 'lista'>('calendario')
+  const [tab, setTab] = useState<'calendario' | 'frequencia' | 'lista'>('calendario')
   const [weekOffset, setWeekOffset] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [freqForm, setFreqForm] = useState(emptyFreqForm)
+  const [savingFreq, setSavingFreq] = useState(false)
+  const [registrandoId, setRegistrandoId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -94,6 +123,10 @@ export default function FollowUpClient({ clientes }: Props) {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => setForm(p => ({ ...p, [field]: e.target.value }))
 
+  const ff = (field: string) => (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => setFreqForm(p => ({ ...p, [field]: e.target.value }))
+
   function openNew() {
     setEditingId(null); setForm(emptyForm); setShowModal(true)
   }
@@ -107,20 +140,27 @@ export default function FollowUpClient({ clientes }: Props) {
       dataInicio: fu.dataInicio ? fu.dataInicio.slice(0, 16) : '',
       dataFim: fu.dataFim ? fu.dataFim.slice(0, 16) : '',
       notas: fu.notas || '',
+      frequenciaDias: fu.frequenciaDias != null ? String(fu.frequenciaDias) : '',
     })
     setShowModal(true)
   }
 
+  const isFrequencyMode = parseInt(form.frequenciaDias) > 0
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
+    const freqDias = form.frequenciaDias ? parseInt(form.frequenciaDias) : null
     const payload = {
       clienteId: form.clienteId, titulo: form.titulo, descricao: form.descricao,
-      tipo: form.tipo, recorrente: form.recorrente,
-      diaSemana: form.recorrente ? form.diaSemana : null,
-      horaInicio: form.horaInicio || null, horaFim: form.horaFim || null,
-      dataInicio: !form.recorrente && form.dataInicio ? form.dataInicio : null,
-      dataFim: !form.recorrente && form.dataFim ? form.dataFim : null,
+      tipo: form.tipo,
+      recorrente: freqDias ? false : form.recorrente,
+      diaSemana: (!freqDias && form.recorrente) ? form.diaSemana : null,
+      horaInicio: freqDias ? null : (form.horaInicio || null),
+      horaFim: freqDias ? null : (form.horaFim || null),
+      dataInicio: (!freqDias && !form.recorrente && form.dataInicio) ? form.dataInicio : null,
+      dataFim: (!freqDias && !form.recorrente && form.dataFim) ? form.dataFim : null,
       notas: form.notas || null,
+      frequenciaDias: freqDias,
     }
     if (editingId) {
       const res = await fetch(`/api/followup/${editingId}`, {
@@ -142,6 +182,36 @@ export default function FollowUpClient({ clientes }: Props) {
     if (!confirm('Excluir este evento?')) return
     const res = await fetch(`/api/followup/${id}`, { method: 'DELETE' })
     if (res.ok) setFollowUps(p => p.filter(fu => fu.id !== id))
+  }
+
+  async function registrarContato(id: string, frequenciaDias: number) {
+    setRegistrandoId(id)
+    const now = new Date()
+    const proximo = new Date(now)
+    proximo.setDate(proximo.getDate() + frequenciaDias)
+    const res = await fetch(`/api/followup/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ultimoContato: now.toISOString(), proximoContato: proximo.toISOString() }),
+    })
+    if (res.ok) { const d = await res.json(); setFollowUps(p => p.map(fu => fu.id === id ? d.followUp : fu)) }
+    setRegistrandoId(null)
+  }
+
+  async function handleFreqSubmit(e: React.FormEvent) {
+    e.preventDefault(); setSavingFreq(true)
+    const payload = {
+      clienteId: freqForm.clienteId,
+      titulo: freqForm.titulo,
+      tipo: freqForm.tipo,
+      frequenciaDias: freqForm.frequenciaDias ? parseInt(freqForm.frequenciaDias) : null,
+      recorrente: false,
+    }
+    const res = await fetch('/api/followup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) { const d = await res.json(); setFollowUps(p => [...p, d.followUp]); setFreqForm(emptyFreqForm) }
+    setSavingFreq(false)
   }
 
   // Build weekly calendar: Mon–Sun
@@ -166,11 +236,32 @@ export default function FollowUpClient({ clientes }: Props) {
   }
 
   // Upcoming one-time events (next 14 days)
-  const now = new Date()
+  const nowTs = new Date()
   const upcoming = followUps
-    .filter(fu => !fu.recorrente && fu.dataInicio && new Date(fu.dataInicio) >= now)
+    .filter(fu => !fu.recorrente && !fu.frequenciaDias && fu.dataInicio && new Date(fu.dataInicio) >= nowTs)
     .sort((a, b) => new Date(a.dataInicio!).getTime() - new Date(b.dataInicio!).getTime())
     .slice(0, 10)
+
+  // Frequency rules: follow-ups with frequenciaDias set
+  const freqRules = followUps.filter(fu => fu.frequenciaDias != null && fu.frequenciaDias > 0)
+
+  // Weekly chart data
+  const weekChartData = WEEK_LABELS.map((label, i) => {
+    const dayNum = weekDayNums[i]
+    const dayDate = weekDays[i]
+    const recorrentes = followUps.filter(fu =>
+      (fu.recorrente && !fu.frequenciaDias) && fu.diaSemana === dayNum
+    ).length
+    // frequency-rule follow-ups due on this day (proximoContato falls on this day)
+    const frequencia = freqRules.filter(fu => {
+      if (!fu.proximoContato) return false
+      const d = new Date(fu.proximoContato)
+      return d.getFullYear() === dayDate.getFullYear() &&
+        d.getMonth() === dayDate.getMonth() &&
+        d.getDate() === dayDate.getDate()
+    }).length
+    return { label, Recorrentes: recorrentes, Frequência: frequencia }
+  })
 
   const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
   const lbl = 'block text-xs text-gray-500 mb-1'
@@ -207,10 +298,10 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
-        {(['calendario', 'lista'] as const).map(t => (
+        {(['calendario', 'frequencia', 'lista'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-gray-800 text-white' : 'text-gray-600 hover:text-gray-400'}`}>
-            {t === 'calendario' ? 'Calendário Semanal' : 'Todos os Eventos'}
+            {t === 'calendario' ? 'Calendário Semanal' : t === 'frequencia' ? 'Frequência de Follow-up' : 'Todos os Eventos'}
           </button>
         ))}
       </div>
@@ -304,6 +395,122 @@ export default function FollowUpClient({ clientes }: Props) {
         </div>
       )}
 
+      {/* FREQUENCY TAB */}
+      {tab === 'frequencia' && (
+        <div className="space-y-6">
+          {/* Chart: Agenda de Follow-ups da Semana */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-4">Agenda de Follow-ups da Semana</h3>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={weekChartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
+                  labelStyle={{ color: '#e5e7eb' }}
+                  itemStyle={{ color: '#9ca3af' }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                <Bar dataKey="Recorrentes" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Frequência" stackId="a" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Section A: Regras de Frequência */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-4">Regras de Frequência</h3>
+            {loading ? (
+              <p className="text-gray-700 text-sm py-6 text-center">Carregando...</p>
+            ) : freqRules.length === 0 ? (
+              <p className="text-gray-700 text-sm py-6 text-center">Nenhuma regra de frequência cadastrada</p>
+            ) : (
+              <div className="space-y-3">
+                {freqRules.map(fu => {
+                  const pcColor = proximoContatoColor(fu.proximoContato)
+                  return (
+                    <div key={fu.id} className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-white truncate">{fu.cliente.nome}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
+                            {TIPO_LABELS[fu.tipo]}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 truncate">{fu.titulo}</p>
+                        <div className="flex flex-wrap gap-4 text-xs">
+                          <span className="text-emerald-400 font-medium">A cada {fu.frequenciaDias} dias</span>
+                          <span className="text-gray-500">
+                            Último contato: {fu.ultimoContato ? fmtDateFull(fu.ultimoContato) : '—'}
+                          </span>
+                          <span className={`font-medium ${pcColor}`}>
+                            Próximo follow-up: {fu.proximoContato ? fmtDateFull(fu.proximoContato) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => registrarContato(fu.id, fu.frequenciaDias!)}
+                          disabled={registrandoId === fu.id}
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium text-white disabled:opacity-50"
+                          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                          {registrandoId === fu.id ? 'Registrando...' : 'Registrar Contato'}
+                        </button>
+                        <button onClick={() => openEdit(fu)}
+                          className="text-xs px-2 py-1.5 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600">
+                          Editar
+                        </button>
+                        <button onClick={() => handleDelete(fu.id)}
+                          className="text-xs px-2 py-1.5 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20">
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Section B: Adicionar Regra de Frequência */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-4">Adicionar Regra de Frequência</h3>
+            <form onSubmit={handleFreqSubmit} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className={lbl}>Cliente *</label>
+                <select required value={freqForm.clienteId} onChange={ff('clienteId')} className={inp}>
+                  <option value="">Selecione...</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+              <div className="sm:col-span-1">
+                <label className={lbl}>Título *</label>
+                <input required type="text" value={freqForm.titulo} onChange={ff('titulo')} className={inp}
+                  placeholder="Ex: Follow-up BaaS a cada 2 dias" />
+              </div>
+              <div>
+                <label className={lbl}>Tipo</label>
+                <select value={freqForm.tipo} onChange={ff('tipo')} className={inp}>
+                  {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Repetir a cada (dias) *</label>
+                <input required type="number" min="1" value={freqForm.frequenciaDias} onChange={ff('frequenciaDias')} className={inp}
+                  placeholder="Ex: 7" />
+              </div>
+              <div className="col-span-2 sm:col-span-4 flex justify-end">
+                <button type="submit" disabled={savingFreq}
+                  className="px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  {savingFreq ? 'Salvando...' : '+ Adicionar Regra'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* LIST TAB */}
       {tab === 'lista' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -330,15 +537,21 @@ export default function FollowUpClient({ clientes }: Props) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">
-                    {fu.recorrente ? DIAS_FULL[fu.diaSemana ?? 0] : fu.dataInicio ? new Date(fu.dataInicio).toLocaleDateString('pt-BR') : '—'}
+                    {fu.frequenciaDias
+                      ? `A cada ${fu.frequenciaDias}d`
+                      : fu.recorrente
+                        ? DIAS_FULL[fu.diaSemana ?? 0]
+                        : fu.dataInicio ? new Date(fu.dataInicio).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">
                     {fu.horaInicio ? `${fu.horaInicio}${fu.horaFim ? `–${fu.horaFim}` : ''}` : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {fu.recorrente
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">Semanal</span>
-                      : <span className="text-xs text-gray-700">Único</span>}
+                    {fu.frequenciaDias
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">Frequência</span>
+                      : fu.recorrente
+                        ? <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">Semanal</span>
+                        : <span className="text-xs text-gray-700">Único</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -376,53 +589,68 @@ export default function FollowUpClient({ clientes }: Props) {
                 <input required type="text" value={form.titulo} onChange={f('titulo')} className={inp}
                   placeholder="Ex: Horário de pico operacional" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${isFrequencyMode ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label className={lbl}>Tipo</label>
                   <select value={form.tipo} onChange={f('tipo')} className={inp}>
                     {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={form.recorrente}
-                      onChange={e => setForm(p => ({ ...p, recorrente: e.target.checked }))}
-                      className="w-4 h-4 rounded accent-emerald-500" />
-                    <span className="text-sm text-gray-300">Recorrente (semanal)</span>
-                  </label>
-                </div>
+                {!isFrequencyMode && (
+                  <div className="flex items-end pb-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.recorrente}
+                        onChange={e => setForm(p => ({ ...p, recorrente: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-emerald-500" />
+                      <span className="text-sm text-gray-300">Recorrente (semanal)</span>
+                    </label>
+                  </div>
+                )}
               </div>
 
-              {form.recorrente ? (
-                <div>
-                  <label className={lbl}>Dia da Semana</label>
-                  <select value={form.diaSemana} onChange={f('diaSemana')} className={inp}>
-                    {DIAS_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                  </select>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={lbl}>Data/Hora Início</label>
-                    <input type="datetime-local" value={form.dataInicio} onChange={f('dataInicio')} className={inp} />
+              <div>
+                <label className={lbl}>Frequência de contato (dias)</label>
+                <input type="number" min="0" value={form.frequenciaDias} onChange={f('frequenciaDias')} className={inp}
+                  placeholder="Ex: 7 — preencha para criar uma regra de frequência" />
+                {isFrequencyMode && (
+                  <p className="text-xs text-amber-400 mt-1">Modo frequência ativo — campos de data/hora ocultos.</p>
+                )}
+              </div>
+
+              {!isFrequencyMode && (
+                <>
+                  {form.recorrente ? (
+                    <div>
+                      <label className={lbl}>Dia da Semana</label>
+                      <select value={form.diaSemana} onChange={f('diaSemana')} className={inp}>
+                        {DIAS_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={lbl}>Data/Hora Início</label>
+                        <input type="datetime-local" value={form.dataInicio} onChange={f('dataInicio')} className={inp} />
+                      </div>
+                      <div>
+                        <label className={lbl}>Data/Hora Fim (opcional)</label>
+                        <input type="datetime-local" value={form.dataFim} onChange={f('dataFim')} className={inp} />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={lbl}>Horário Início</label>
+                      <input type="time" value={form.horaInicio} onChange={f('horaInicio')} className={inp} />
+                    </div>
+                    <div>
+                      <label className={lbl}>Horário Fim</label>
+                      <input type="time" value={form.horaFim} onChange={f('horaFim')} className={inp} />
+                    </div>
                   </div>
-                  <div>
-                    <label className={lbl}>Data/Hora Fim (opcional)</label>
-                    <input type="datetime-local" value={form.dataFim} onChange={f('dataFim')} className={inp} />
-                  </div>
-                </div>
+                </>
               )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={lbl}>Horário Início</label>
-                  <input type="time" value={form.horaInicio} onChange={f('horaInicio')} className={inp} />
-                </div>
-                <div>
-                  <label className={lbl}>Horário Fim</label>
-                  <input type="time" value={form.horaFim} onChange={f('horaFim')} className={inp} />
-                </div>
-              </div>
 
               <div>
                 <label className={lbl}>Descrição</label>

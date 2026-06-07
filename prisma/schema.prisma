@@ -114,8 +114,9 @@ model User {
   password  String
   role      Role     @default(COMERCIAL)
   active    Boolean  @default(true)
-  avatar    String?
-  createdAt DateTime @default(now())
+  avatar     String?
+  permissoes String?
+  createdAt  DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   leads          Lead[]          @relation("LeadOwner")
@@ -419,9 +420,12 @@ model FollowUp {
   horaFim     String?
   dataInicio  DateTime?
   dataFim     DateTime?
-  notas       String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  clienteId   String
-  cliente     Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  notas           String?
+  frequenciaDias  Int?
+  ultimoContato   DateTime?
+  proximoContato  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  clienteId       String
+  cliente         Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }

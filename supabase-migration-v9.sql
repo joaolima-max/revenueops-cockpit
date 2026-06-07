@@ -1,0 +1,3 @@
+-- Migration v9: User permissions
+
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "permissoes" TEXT;

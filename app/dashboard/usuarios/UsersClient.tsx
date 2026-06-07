@@ -10,6 +10,7 @@ interface User {
   role: string
   active: boolean
   createdAt: Date
+  permissoes?: string | null
 }
 
 const ROLES = ['ADMIN', 'OPERACIONAL', 'COMERCIAL']
@@ -20,6 +21,83 @@ const ROLE_BADGE: Record<string, string> = {
   COMERCIAL: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
 }
 
+// Permissions data inlined for client component use
+const ALL_PERMISSIONS_CLIENT = [
+  // Cockpit
+  { key: 'view_dashboard',   label: 'Ver Dashboard',           group: 'Cockpit' },
+  { key: 'view_carteira',    label: 'Ver Carteira',             group: 'Cockpit' },
+  { key: 'manage_carteira',  label: 'Gerenciar Clientes',       group: 'Cockpit' },
+  { key: 'view_forecast',    label: 'Ver Forecast',             group: 'Cockpit' },
+  { key: 'manage_forecast',  label: 'Editar Forecast',          group: 'Cockpit' },
+  // Financeiro
+  { key: 'view_financeiro',  label: 'Ver Financeiro',           group: 'Financeiro' },
+  { key: 'manage_financeiro',label: 'Gerenciar Financeiro',     group: 'Financeiro' },
+  { key: 'view_receita',     label: 'Ver Receita',              group: 'Financeiro' },
+  { key: 'manage_receita',   label: 'Editar Receita',           group: 'Financeiro' },
+  { key: 'view_metas',       label: 'Ver Metas',                group: 'Financeiro' },
+  { key: 'manage_metas',     label: 'Editar Metas',             group: 'Financeiro' },
+  { key: 'view_pedidos',     label: 'Ver Pedidos',              group: 'Financeiro' },
+  { key: 'manage_pedidos',   label: 'Gerenciar Pedidos',        group: 'Financeiro' },
+  { key: 'view_relatorios',  label: 'Ver Relatórios',           group: 'Financeiro' },
+  { key: 'view_metricas',    label: 'Ver Métricas',             group: 'Financeiro' },
+  // Operacional
+  { key: 'view_incidentes',  label: 'Ver Incidentes',           group: 'Operacional' },
+  { key: 'manage_incidentes',label: 'Gerenciar Incidentes',     group: 'Operacional' },
+  { key: 'view_tarefas',     label: 'Ver Tarefas',              group: 'Operacional' },
+  { key: 'manage_tarefas',   label: 'Gerenciar Tarefas',        group: 'Operacional' },
+  { key: 'view_ranking',     label: 'Ver Ranking',              group: 'Operacional' },
+  { key: 'view_metricas_op', label: 'Ver Métricas Operacionais',group: 'Operacional' },
+  { key: 'view_volumetria',  label: 'Ver Volumetria',           group: 'Operacional' },
+  // CRM
+  { key: 'view_leads',       label: 'Ver Leads',                group: 'CRM' },
+  { key: 'manage_leads',     label: 'Gerenciar Leads',          group: 'CRM' },
+  { key: 'view_pipeline',    label: 'Ver Pipeline',             group: 'CRM' },
+  { key: 'manage_pipeline',  label: 'Gerenciar Pipeline',       group: 'CRM' },
+  { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
+  { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
+  // Admin
+  { key: 'view_alertas',     label: 'Ver Alertas',              group: 'Admin' },
+  { key: 'manage_parametros',label: 'Gerenciar Parâmetros',     group: 'Admin' },
+]
+
+const DEFAULT_PERMISSIONS_CLIENT: Record<string, string[]> = {
+  ADMIN: ALL_PERMISSIONS_CLIENT.map(p => p.key),
+  OPERACIONAL: [
+    'view_dashboard', 'view_carteira', 'view_forecast',
+    'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
+    'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
+    'view_ranking', 'view_metricas_op', 'view_volumetria', 'view_alertas',
+    'view_followup',
+  ],
+  COMERCIAL: [
+    'view_dashboard', 'view_carteira', 'view_forecast',
+    'view_metas', 'view_pedidos',
+    'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
+    'view_followup', 'manage_followup',
+  ],
+}
+
+const PERM_GROUPS = Array.from(new Set(ALL_PERMISSIONS_CLIENT.map(p => p.group)))
+
+interface PermModal {
+  userId: string
+  userName: string
+  current: string[]
+  role: string
+}
+
+function parsePermissoes(raw: string | null | undefined, role: string): string[] {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    } catch {
+      // fallback to defaults
+    }
+  }
+  return DEFAULT_PERMISSIONS_CLIENT[role] || []
+}
+
 export default function UsersClient({ users: initialUsers }: { users: User[] }) {
   const [users, setUsers] = useState(initialUsers)
   const [showModal, setShowModal] = useState(false)
@@ -27,6 +105,12 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', email: '', role: 'COMERCIAL', password: '' })
   const [editForm, setEditForm] = useState<{ role: string }>({ role: 'COMERCIAL' })
+
+  // Permissions modal state
+  const [permModal, setPermModal] = useState<PermModal | null>(null)
+  const [permChecked, setPermChecked] = useState<string[]>([])
+  const [permLoading, setPermLoading] = useState(false)
+  const [permSaved, setPermSaved] = useState(false)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -76,6 +160,55 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
   function openEdit(user: User) {
     setEditingId(user.id)
     setEditForm({ role: user.role })
+  }
+
+  function openPermModal(user: User) {
+    const current = parsePermissoes(user.permissoes, user.role)
+    setPermModal({ userId: user.id, userName: user.name, current, role: user.role })
+    setPermChecked(current)
+    setPermSaved(false)
+  }
+
+  function closePermModal() {
+    setPermModal(null)
+    setPermChecked([])
+    setPermSaved(false)
+  }
+
+  function togglePerm(key: string) {
+    setPermChecked(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    )
+  }
+
+  function toggleGroup(group: string) {
+    const groupKeys = ALL_PERMISSIONS_CLIENT.filter(p => p.group === group).map(p => p.key)
+    const allChecked = groupKeys.every(k => permChecked.includes(k))
+    if (allChecked) {
+      setPermChecked(prev => prev.filter(k => !groupKeys.includes(k)))
+    } else {
+      setPermChecked(prev => Array.from(new Set([...prev, ...groupKeys])))
+    }
+  }
+
+  async function handleSavePermissions() {
+    if (!permModal) return
+    setPermLoading(true)
+    try {
+      const res = await fetch(`/api/users/${permModal.userId}/permissions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissoes: permChecked }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setUsers(users.map(u => u.id === permModal.userId ? { ...u, permissoes: updated.permissoes } : u))
+        setPermSaved(true)
+        setTimeout(() => setPermSaved(false), 2500)
+      }
+    } finally {
+      setPermLoading(false)
+    }
   }
 
   return (
@@ -176,6 +309,15 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       </svg>
                     </button>
                     <button
+                      onClick={() => openPermModal(user)}
+                      title="Configurar permissões"
+                      className="text-xs text-gray-500 hover:text-violet-400 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                      </svg>
+                    </button>
+                    <button
                       onClick={() => handleToggleActive(user)}
                       title={user.active ? 'Desativar usuário' : 'Ativar usuário'}
                       className={`text-xs transition-colors ${user.active ? 'text-gray-500 hover:text-red-400' : 'text-gray-500 hover:text-emerald-400'}`}
@@ -198,6 +340,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
         </table>
       </div>
 
+      {/* Create User Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
@@ -269,6 +412,131 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Permissions Modal */}
+      {permModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Permissões</h2>
+                <p className="text-sm text-gray-400 mt-0.5">{permModal.userName}</p>
+              </div>
+              <button
+                onClick={closePermModal}
+                className="text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 space-y-6">
+              {permModal.role === 'ADMIN' && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-xs text-red-400">Administradores têm todas as permissões por padrão, independente das configurações abaixo.</p>
+                </div>
+              )}
+
+              {PERM_GROUPS.map(group => {
+                const groupPerms = ALL_PERMISSIONS_CLIENT.filter(p => p.group === group)
+                const groupKeys = groupPerms.map(p => p.key)
+                const allChecked = groupKeys.every(k => permChecked.includes(k))
+                const someChecked = groupKeys.some(k => permChecked.includes(k))
+
+                return (
+                  <div key={group}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group)}
+                        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                          allChecked
+                            ? 'bg-violet-500 border-violet-500'
+                            : someChecked
+                            ? 'bg-violet-500/40 border-violet-500/60'
+                            : 'bg-transparent border-gray-600 hover:border-gray-400'
+                        }`}
+                      >
+                        {(allChecked || someChecked) && (
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d={allChecked ? "M5 13l4 4L19 7" : "M20 12H4"} />
+                          </svg>
+                        )}
+                      </button>
+                      <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">{group}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 ml-6">
+                      {groupPerms.map(perm => (
+                        <label
+                          key={perm.key}
+                          className="flex items-center gap-2 cursor-pointer group"
+                        >
+                          <div
+                            onClick={() => togglePerm(perm.key)}
+                            className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer ${
+                              permChecked.includes(perm.key)
+                                ? 'bg-violet-500 border-violet-500'
+                                : 'bg-transparent border-gray-600 group-hover:border-gray-400'
+                            }`}
+                          >
+                            {permChecked.includes(perm.key) && (
+                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <span
+                            onClick={() => togglePerm(perm.key)}
+                            className="text-sm text-gray-300 group-hover:text-white transition-colors select-none"
+                          >
+                            {perm.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="p-6 border-t border-gray-800 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2">
+                {permSaved && (
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-400">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Permissões salvas
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={closePermModal}
+                  className="px-4 py-2 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 rounded-lg text-sm transition-colors"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePermissions}
+                  disabled={permLoading}
+                  className="px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)' }}
+                >
+                  {permLoading ? 'Salvando...' : 'Salvar Permissões'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
