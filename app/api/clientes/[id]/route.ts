@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -62,6 +63,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     },
   })
 
+  await logAudit(session.userId, 'EDITOU_CLIENTE', 'Cliente', id, `Nome: ${body.nome || ''}`)
+
   return NextResponse.json({ cliente })
 }
 
@@ -72,5 +75,6 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   await prisma.cliente.delete({ where: { id } })
+  await logAudit(session.userId, 'EXCLUIU_CLIENTE', 'Cliente', id, '')
   return NextResponse.json({ ok: true })
 }

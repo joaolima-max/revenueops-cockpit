@@ -12,7 +12,7 @@ async function getData() {
 
   const [
     clientesAtivos, clientesEncerradosMes,
-    procMes, proc12M, rec12M, mrrAgg,
+    procMes, proc12M, rec12M, mrrApiAgg, mrrWlAgg,
     metaRec, metaTPV, metaMRR,
     fg12M, fgMesAtual,
   ] = await Promise.all([
@@ -30,7 +30,8 @@ async function getData() {
       orderBy: { mesRef: 'asc' },
     }),
     prisma.receitaRealizada.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
-    prisma.cliente.aggregate({ where: { status: 'ATIVO' }, _sum: { mensalidadeApi: true, sustentacaoWhiteLabel: true } }),
+    prisma.cliente.aggregate({ where: { status: 'ATIVO', modeloOperacional: 'API' }, _sum: { mensalidadeApi: true } }),
+    prisma.cliente.aggregate({ where: { status: 'ATIVO', modeloOperacional: 'WHITE_LABEL' }, _sum: { sustentacaoWhiteLabel: true } }),
     prisma.meta.findFirst({ where: { tipo: 'RECEITA', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'TPV', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'MRR', periodo: mesAtual } }),
@@ -43,7 +44,9 @@ async function getData() {
   const floating = procMes._sum.floating || 0
   const qtdMed = procMes._sum.qtdMed || 0
   const qtdTx = procMes._sum.qtdTransacoes || 0
-  const mrr = (mrrAgg._sum.mensalidadeApi || 0) + (mrrAgg._sum.sustentacaoWhiteLabel || 0)
+  const mrrApi = mrrApiAgg._sum.mensalidadeApi || 0
+  const mrrWl = mrrWlAgg._sum.sustentacaoWhiteLabel || 0
+  const mrr = mrrApi + mrrWl
   const takeRate = tpv > 0 ? (receita / tpv) * 100 : 0
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
   const receitaAno = rec12M.filter(r => r.mesRef.startsWith(anoAtual)).reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
@@ -74,7 +77,7 @@ async function getData() {
   })
 
   return {
-    kpis: { clientesAtivos, mrr, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp },
+    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution: meses.map(mes => ({ mes, mrr })),
@@ -162,18 +165,30 @@ export default async function DashboardPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-semibold text-white mb-4">Receita Mensal — {formatMesRef(mesAtual)}</h3>
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          {[
-            { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400', note: 'Do processamento' },
-            { label: 'Floating', value: formatCurrency(kpis.floating), color: 'text-emerald-400', note: 'Rendimento em trânsito' },
-            { label: 'MRR', value: formatCurrency(kpis.mrr), color: 'text-violet-400', note: 'Mensalidades recorrentes' },
-            { label: 'Total Mensal', value: formatCurrency(kpis.receita + kpis.floating + kpis.mrr), color: 'text-white', note: 'Tarifária + Floating + MRR' },
-          ].map(k => (
-            <div key={k.label}>
-              <p className="text-xs text-gray-600 mb-1">{k.label}</p>
-              <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
-              <p className="text-xs text-gray-700 mt-0.5">{k.note}</p>
+          <div>
+            <p className="text-xs text-gray-600 mb-1">Receita Tarifária</p>
+            <p className="text-xl font-bold text-indigo-400">{formatCurrency(kpis.receita)}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Do processamento</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-600 mb-1">Floating</p>
+            <p className="text-xl font-bold text-emerald-400">{formatCurrency(kpis.floating)}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Rendimento em trânsito</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-600 mb-1">MRR</p>
+            <p className="text-xl font-bold text-violet-400">{formatCurrency(kpis.mrr)}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Mensalidades recorrentes</p>
+            <div className="mt-2 space-y-0.5">
+              <p className="text-xs text-sky-400">MRR API: {formatCurrency(kpis.mrrApi)}</p>
+              <p className="text-xs text-violet-400">MRR White Label: {formatCurrency(kpis.mrrWl)}</p>
             </div>
-          ))}
+          </div>
+          <div>
+            <p className="text-xs text-gray-600 mb-1">Total Mensal</p>
+            <p className="text-xl font-bold text-white">{formatCurrency(kpis.receita + kpis.floating + kpis.mrr)}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Tarifária + Floating + MRR</p>
+          </div>
         </div>
       </div>
 

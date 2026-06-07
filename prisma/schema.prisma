@@ -114,6 +114,7 @@ model User {
   password  String
   role      Role     @default(COMERCIAL)
   active    Boolean  @default(true)
+  avatar    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -217,6 +218,7 @@ model Cliente {
   tarefas        Tarefa[]
   pedidos        PedidoCobravel[]
   incidentes     IncidenteCliente[]
+  contasReceber  ContaReceber[]
 }
 
 model Processamento {
@@ -331,6 +333,13 @@ model PedidoCobravel {
   cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
+enum ContaReceberStatus {
+  PENDENTE
+  FATURADO
+  PAGO
+  INADIMPLENTE
+}
+
 model Auditoria {
   id         String   @id @default(cuid())
   acao       String
@@ -369,4 +378,22 @@ model ForecastGeral {
   notas                   String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
+}
+
+model ContaReceber {
+  id          String             @id @default(cuid())
+  descricao   String
+  tipo        String
+  valor       Float
+  parcela     Int?
+  totalParcel Int?
+  dataVenc    DateTime
+  dataFatura  DateTime?
+  dataPago    DateTime?
+  status      ContaReceberStatus @default(PENDENTE)
+  notas       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  clienteId   String
+  cliente     Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }

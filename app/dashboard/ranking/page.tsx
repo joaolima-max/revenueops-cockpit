@@ -36,10 +36,17 @@ async function getRanking() {
     ...topTransacoes.map(t => t.clienteId),
   ])]
 
-  const clientes = await prisma.cliente.findMany({
-    where: { id: { in: allIds } },
-    select: { id: true, nome: true, segmento: true, modeloOperacional: true, status: true },
-  })
+  const [clientes, activoClientes] = await Promise.all([
+    prisma.cliente.findMany({
+      where: { id: { in: allIds } },
+      select: { id: true, nome: true, segmento: true, modeloOperacional: true, status: true },
+    }),
+    prisma.cliente.findMany({
+      where: { status: 'ATIVO' },
+      select: { id: true, nome: true, segmento: true, modeloOperacional: true, status: true, mensalidadeApi: true, sustentacaoWhiteLabel: true, tpvEsperado: true, receitaPrevistaMensal: true },
+      orderBy: { nome: 'asc' },
+    }),
+  ])
   const cMap = new Map(clientes.map(c => [c.id, c]))
 
   const totalReceita = topReceita.reduce((s, t) => s + (t._sum.receitaTarifaria || 0) + (t._sum.floating || 0), 0)
@@ -68,6 +75,7 @@ async function getRanking() {
     })),
     totalReceita,
     totalTpv,
+    activoClientes,
   }
 }
 
@@ -81,7 +89,7 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 export default async function RankingPage() {
-  const { topReceita, topTpv, topTransacoes, totalReceita } = await getRanking()
+  const { topReceita, topTpv, topTransacoes, totalReceita, activoClientes } = await getRanking()
 
   return (
     <div className="min-h-screen bg-gray-950 p-6 space-y-6">
@@ -205,6 +213,41 @@ export default async function RankingPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Carteira de Clientes Ativos */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4">Carteira de Clientes Ativos — Dados Cadastrais</h3>
+        {activoClientes.length === 0 ? (
+          <p className="text-gray-600 text-sm text-center py-4">Nenhum cliente ativo</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  {['Cliente', 'Segmento', 'Modelo', 'Mensalidade', 'TPV Esperado', 'Rec. Prevista/Mês'].map(h => (
+                    <th key={h} className={`text-xs font-medium text-gray-600 pb-2 ${h === 'Cliente' || h === 'Segmento' || h === 'Modelo' ? 'text-left' : 'text-right'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activoClientes.map(c => {
+                  const mensalidade = (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0)
+                  return (
+                    <tr key={c.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
+                      <td className="py-2.5 text-white font-medium">{c.nome}</td>
+                      <td className="py-2.5 text-gray-500 text-xs">{c.segmento || '—'}</td>
+                      <td className="py-2.5 text-gray-500 text-xs">{c.modeloOperacional === 'WHITE_LABEL' ? 'White Label' : 'API'}</td>
+                      <td className="py-2.5 text-right text-emerald-400">{mensalidade > 0 ? formatCurrency(mensalidade) : '—'}</td>
+                      <td className="py-2.5 text-right text-sky-400">{c.tpvEsperado ? formatTPV(c.tpvEsperado) : '—'}</td>
+                      <td className="py-2.5 text-right text-indigo-400">{c.receitaPrevistaMensal ? formatCurrency(c.receitaPrevistaMensal) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

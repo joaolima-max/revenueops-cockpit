@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -67,6 +68,8 @@ export async function POST(request: NextRequest) {
       ownerId: session.userId,
     },
   })
+
+  await logAudit(session.userId, 'CRIOU_CLIENTE', 'Cliente', cliente.id, `Nome: ${cliente.nome}`)
 
   return NextResponse.json({ cliente }, { status: 201 })
 }
