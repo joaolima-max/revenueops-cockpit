@@ -16,6 +16,7 @@ export default function ReceitaClient() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   async function fetchData() {
     const res = await fetch('/api/receita')
@@ -24,6 +25,18 @@ export default function ReceitaClient() {
   }
 
   useEffect(() => { fetchData() }, [])
+
+  function openEdit(r: Receita) {
+    setEditingId(r.id)
+    setForm({ mesRef: r.mesRef, receitaTarifaria: String(r.receitaTarifaria), floatingRealizado: String(r.floatingRealizado) })
+    setShowModal(true)
+  }
+
+  function closeModal() {
+    setShowModal(false)
+    setEditingId(null)
+    setForm(emptyForm)
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
@@ -35,13 +48,20 @@ export default function ReceitaClient() {
         floatingRealizado: parseFloat(form.floatingRealizado) || 0,
       }),
     })
-    setShowModal(false); setForm(emptyForm); fetchData(); setSaving(false)
+    closeModal(); await fetchData(); setSaving(false)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Tem certeza que deseja excluir este lançamento?')) return
+    await fetch(`/api/receita/${id}`, { method: 'DELETE' })
+    setReceitas(prev => prev.filter(r => r.id !== id))
   }
 
   const totalReceita = receitas.reduce((s, r) => s + r.realizado, 0)
   const avgPrecisao = receitas.filter(r => r.precisao !== null).reduce((s, r, _, a) => s + (r.precisao! / a.length), 0)
 
   const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500'
+  const inpDisabled = 'w-full bg-gray-800/50 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2 cursor-not-allowed'
   const lbl = 'block text-xs text-gray-500 mb-1'
 
   return (
@@ -51,7 +71,7 @@ export default function ReceitaClient() {
           <h1 className="text-lg font-bold text-white">Receita Realizada</h1>
           <p className="text-gray-600 text-sm mt-0.5">Lançamento consolidado mensal de receita</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
+        <button onClick={() => { setEditingId(null); setForm(emptyForm); setShowModal(true) }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
           + Lançar Mês
         </button>
       </div>
@@ -79,16 +99,16 @@ export default function ReceitaClient() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-800">
-              {['Mês', 'Rec. Tarifária', 'Floating', 'Total Realizado', 'Forecast Previsto', 'Gap', 'Precisão'].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${h === 'Mês' ? 'text-left px-5' : 'text-right px-4'}`}>{h}</th>
+              {['Mês', 'Rec. Tarifária', 'Floating', 'Total Realizado', 'Forecast Previsto', 'Gap', 'Precisão', 'Ações'].map(h => (
+                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${h === 'Mês' ? 'text-left px-5' : h === 'Ações' ? 'text-right px-4' : 'text-right px-4'}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
+              <tr><td colSpan={8} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
             ) : receitas.length === 0 ? (
-              <tr><td colSpan={7} className="text-center text-gray-700 py-12 text-sm">Nenhum lançamento registrado</td></tr>
+              <tr><td colSpan={8} className="text-center text-gray-700 py-12 text-sm">Nenhum lançamento registrado</td></tr>
             ) : receitas.map(r => (
               <tr key={r.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
                 <td className="px-5 py-3.5 text-sm font-medium text-gray-300">{formatMesRef(r.mesRef)}</td>
@@ -102,6 +122,25 @@ export default function ReceitaClient() {
                 <td className={`px-4 py-3.5 text-right text-sm font-medium ${r.precisao === null ? 'text-gray-700' : r.precisao >= 90 ? 'text-emerald-400' : r.precisao >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
                   {r.precisao !== null ? formatPercent(r.precisao, 1) : '—'}
                 </td>
+                <td className="px-4 py-3.5 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => openEdit(r)} title="Editar" className="text-gray-500 hover:text-indigo-400 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    <button onClick={() => handleDelete(r.id)} title="Excluir" className="text-gray-700 hover:text-red-400 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -109,14 +148,24 @@ export default function ReceitaClient() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && closeModal()}>
           <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Lançar Receita Mensal</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+              <h2 className="text-base font-semibold text-white">{editingId ? 'Editar Receita' : 'Lançar Receita Mensal'}</h2>
+              <button onClick={closeModal} className="text-gray-600 hover:text-white">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
-              <div><label className={lbl}>Mês de Referência *</label><input required type="month" value={form.mesRef} onChange={e => setForm(p => ({ ...p, mesRef: e.target.value }))} className={inp} /></div>
+              <div>
+                <label className={lbl}>Mês de Referência *</label>
+                <input
+                  required
+                  type="month"
+                  value={form.mesRef}
+                  onChange={e => setForm(p => ({ ...p, mesRef: e.target.value }))}
+                  className={editingId ? inpDisabled : inp}
+                  disabled={!!editingId}
+                />
+              </div>
               <div><label className={lbl}>Receita Tarifária Realizada (R$)</label><input type="number" step="0.01" value={form.receitaTarifaria} onChange={e => setForm(p => ({ ...p, receitaTarifaria: e.target.value }))} className={inp} /></div>
               <div><label className={lbl}>Floating Realizado (R$)</label><input type="number" step="0.01" value={form.floatingRealizado} onChange={e => setForm(p => ({ ...p, floatingRealizado: e.target.value }))} className={inp} /></div>
               {form.receitaTarifaria && (
@@ -125,7 +174,7 @@ export default function ReceitaClient() {
                 </p>
               )}
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="button" onClick={closeModal} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
               </div>
             </form>

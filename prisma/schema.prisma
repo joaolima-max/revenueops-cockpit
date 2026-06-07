@@ -219,6 +219,7 @@ model Cliente {
   pedidos        PedidoCobravel[]
   incidentes     IncidenteCliente[]
   contasReceber  ContaReceber[]
+  followUps      FollowUp[]
 }
 
 model Processamento {
@@ -340,6 +341,15 @@ enum ContaReceberStatus {
   INADIMPLENTE
 }
 
+enum FollowUpTipo {
+  PICO_OPERACIONAL
+  REUNIAO
+  MONITORAMENTO
+  FOLLOW_UP
+  ALERTA
+  OUTRO
+}
+
 model Auditoria {
   id         String   @id @default(cuid())
   acao       String
@@ -396,4 +406,22 @@ model ContaReceber {
   updatedAt   DateTime           @updatedAt
   clienteId   String
   cliente     Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model FollowUp {
+  id          String       @id @default(cuid())
+  titulo      String
+  descricao   String?
+  tipo        FollowUpTipo @default(FOLLOW_UP)
+  recorrente  Boolean      @default(false)
+  diaSemana   Int?
+  horaInicio  String?
+  horaFim     String?
+  dataInicio  DateTime?
+  dataFim     DateTime?
+  notas       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  clienteId   String
+  cliente     Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
