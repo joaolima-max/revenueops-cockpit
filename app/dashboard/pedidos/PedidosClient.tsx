@@ -21,7 +21,7 @@ interface Props {
   clientes: Cliente[]
 }
 
-const TIPOS = ['Certificado Digital', 'Homologação', 'Integração Extra', 'Suporte Especializado', 'Consultoria', 'Outros']
+const TIPOS = ['Certificado de Integração', 'Solicitação de Background Check', 'Abertura de Segunda Conta']
 const STATUS_LIST = ['PENDENTE', 'FATURADO', 'PAGO', 'CANCELADO']
 
 export default function PedidosClient({ initial, clientes }: Props) {

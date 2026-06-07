@@ -34,7 +34,7 @@ async function getData() {
     prisma.meta.findFirst({ where: { tipo: 'RECEITA', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'TPV', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'MRR', periodo: mesAtual } }),
-    prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
+    prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'desc' } }),
     prisma.forecastGeral.findFirst({ where: { mesRef: mesAtual } }),
   ])
 
@@ -48,11 +48,13 @@ async function getData() {
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
   const receitaAno = rec12M.filter(r => r.mesRef.startsWith(anoAtual)).reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
 
-  // Precisão forecast geral: meses com realizado vs previsto
   const fgComReal = fg12M.filter(f => f.faturamentoRealizado != null && f.faturamentoPrevisto > 0)
   const precisao = fgComReal.length > 0
     ? fgComReal.reduce((a, f) => a + (f.faturamentoRealizado! / f.faturamentoPrevisto) * 100, 0) / fgComReal.length
     : 0
+
+  // Margem operacional: do forecast geral do mês atual, ou média dos realizados
+  const margemOp = fgMesAtual?.margemRealizada ?? fgMesAtual?.margemPrevista ?? null
 
   const procMap = new Map(proc12M.map(p => [p.mesRef, p._sum]))
   const recMap = new Map(rec12M.map(r => [r.mesRef, r]))
@@ -62,10 +64,7 @@ async function getData() {
     const p = procMap.get(mes), r = recMap.get(mes), fg = fgMap.get(mes)
     const t = p?.tpv || 0, rv = r?.receitaTarifaria || 0
     return {
-      mes,
-      receitaTarifaria: rv,
-      floating: r?.floatingRealizado || 0,
-      tpv: t,
+      mes, receitaTarifaria: rv, floating: r?.floatingRealizado || 0, tpv: t,
       faturamentoPrevisto: fg?.faturamentoPrevisto || 0,
       faturamentoRealizado: fg?.faturamentoRealizado || 0,
       tpvPrevisto: fg?.tpvPrevisto || 0,
@@ -75,18 +74,17 @@ async function getData() {
   })
 
   return {
-    kpis: { clientesAtivos, mrr, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx },
+    kpis: { clientesAtivos, mrr, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution: meses.map(mes => ({ mes, mrr })),
-    mesAtual,
-    fgMesAtual,
+    mesAtual, fgMesAtual, fg12M,
   }
 }
 
 export default async function DashboardPage() {
   const session = await getSession()
-  const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual } = await getData()
+  const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual, fg12M } = await getData()
 
   const primary = [
     { label: 'Receita Total (Ano)', value: formatCompact(kpis.receitaAno), sub: 'Tarifária + Floating', color: 'text-indigo-400', bg: 'bg-indigo-500/10', meta: metas.receita, metaVal: kpis.receita },
@@ -99,30 +97,18 @@ export default async function DashboardPage() {
     { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400' },
     { label: 'Floating (Mês)', value: formatCurrency(kpis.floating), color: 'text-emerald-400' },
     { label: 'Take Rate', value: formatPercent(kpis.takeRate, 3), color: 'text-amber-400' },
-    { label: 'Churn (Mês)', value: String(kpis.churn), color: kpis.churn > 0 ? 'text-red-400' : 'text-emerald-400' },
+    { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
     { label: 'MED Médio', value: formatPercent(kpis.med, 2), color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]
 
-  // Forecast do mês atual — progresso
+  // Cards do forecast do mês atual
   const fg = fgMesAtual
   const fgCards = fg ? [
-    {
-      label: 'TPV Previsto', previsto: fg.tpvPrevisto, realizado: fg.tpvRealizado,
-      fmt: formatTPV, color: 'text-sky-400', bar: '#0ea5e9',
-    },
-    {
-      label: 'Faturamento Previsto', previsto: fg.faturamentoPrevisto, realizado: fg.faturamentoRealizado,
-      fmt: formatCurrency, color: 'text-emerald-400', bar: '#10b981',
-    },
-    {
-      label: 'Qtd. Transações', previsto: fg.qtdTransacoesPrevista, realizado: fg.qtdTransacoesRealizadas,
-      fmt: (v: number) => v.toLocaleString('pt-BR'), color: 'text-violet-400', bar: '#8b5cf6',
-    },
-    {
-      label: 'Margem Prevista', previsto: fg.margemPrevista, realizado: fg.margemRealizada,
-      fmt: (v: number) => formatPercent(v, 2), color: 'text-amber-400', bar: '#f59e0b',
-    },
+    { label: 'TPV Previsto', previsto: fg.tpvPrevisto, realizado: fg.tpvRealizado, fmt: formatTPV, color: 'text-sky-400' },
+    { label: 'Faturamento Previsto', previsto: fg.faturamentoPrevisto, realizado: fg.faturamentoRealizado, fmt: formatCurrency, color: 'text-emerald-400' },
+    { label: 'Qtd. Transações', previsto: fg.qtdTransacoesPrevista, realizado: fg.qtdTransacoesRealizadas, fmt: (v: number) => v.toLocaleString('pt-BR'), color: 'text-violet-400' },
+    { label: 'Margem Operacional', previsto: fg.margemPrevista, realizado: fg.margemRealizada, fmt: (v: number) => formatPercent(v, 2), color: 'text-amber-400' },
   ] : []
 
   return (
@@ -134,6 +120,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* KPIs primários */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {primary.map(k => {
           const pct = k.meta && k.metaVal > 0 ? Math.min((k.metaVal / k.meta.valor) * 100, 100) : null
@@ -161,6 +148,7 @@ export default async function DashboardPage() {
         })}
       </div>
 
+      {/* KPIs secundários */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         {secondary.map(k => (
           <div key={k.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -168,6 +156,25 @@ export default async function DashboardPage() {
             <p className={`text-base font-bold ${k.color}`}>{k.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Receita Mensal — mês atual */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4">Receita Mensal — {formatMesRef(mesAtual)}</h3>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          {[
+            { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400', note: 'Do processamento' },
+            { label: 'Floating', value: formatCurrency(kpis.floating), color: 'text-emerald-400', note: 'Rendimento em trânsito' },
+            { label: 'MRR', value: formatCurrency(kpis.mrr), color: 'text-violet-400', note: 'Mensalidades recorrentes' },
+            { label: 'Total Mensal', value: formatCurrency(kpis.receita + kpis.floating + kpis.mrr), color: 'text-white', note: 'Tarifária + Floating + MRR' },
+          ].map(k => (
+            <div key={k.label}>
+              <p className="text-xs text-gray-600 mb-1">{k.label}</p>
+              <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
+              <p className="text-xs text-gray-700 mt-0.5">{k.note}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Forecast da Carteira — mês atual */}
@@ -180,11 +187,9 @@ export default async function DashboardPage() {
             </div>
             <span className="text-xs text-gray-700 bg-gray-800 px-2 py-1 rounded-lg">Atualizado em tempo real</span>
           </div>
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
             {fgCards.map(card => {
-              const pct = card.realizado != null && card.previsto > 0
-                ? Math.min((card.realizado / card.previsto) * 100, 150)
-                : null
+              const pct = card.realizado != null && card.previsto > 0 ? (card.realizado / card.previsto) * 100 : null
               const barPct = pct !== null ? Math.min(pct, 100) : 0
               const barColor = pct === null ? '#374151' : pct >= 100 ? '#10b981' : pct >= 70 ? '#f59e0b' : '#ef4444'
               return (
@@ -193,26 +198,63 @@ export default async function DashboardPage() {
                   <p className={`text-lg font-bold ${card.color}`}>{card.fmt(card.previsto)}</p>
                   {card.realizado != null ? (
                     <>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Realizado: <span className="text-gray-300">{card.fmt(card.realizado)}</span>
-                      </p>
-                      <div className="mt-2 h-1.5 bg-gray-800 rounded-full">
-                        <div className="h-1.5 rounded-full transition-all" style={{ width: `${barPct}%`, background: barColor }} />
+                      <p className="text-xs text-gray-500 mt-0.5">Real: <span className="text-gray-300">{card.fmt(card.realizado)}</span></p>
+                      <div className="mt-1.5 h-1.5 bg-gray-800 rounded-full">
+                        <div className="h-1.5 rounded-full" style={{ width: `${barPct}%`, background: barColor }} />
                       </div>
-                      <p className="text-xs mt-1" style={{ color: barColor }}>
-                        {pct !== null ? `${pct.toFixed(0)}% do previsto` : ''}
-                      </p>
+                      <p className="text-xs mt-1" style={{ color: barColor }}>{pct !== null ? `${pct.toFixed(0)}%` : ''}</p>
                     </>
                   ) : (
-                    <p className="text-xs text-gray-700 mt-0.5">Realizado não lançado</p>
+                    <p className="text-xs text-gray-700 mt-0.5">Não lançado</p>
                   )}
                 </div>
               )
             })}
           </div>
-          {fg.notas && (
-            <p className="mt-4 text-xs text-gray-600 border-t border-gray-800 pt-3">{fg.notas}</p>
-          )}
+          {fg.notas && <p className="mt-4 text-xs text-gray-600 border-t border-gray-800 pt-3">{fg.notas}</p>}
+        </div>
+      )}
+
+      {/* Tabela de Forecast — todos os meses */}
+      {fg12M.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Histórico de Forecast da Carteira</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  {['Mês', 'TPV Prev.', 'TPV Real.', 'Qtd. Tx Prev.', 'Qtd. Tx Real.', 'Faturamento Prev.', 'Faturamento Real.', 'Margem Op. Prev.', 'Margem Op. Real.', 'Precisão'].map(h => (
+                    <th key={h} className={`text-xs font-medium text-gray-600 pb-2 ${h === 'Mês' ? 'text-left' : 'text-right'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fg12M.map(fc => {
+                  const prec = fc.faturamentoRealizado != null && fc.faturamentoPrevisto > 0
+                    ? (fc.faturamentoRealizado / fc.faturamentoPrevisto) * 100 : null
+                  return (
+                    <tr key={fc.id} className={`border-b border-gray-800/50 ${fc.mesRef === mesAtual ? 'bg-emerald-500/5' : ''}`}>
+                      <td className="py-2.5 text-gray-300 font-medium">
+                        {formatMesRef(fc.mesRef)}
+                        {fc.mesRef === mesAtual && <span className="ml-1.5 text-xs text-emerald-500">●</span>}
+                      </td>
+                      <td className="py-2.5 text-right text-sky-400">{formatTPV(fc.tpvPrevisto)}</td>
+                      <td className="py-2.5 text-right text-sky-300">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
+                      <td className="py-2.5 text-right text-violet-400">{fc.qtdTransacoesPrevista.toLocaleString('pt-BR')}</td>
+                      <td className="py-2.5 text-right text-violet-300">{fc.qtdTransacoesRealizadas != null ? fc.qtdTransacoesRealizadas.toLocaleString('pt-BR') : <span className="text-gray-700">—</span>}</td>
+                      <td className="py-2.5 text-right text-emerald-400">{formatCurrency(fc.faturamentoPrevisto)}</td>
+                      <td className="py-2.5 text-right text-emerald-300">{fc.faturamentoRealizado != null ? formatCurrency(fc.faturamentoRealizado) : <span className="text-gray-700">—</span>}</td>
+                      <td className="py-2.5 text-right text-amber-400">{formatPercent(fc.margemPrevista, 2)}</td>
+                      <td className="py-2.5 text-right text-amber-300">{fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-gray-700">—</span>}</td>
+                      <td className={`py-2.5 text-right font-medium ${prec === null ? 'text-gray-700' : prec >= 90 ? 'text-emerald-400' : prec >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {prec !== null ? formatPercent(prec, 1) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
