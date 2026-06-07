@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     mensalidadeApi, sustentacaoWhiteLabel, setup,
     tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
     receitaPrevistaMensal, volumeMinimo, descontoPercent, overpricePercent,
-    dataFechamento, dataEncerramento, notas,
+    dataFechamento, dataEncerramento, notas, ownerId,
   } = body
 
   const cliente = await prisma.cliente.update({
@@ -58,6 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       dataFechamento: dataFechamento ? new Date(dataFechamento) : undefined,
       dataEncerramento: dataEncerramento ? new Date(dataEncerramento) : undefined,
       notas: notas ?? undefined,
+      ...(ownerId ? { ownerId } : {}),
     },
   })
 

@@ -354,3 +354,19 @@ model Parametro {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model ForecastGeral {
+  id                      String   @id @default(cuid())
+  mesRef                  String   @unique
+  tpvPrevisto             Float    @default(0)
+  qtdTransacoesPrevista   Int      @default(0)
+  faturamentoPrevisto     Float    @default(0)
+  margemPrevista          Float    @default(0)
+  tpvRealizado            Float?
+  qtdTransacoesRealizadas Int?
+  faturamentoRealizado    Float?
+  margemRealizada         Float?
+  notas                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}

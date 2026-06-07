@@ -3,108 +3,131 @@
 import { useState, useEffect, useCallback } from 'react'
 import { formatCurrency, formatTPV, formatPercent, formatMesRef, getCurrentMonth } from '@/lib/utils'
 
-interface Cliente { id: string; nome: string; modeloOperacional: string }
-interface ForecastItem {
-  id: string; mesRef: string; clienteId: string; tpvPrevisto: number; qtdPrevista: number
-  taxaMedia: number; receitaPrevista: number; tpvRealizado: number | null; receitaRealizada: number | null
-  cliente: { nome: string; modeloOperacional: string }
+interface ForecastGeral {
+  id: string; mesRef: string
+  tpvPrevisto: number; qtdTransacoesPrevista: number; faturamentoPrevisto: number; margemPrevista: number
+  tpvRealizado: number | null; qtdTransacoesRealizadas: number | null
+  faturamentoRealizado: number | null; margemRealizada: number | null
+  notas: string | null
 }
 
-const emptyForm = { clienteId: '', mesRef: getCurrentMonth(), tpvPrevisto: '', qtdPrevista: '', taxaMedia: '', tpvRealizado: '', receitaRealizada: '' }
+const emptyForm = {
+  mesRef: getCurrentMonth(),
+  tpvPrevisto: '', qtdTransacoesPrevista: '', faturamentoPrevisto: '', margemPrevista: '',
+  tpvRealizado: '', qtdTransacoesRealizadas: '', faturamentoRealizado: '', margemRealizada: '',
+  notas: '',
+}
+
+function fromForecast(fc: ForecastGeral) {
+  return {
+    mesRef: fc.mesRef,
+    tpvPrevisto: String(fc.tpvPrevisto || ''),
+    qtdTransacoesPrevista: String(fc.qtdTransacoesPrevista || ''),
+    faturamentoPrevisto: String(fc.faturamentoPrevisto || ''),
+    margemPrevista: String(fc.margemPrevista || ''),
+    tpvRealizado: fc.tpvRealizado != null ? String(fc.tpvRealizado) : '',
+    qtdTransacoesRealizadas: fc.qtdTransacoesRealizadas != null ? String(fc.qtdTransacoesRealizadas) : '',
+    faturamentoRealizado: fc.faturamentoRealizado != null ? String(fc.faturamentoRealizado) : '',
+    margemRealizada: fc.margemRealizada != null ? String(fc.margemRealizada) : '',
+    notas: fc.notas || '',
+  }
+}
 
 export default function ForecastClient() {
-  const [forecasts, setForecasts] = useState<ForecastItem[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [forecasts, setForecasts] = useState<ForecastGeral[]>([])
   const [loading, setLoading] = useState(true)
   const [mesFilter, setMesFilter] = useState('')
-  const [clienteFilter, setClienteFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [field]: e.target.value }))
-
-  const receitaCalculada = form.tpvPrevisto && form.taxaMedia
-    ? parseFloat(form.tpvPrevisto) * (parseFloat(form.taxaMedia) / 100)
-    : 0
 
   const fetchData = useCallback(async () => {
     const p = new URLSearchParams()
     if (mesFilter) p.set('mes', mesFilter)
-    if (clienteFilter) p.set('clienteId', clienteFilter)
-    const res = await fetch(`/api/forecast?${p}`)
-    if (res.ok) { const d = await res.json(); setForecasts(d.forecasts); setClientes(d.clientes) }
+    const res = await fetch(`/api/forecast-geral?${p}`)
+    if (res.ok) { const d = await res.json(); setForecasts(d.forecasts) }
     setLoading(false)
-  }, [mesFilter, clienteFilter])
+  }, [mesFilter])
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  function openNew() { setEditingId(null); setForm(emptyForm); setShowModal(true) }
+  function openEdit(fc: ForecastGeral) { setEditingId(fc.id); setForm(fromForecast(fc)); setShowModal(true) }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
-    await fetch('/api/forecast', {
+    const n = (v: string) => v !== '' ? parseFloat(v) : null
+    const ni = (v: string) => v !== '' ? parseInt(v) : null
+    await fetch('/api/forecast-geral', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        clienteId: form.clienteId, mesRef: form.mesRef,
+        mesRef: form.mesRef,
         tpvPrevisto: parseFloat(form.tpvPrevisto) || 0,
-        qtdPrevista: parseInt(form.qtdPrevista) || 0,
-        taxaMedia: parseFloat(form.taxaMedia) || 0,
-        tpvRealizado: form.tpvRealizado ? parseFloat(form.tpvRealizado) : null,
-        receitaRealizada: form.receitaRealizada ? parseFloat(form.receitaRealizada) : null,
+        qtdTransacoesPrevista: parseInt(form.qtdTransacoesPrevista) || 0,
+        faturamentoPrevisto: parseFloat(form.faturamentoPrevisto) || 0,
+        margemPrevista: parseFloat(form.margemPrevista) || 0,
+        tpvRealizado: n(form.tpvRealizado),
+        qtdTransacoesRealizadas: ni(form.qtdTransacoesRealizadas),
+        faturamentoRealizado: n(form.faturamentoRealizado),
+        margemRealizada: n(form.margemRealizada),
+        notas: form.notas || null,
       }),
     })
     setShowModal(false); setForm(emptyForm); fetchData(); setSaving(false)
   }
 
-  const totals = forecasts.reduce((a, f) => ({
-    previsto: a.previsto + f.receitaPrevista,
-    realizado: a.realizado + (f.receitaRealizada || 0),
-    tpvPrevisto: a.tpvPrevisto + f.tpvPrevisto,
-    tpvRealizado: a.tpvRealizado + (f.tpvRealizado || 0),
-  }), { previsto: 0, realizado: 0, tpvPrevisto: 0, tpvRealizado: 0 })
+  const currentMonthFc = forecasts.find(fc => fc.mesRef === getCurrentMonth())
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500'
+  const totals = forecasts.reduce((a, fc) => ({
+    tpvPrevisto: a.tpvPrevisto + fc.tpvPrevisto,
+    faturamentoPrevisto: a.faturamentoPrevisto + fc.faturamentoPrevisto,
+    tpvRealizado: a.tpvRealizado + (fc.tpvRealizado || 0),
+    faturamentoRealizado: a.faturamentoRealizado + (fc.faturamentoRealizado || 0),
+  }), { tpvPrevisto: 0, faturamentoPrevisto: 0, tpvRealizado: 0, faturamentoRealizado: 0 })
+
+  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
   const lbl = 'block text-xs text-gray-500 mb-1'
 
   return (
     <div className="min-h-screen bg-gray-950 p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-lg font-bold text-white">Forecast Operacional</h1>
-          <p className="text-gray-600 text-sm mt-0.5">Projeção e acompanhamento de receita por cliente</p>
+          <h1 className="text-lg font-bold text-white">Forecast da Carteira</h1>
+          <p className="text-gray-600 text-sm mt-0.5">Previsão geral de TPV, transações, faturamento e margem</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
+        <button onClick={openNew}
+          className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all"
+          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
           + Novo Forecast
         </button>
       </div>
 
-      {/* Summary */}
-      {forecasts.length > 0 && (
+      {currentMonthFc && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           {[
-            { l: 'TPV Previsto', v: formatTPV(totals.tpvPrevisto), c: 'text-sky-400' },
-            { l: 'TPV Realizado', v: totals.tpvRealizado > 0 ? formatTPV(totals.tpvRealizado) : '—', c: 'text-sky-300' },
-            { l: 'Receita Prevista', v: formatCurrency(totals.previsto), c: 'text-violet-400' },
-            { l: 'Receita Realizada', v: totals.realizado > 0 ? formatCurrency(totals.realizado) : '—', c: 'text-emerald-400' },
+            { l: 'TPV Previsto (mês atual)', v: formatTPV(currentMonthFc.tpvPrevisto), r: currentMonthFc.tpvRealizado ? formatTPV(currentMonthFc.tpvRealizado) : null, c: 'text-sky-400' },
+            { l: 'Qtd. Transações Prevista', v: currentMonthFc.qtdTransacoesPrevista.toLocaleString('pt-BR'), r: currentMonthFc.qtdTransacoesRealizadas ? currentMonthFc.qtdTransacoesRealizadas.toLocaleString('pt-BR') : null, c: 'text-violet-400' },
+            { l: 'Faturamento Previsto', v: formatCurrency(currentMonthFc.faturamentoPrevisto), r: currentMonthFc.faturamentoRealizado ? formatCurrency(currentMonthFc.faturamentoRealizado) : null, c: 'text-emerald-400' },
+            { l: 'Margem Prevista', v: formatPercent(currentMonthFc.margemPrevista, 2), r: currentMonthFc.margemRealizada != null ? formatPercent(currentMonthFc.margemRealizada, 2) : null, c: 'text-amber-400' },
           ].map(k => (
             <div key={k.l} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <p className="text-gray-600 text-xs mb-1.5">{k.l}</p>
-              <p className={`text-lg font-bold ${k.c}`}>{k.v}</p>
+              <p className={`text-xl font-bold ${k.c}`}>{k.v}</p>
+              {k.r && <p className="text-xs text-gray-500 mt-0.5">Realizado: <span className="text-gray-300">{k.r}</span></p>}
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex gap-3 mb-5 flex-wrap">
+      <div className="flex gap-3 mb-5">
         <input type="month" value={mesFilter} onChange={e => setMesFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
-        <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 flex-1 max-w-64">
-          <option value="">Todos os clientes</option>
-          {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-        </select>
-        {(mesFilter || clienteFilter) && (
-          <button onClick={() => { setMesFilter(''); setClienteFilter('') }} className="text-gray-600 hover:text-gray-400 text-sm px-3">Limpar</button>
+          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+        {mesFilter && (
+          <button onClick={() => setMesFilter('')} className="text-gray-600 hover:text-gray-400 text-sm px-3">Limpar</button>
         )}
       </div>
 
@@ -112,29 +135,42 @@ export default function ForecastClient() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-800">
-              {['Mês', 'Cliente', 'TPV Previsto', 'Taxa Média', 'Rec. Prevista', 'TPV Realizado', 'Rec. Realizada', 'Precisão'].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${h === 'Mês' || h === 'Cliente' ? 'text-left px-5' : 'text-right px-4'}`}>{h}</th>
+              {['Mês', 'TPV Previsto', 'TPV Realizado', 'Qtd. Transações', 'Faturamento Prev.', 'Faturamento Real.', 'Margem Prev.', 'Margem Real.', ''].map(h => (
+                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${h === 'Mês' || h === '' ? 'text-left px-5' : 'text-right px-3'}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
+              <tr><td colSpan={9} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
             ) : forecasts.length === 0 ? (
-              <tr><td colSpan={8} className="text-center text-gray-700 py-12 text-sm">Nenhum forecast encontrado</td></tr>
+              <tr><td colSpan={9} className="text-center text-gray-700 py-12 text-sm">Nenhum forecast cadastrado</td></tr>
             ) : forecasts.map(fc => {
-              const prec = fc.receitaRealizada && fc.receitaPrevista > 0 ? (fc.receitaRealizada / fc.receitaPrevista) * 100 : null
+              const precFat = fc.faturamentoRealizado && fc.faturamentoPrevisto > 0
+                ? (fc.faturamentoRealizado / fc.faturamentoPrevisto) * 100 : null
               return (
                 <tr key={fc.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                  <td className="px-5 py-3 text-sm font-medium text-gray-300">{formatMesRef(fc.mesRef)}</td>
-                  <td className="px-5 py-3 text-sm text-white">{fc.cliente.nome}</td>
-                  <td className="px-4 py-3 text-right text-sm text-sky-400">{formatTPV(fc.tpvPrevisto)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-500">{formatPercent(fc.taxaMedia, 3)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-violet-400">{formatCurrency(fc.receitaPrevista)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-400">{fc.tpvRealizado ? formatTPV(fc.tpvRealizado) : '—'}</td>
-                  <td className="px-4 py-3 text-right text-sm text-emerald-400">{fc.receitaRealizada ? formatCurrency(fc.receitaRealizada) : '—'}</td>
-                  <td className={`px-4 py-3 text-right text-sm font-medium ${prec === null ? 'text-gray-700' : prec >= 90 ? 'text-emerald-400' : prec >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
-                    {prec !== null ? formatPercent(prec, 1) : '—'}
+                  <td className="px-5 py-3 text-sm font-semibold text-white">{formatMesRef(fc.mesRef)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-sky-400">{formatTPV(fc.tpvPrevisto)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-sky-300">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
+                  <td className="px-3 py-3 text-right text-sm text-violet-400">
+                    {fc.qtdTransacoesPrevista.toLocaleString('pt-BR')}
+                    {fc.qtdTransacoesRealizadas != null && <span className="text-gray-600"> / {fc.qtdTransacoesRealizadas.toLocaleString('pt-BR')}</span>}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm text-emerald-400">{formatCurrency(fc.faturamentoPrevisto)}</td>
+                  <td className="px-3 py-3 text-right text-sm">
+                    {fc.faturamentoRealizado != null ? (
+                      <span className={precFat! >= 90 ? 'text-emerald-400' : precFat! >= 70 ? 'text-amber-400' : 'text-red-400'}>
+                        {formatCurrency(fc.faturamentoRealizado)}
+                      </span>
+                    ) : <span className="text-gray-700">—</span>}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm text-amber-400">{formatPercent(fc.margemPrevista, 2)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-amber-300">
+                    {fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-gray-700">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <button onClick={() => openEdit(fc)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">Editar</button>
                   </td>
                 </tr>
               )
@@ -145,52 +181,46 @@ export default function ForecastClient() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Novo Forecast</h2>
+              <h2 className="text-base font-semibold text-white">{editingId ? 'Editar Forecast' : 'Novo Forecast'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className={lbl}>Cliente *</label>
-                  <select required value={form.clienteId} onChange={f('clienteId')} className={inp}>
-                    <option value="">Selecionar...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={lbl}>Mês de Referência *</label>
-                  <input required type="month" value={form.mesRef} onChange={f('mesRef')} className={inp} />
-                </div>
-                <div>
-                  <label className={lbl}>Taxa Média (%)</label>
-                  <input type="number" step="0.001" value={form.taxaMedia} onChange={f('taxaMedia')} placeholder="1.700" className={inp} />
-                </div>
-                <div>
-                  <label className={lbl}>TPV Previsto (R$)</label>
-                  <input type="number" step="0.01" value={form.tpvPrevisto} onChange={f('tpvPrevisto')} className={inp} />
-                </div>
-                <div>
-                  <label className={lbl}>Qtd. Transações Prevista</label>
-                  <input type="number" value={form.qtdPrevista} onChange={f('qtdPrevista')} className={inp} />
+              <div>
+                <label className={lbl}>Mês de Referência *</label>
+                <input required type="month" value={form.mesRef} onChange={f('mesRef')} disabled={!!editingId} className={inp + (editingId ? ' opacity-50 cursor-not-allowed' : '')} />
+              </div>
+
+              <div className="border-t border-gray-800 pt-4">
+                <p className="text-xs text-gray-600 font-semibold tracking-wider mb-3">PREVISTO</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className={lbl}>TPV Previsto (R$)</label><input type="number" step="0.01" value={form.tpvPrevisto} onChange={f('tpvPrevisto')} className={inp} /></div>
+                  <div><label className={lbl}>Qtd. Transações Prevista</label><input type="number" value={form.qtdTransacoesPrevista} onChange={f('qtdTransacoesPrevista')} className={inp} /></div>
+                  <div><label className={lbl}>Faturamento Previsto (R$)</label><input type="number" step="0.01" value={form.faturamentoPrevisto} onChange={f('faturamentoPrevisto')} className={inp} /></div>
+                  <div><label className={lbl}>Margem Prevista (%)</label><input type="number" step="0.01" min="0" max="100" value={form.margemPrevista} onChange={f('margemPrevista')} className={inp} /></div>
                 </div>
               </div>
-              {receitaCalculada > 0 && (
-                <p className="text-xs text-indigo-400 bg-indigo-500/10 px-3 py-2 rounded-lg">
-                  Receita prevista calculada: <strong>{formatCurrency(receitaCalculada)}</strong>
-                </p>
-              )}
+
               <div className="border-t border-gray-800 pt-4">
                 <p className="text-xs text-gray-600 font-semibold tracking-wider mb-3">REALIZADO (opcional)</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div><label className={lbl}>TPV Realizado (R$)</label><input type="number" step="0.01" value={form.tpvRealizado} onChange={f('tpvRealizado')} className={inp} /></div>
-                  <div><label className={lbl}>Receita Realizada (R$)</label><input type="number" step="0.01" value={form.receitaRealizada} onChange={f('receitaRealizada')} className={inp} /></div>
+                  <div><label className={lbl}>Qtd. Transações Realizadas</label><input type="number" value={form.qtdTransacoesRealizadas} onChange={f('qtdTransacoesRealizadas')} className={inp} /></div>
+                  <div><label className={lbl}>Faturamento Realizado (R$)</label><input type="number" step="0.01" value={form.faturamentoRealizado} onChange={f('faturamentoRealizado')} className={inp} /></div>
+                  <div><label className={lbl}>Margem Realizada (%)</label><input type="number" step="0.01" min="0" max="100" value={form.margemRealizada} onChange={f('margemRealizada')} className={inp} /></div>
                 </div>
               </div>
+
+              <div><label className={lbl}>Notas</label><textarea rows={2} value={form.notas} onChange={f('notas')} className={inp + ' resize-none'} /></div>
+
               <div className="flex justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
+                <button type="submit" disabled={saving}
+                  className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
+                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  {saving ? 'Salvando...' : 'Salvar'}
+                </button>
               </div>
             </form>
           </div>
