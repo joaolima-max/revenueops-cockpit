@@ -10,12 +10,14 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || ''
   const modelo = searchParams.get('modelo') || ''
+  const segmento = searchParams.get('segmento') || ''
 
   const clientes = await prisma.cliente.findMany({
     where: {
       ...(search ? { nome: { contains: search, mode: 'insensitive' } } : {}),
       ...(status ? { status: status as 'ATIVO' | 'INATIVO' | 'PROSPECCAO' | 'ENCERRADO' } : {}),
       ...(modelo ? { modeloOperacional: modelo as 'API' | 'WHITE_LABEL' } : {}),
+      ...(segmento ? { segmento: segmento as 'IGAMING' | 'ECOMMERCE' | 'SAAS' | 'ERP' | 'TELECOM' | 'CRIPTOMOEDAS' | 'VAREJO' | 'OUTROS' } : {}),
     },
     include: { owner: { select: { name: true } } },
     orderBy: [{ status: 'asc' }, { nome: 'asc' }],
@@ -31,9 +33,12 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const {
     nome, cnpj, email, telefone, modeloOperacional,
+    segmento, operacao, scoreRisco,
     mensalidadeApi, sustentacaoWhiteLabel, setup,
     tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
-    receitaPrevistaMensal, dataFechamento, notas,
+    receitaPrevistaMensal, volumeMinimo,
+    descontoPercent, overpricePercent,
+    dataFechamento, notas,
   } = body
 
   if (!nome || !modeloOperacional) {
@@ -44,6 +49,9 @@ export async function POST(request: NextRequest) {
     data: {
       nome, cnpj: cnpj || null, email: email || null, telefone: telefone || null,
       modeloOperacional,
+      segmento: segmento || null,
+      operacao: operacao || null,
+      scoreRisco: scoreRisco || null,
       mensalidadeApi: mensalidadeApi ?? null,
       sustentacaoWhiteLabel: sustentacaoWhiteLabel ?? null,
       setup: setup ?? null,
@@ -51,6 +59,9 @@ export async function POST(request: NextRequest) {
       qtdTransacoesEsperada: qtdTransacoesEsperada ?? null,
       qtdMedEsperada: qtdMedEsperada ?? null,
       receitaPrevistaMensal: receitaPrevistaMensal ?? null,
+      volumeMinimo: volumeMinimo ?? null,
+      descontoPercent: descontoPercent ?? null,
+      overpricePercent: overpricePercent ?? null,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : null,
       notas: notas || null,
       ownerId: session.userId,

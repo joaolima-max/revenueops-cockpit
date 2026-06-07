@@ -28,9 +28,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const body = await request.json()
   const {
     nome, cnpj, email, telefone, modeloOperacional, status,
+    segmento, operacao, scoreRisco,
     mensalidadeApi, sustentacaoWhiteLabel, setup,
     tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
-    receitaPrevistaMensal, dataFechamento, dataEncerramento, notas,
+    receitaPrevistaMensal, volumeMinimo, descontoPercent, overpricePercent,
+    dataFechamento, dataEncerramento, notas,
   } = body
 
   const cliente = await prisma.cliente.update({
@@ -40,6 +42,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       cnpj: cnpj ?? undefined, email: email ?? undefined, telefone: telefone ?? undefined,
       ...(modeloOperacional ? { modeloOperacional } : {}),
       ...(status ? { status } : {}),
+      ...(segmento !== undefined ? { segmento: segmento || null } : {}),
+      ...(operacao !== undefined ? { operacao: operacao || null } : {}),
+      ...(scoreRisco !== undefined ? { scoreRisco: scoreRisco || null } : {}),
       mensalidadeApi: mensalidadeApi ?? undefined,
       sustentacaoWhiteLabel: sustentacaoWhiteLabel ?? undefined,
       setup: setup ?? undefined,
@@ -47,6 +52,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       qtdTransacoesEsperada: qtdTransacoesEsperada ?? undefined,
       qtdMedEsperada: qtdMedEsperada ?? undefined,
       receitaPrevistaMensal: receitaPrevistaMensal ?? undefined,
+      volumeMinimo: volumeMinimo ?? undefined,
+      descontoPercent: descontoPercent ?? undefined,
+      overpricePercent: overpricePercent ?? undefined,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : undefined,
       dataEncerramento: dataEncerramento ? new Date(dataEncerramento) : undefined,
       notas: notas ?? undefined,

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { formatCurrency, formatTPV, formatPercent, formatCompact, getLast12Months, getCurrentMonth, formatMesRef } from '@/lib/utils'
@@ -96,7 +98,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-lg font-bold text-white">Cockpit Executivo</h1>
         <p className="text-gray-600 text-sm mt-0.5">
-          {session?.name.split(' ')[0]} · {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          Olá, {session?.name.split(' ')[0]} · {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
 

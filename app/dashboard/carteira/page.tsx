@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { getSession } from '@/lib/auth'
 import CarteiraClient from './CarteiraClient'
 

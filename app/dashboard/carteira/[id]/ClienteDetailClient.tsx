@@ -2,16 +2,23 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatTPV, formatPercent, formatDate, formatMesRef, CLIENTE_STATUS_LABELS, CLIENTE_STATUS_COLORS, MODELO_OPERACIONAL_LABELS } from '@/lib/utils'
+import {
+  formatCurrency, formatTPV, formatPercent, formatDate, formatMesRef,
+  CLIENTE_STATUS_LABELS, CLIENTE_STATUS_COLORS, MODELO_OPERACIONAL_LABELS,
+  SEGMENTO_LABELS, SEGMENTO_COLORS, OPERACAO_LABELS, SCORE_RISCO_LABELS, SCORE_RISCO_COLORS,
+} from '@/lib/utils'
 
 interface Processamento { id: string; mesRef: string; tpv: number; qtdTransacoes: number; qtdMed: number; receitaTarifaria: number; floating: number }
 interface Forecast { id: string; mesRef: string; tpvPrevisto: number; receitaPrevista: number; tpvRealizado: number | null; receitaRealizada: number | null }
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null; telefone: string | null
   modeloOperacional: string; status: string; dataFechamento: string | null; dataEncerramento: string | null
+  segmento: string | null; operacao: string | null; scoreRisco: string | null
   mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null; setup: number | null
   tpvEsperado: number | null; qtdTransacoesEsperada: number | null; qtdMedEsperada: number | null
-  receitaPrevistaMensal: number | null; notas: string | null; owner: { name: string }
+  receitaPrevistaMensal: number | null; volumeMinimo: number | null
+  descontoPercent: number | null; overpricePercent: number | null
+  notas: string | null; owner: { name: string }
   processamentos: Processamento[]; forecasts: Forecast[]
 }
 
@@ -79,9 +86,19 @@ export default function ClienteDetailClient({ cliente: initial }: { cliente: Cli
             <button onClick={() => router.back()} className="text-gray-600 hover:text-gray-400 text-sm">← Carteira</button>
           </div>
           <h1 className="text-xl font-bold text-white">{cliente.nome}</h1>
-          <div className="flex items-center gap-3 mt-1.5">
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CLIENTE_STATUS_COLORS[statusEdit]}`}>{CLIENTE_STATUS_LABELS[statusEdit]}</span>
             <span className="text-xs text-gray-600">{MODELO_OPERACIONAL_LABELS[cliente.modeloOperacional]}</span>
+            {cliente.segmento && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[cliente.segmento]}`}>
+                {SEGMENTO_LABELS[cliente.segmento]}
+              </span>
+            )}
+            {cliente.scoreRisco && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_RISCO_COLORS[cliente.scoreRisco]}`}>
+                {SCORE_RISCO_LABELS[cliente.scoreRisco]}
+              </span>
+            )}
             {cliente.cnpj && <span className="text-xs text-gray-600">{cliente.cnpj}</span>}
           </div>
         </div>
@@ -115,12 +132,16 @@ export default function ClienteDetailClient({ cliente: initial }: { cliente: Cli
             {[
               { l: 'Email', v: cliente.email },
               { l: 'Telefone', v: cliente.telefone },
+              { l: 'Operação', v: cliente.operacao ? OPERACAO_LABELS[cliente.operacao] : null },
               { l: 'Fechamento', v: cliente.dataFechamento ? formatDate(cliente.dataFechamento) : null },
               { l: 'Mensalidade API', v: cliente.mensalidadeApi ? formatCurrency(cliente.mensalidadeApi) : null },
               { l: 'Sustentação WL', v: cliente.sustentacaoWhiteLabel ? formatCurrency(cliente.sustentacaoWhiteLabel) : null },
               { l: 'Setup', v: cliente.setup ? formatCurrency(cliente.setup) : null },
               { l: 'TPV Esperado', v: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : null },
+              { l: 'Volume Mínimo', v: cliente.volumeMinimo ? formatTPV(cliente.volumeMinimo) : null },
               { l: 'Receita Prevista', v: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : null },
+              { l: 'Desconto', v: cliente.descontoPercent ? `${cliente.descontoPercent}%` : null },
+              { l: 'Overprice', v: cliente.overpricePercent ? `${cliente.overpricePercent}%` : null },
               { l: 'Responsável', v: cliente.owner.name },
             ].map(({ l, v }) => v ? (
               <div key={l} className="flex justify-between">
@@ -135,7 +156,7 @@ export default function ClienteDetailClient({ cliente: initial }: { cliente: Cli
         <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-white">Histórico de Processamentos</h3>
-            <button onClick={() => setShowProcModal(true)} className="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors">+ Lançar</button>
+            <button onClick={() => setShowProcModal(true)} className="text-xs px-3 py-1.5 text-white rounded-lg transition-all" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>+ Lançar</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

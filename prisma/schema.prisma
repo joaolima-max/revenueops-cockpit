@@ -49,6 +49,62 @@ enum MetaTipo {
   MRR
   FLOATING
   CLIENTES_ATIVOS
+  NOVOS_CLIENTES
+  RETENCAO
+  TRANSACOES
+}
+
+enum Segmento {
+  IGAMING
+  ECOMMERCE
+  SAAS
+  ERP
+  TELECOM
+  CRIPTOMOEDAS
+  VAREJO
+  OUTROS
+}
+
+enum OperacaoCom {
+  CASH_IN
+  CASH_OUT
+  BAAS
+  WHITE_LABEL
+}
+
+enum ScoreRisco {
+  BAIXO
+  MEDIO
+  ALTO
+  CRITICO
+}
+
+enum TarefaStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum TarefaPrioridade {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum IncidenteCriticidade {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum PedidoStatus {
+  PENDENTE
+  FATURADO
+  PAGO
+  CANCELADO
 }
 
 model User {
@@ -61,10 +117,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leads      Lead[]     @relation("LeadOwner")
-  deals      Deal[]     @relation("DealOwner")
-  activities Activity[]
-  clientes   Cliente[]
+  leads          Lead[]          @relation("LeadOwner")
+  deals          Deal[]          @relation("DealOwner")
+  activities     Activity[]
+  clientes       Cliente[]
+  tarefasCriadas Tarefa[]        @relation("TarefaCriador")
+  tarefasAssign  Tarefa[]        @relation("TarefaResponsavel")
+  auditorias     Auditoria[]
 }
 
 model Lead {
@@ -78,6 +137,8 @@ model Lead {
   status    LeadStatus @default(NOVO)
   value     Float?
   notes     String?
+  segmento  Segmento?
+  operacao  OperacaoCom?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -96,6 +157,8 @@ model Deal {
   notes       String?
   expectedAt  DateTime?
   closedAt    DateTime?
+  segmento    Segmento?
+  operacao    OperacaoCom?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -128,6 +191,9 @@ model Cliente {
   telefone              String?
   modeloOperacional     ModeloOperacional
   status                ClienteStatus     @default(PROSPECCAO)
+  segmento              Segmento?
+  operacao              OperacaoCom?
+  scoreRisco            ScoreRisco?
   dataFechamento        DateTime?
   dataEncerramento      DateTime?
   mensalidadeApi        Float?
@@ -137,6 +203,9 @@ model Cliente {
   qtdTransacoesEsperada Int?
   qtdMedEsperada        Int?
   receitaPrevistaMensal Float?
+  volumeMinimo          Float?
+  descontoPercent       Float?
+  overpricePercent      Float?
   notas                 String?
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
@@ -145,6 +214,9 @@ model Cliente {
   owner          User            @relation(fields: [ownerId], references: [id])
   processamentos Processamento[]
   forecasts      Forecast[]
+  tarefas        Tarefa[]
+  pedidos        PedidoCobravel[]
+  incidentes     IncidenteCliente[]
 }
 
 model Processamento {
@@ -201,4 +273,72 @@ model Meta {
   updatedAt DateTime @updatedAt
 
   @@unique([tipo, periodo])
+}
+
+model Tarefa {
+  id          String           @id @default(cuid())
+  titulo      String
+  descricao   String?
+  status      TarefaStatus     @default(PENDENTE)
+  prioridade  TarefaPrioridade @default(MEDIA)
+  dueDate     DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  clienteId      String?
+  cliente        Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  criadoPorId    String
+  criadoPor      User     @relation("TarefaCriador", fields: [criadoPorId], references: [id])
+  responsavelId  String
+  responsavel    User     @relation("TarefaResponsavel", fields: [responsavelId], references: [id])
+}
+
+model Incidente {
+  id           String              @id @default(cuid())
+  titulo       String
+  descricao    String?
+  inicio       DateTime
+  fim          DateTime?
+  downtimeMins Int?
+  criticidade  IncidenteCriticidade @default(MEDIA)
+  satisfacao   Int?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  clientesAfetados IncidenteCliente[]
+}
+
+model IncidenteCliente {
+  incidenteId String
+  clienteId   String
+  incidente   Incidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
+  cliente     Cliente   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@id([incidenteId, clienteId])
+}
+
+model PedidoCobravel {
+  id        String       @id @default(cuid())
+  tipo      String
+  descricao String?
+  valor     Float
+  mesRef    String
+  status    PedidoStatus @default(PENDENTE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model Auditoria {
+  id         String   @id @default(cuid())
+  acao       String
+  entidade   String
+  entidadeId String?
+  detalhes   String?
+  createdAt  DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 }
