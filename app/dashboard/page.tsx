@@ -12,8 +12,9 @@ async function getData() {
 
   const [
     clientesAtivos, clientesEncerradosMes,
-    procMes, proc12M, rec12M, fc12M, mrrAgg,
+    procMes, proc12M, rec12M, mrrAgg,
     metaRec, metaTPV, metaMRR,
+    fg12M, fgMesAtual,
   ] = await Promise.all([
     prisma.cliente.count({ where: { status: 'ATIVO' } }),
     prisma.cliente.count({
@@ -29,15 +30,12 @@ async function getData() {
       orderBy: { mesRef: 'asc' },
     }),
     prisma.receitaRealizada.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
-    prisma.forecast.groupBy({
-      by: ['mesRef'], where: { mesRef: { in: meses } },
-      _sum: { receitaPrevista: true, receitaRealizada: true, tpvPrevisto: true },
-      orderBy: { mesRef: 'asc' },
-    }),
     prisma.cliente.aggregate({ where: { status: 'ATIVO' }, _sum: { mensalidadeApi: true, sustentacaoWhiteLabel: true } }),
     prisma.meta.findFirst({ where: { tipo: 'RECEITA', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'TPV', periodo: mesAtual } }),
     prisma.meta.findFirst({ where: { tipo: 'MRR', periodo: mesAtual } }),
+    prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
+    prisma.forecastGeral.findFirst({ where: { mesRef: mesAtual } }),
   ])
 
   const tpv = procMes._sum.tpv || 0
@@ -49,33 +47,46 @@ async function getData() {
   const takeRate = tpv > 0 ? (receita / tpv) * 100 : 0
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
   const receitaAno = rec12M.filter(r => r.mesRef.startsWith(anoAtual)).reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
-  const fcComReal = fc12M.filter(f => f._sum.receitaRealizada && f._sum.receitaPrevista && f._sum.receitaPrevista > 0)
-  const precisao = fcComReal.length > 0
-    ? fcComReal.reduce((a, f) => a + (f._sum.receitaRealizada! / f._sum.receitaPrevista!) * 100, 0) / fcComReal.length
+
+  // Precisão forecast geral: meses com realizado vs previsto
+  const fgComReal = fg12M.filter(f => f.faturamentoRealizado != null && f.faturamentoPrevisto > 0)
+  const precisao = fgComReal.length > 0
+    ? fgComReal.reduce((a, f) => a + (f.faturamentoRealizado! / f.faturamentoPrevisto) * 100, 0) / fgComReal.length
     : 0
 
   const procMap = new Map(proc12M.map(p => [p.mesRef, p._sum]))
   const recMap = new Map(rec12M.map(r => [r.mesRef, r]))
-  const fcMap = new Map(fc12M.map(f => [f.mesRef, f._sum]))
+  const fgMap = new Map(fg12M.map(f => [f.mesRef, f]))
 
   const chartData = meses.map(mes => {
-    const p = procMap.get(mes), r = recMap.get(mes), f = fcMap.get(mes)
+    const p = procMap.get(mes), r = recMap.get(mes), fg = fgMap.get(mes)
     const t = p?.tpv || 0, rv = r?.receitaTarifaria || 0
-    return { mes, receitaTarifaria: rv, floating: r?.floatingRealizado || 0, tpv: t, receitaPrevista: f?.receitaPrevista || 0, receitaRealizada: f?.receitaRealizada || 0, takeRate: t > 0 ? (rv / t) * 100 : 0 }
+    return {
+      mes,
+      receitaTarifaria: rv,
+      floating: r?.floatingRealizado || 0,
+      tpv: t,
+      faturamentoPrevisto: fg?.faturamentoPrevisto || 0,
+      faturamentoRealizado: fg?.faturamentoRealizado || 0,
+      tpvPrevisto: fg?.tpvPrevisto || 0,
+      tpvRealizado: fg?.tpvRealizado || 0,
+      takeRate: t > 0 ? (rv / t) * 100 : 0,
+    }
   })
 
   return {
-    kpis: { clientesAtivos, mrr, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao },
+    kpis: { clientesAtivos, mrr, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution: meses.map(mes => ({ mes, mrr })),
     mesAtual,
+    fgMesAtual,
   }
 }
 
 export default async function DashboardPage() {
   const session = await getSession()
-  const { kpis, metas, chartData, mrrEvolution, mesAtual } = await getData()
+  const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual } = await getData()
 
   const primary = [
     { label: 'Receita Total (Ano)', value: formatCompact(kpis.receitaAno), sub: 'Tarifária + Floating', color: 'text-indigo-400', bg: 'bg-indigo-500/10', meta: metas.receita, metaVal: kpis.receita },
@@ -92,6 +103,27 @@ export default async function DashboardPage() {
     { label: 'MED Médio', value: formatPercent(kpis.med, 2), color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]
+
+  // Forecast do mês atual — progresso
+  const fg = fgMesAtual
+  const fgCards = fg ? [
+    {
+      label: 'TPV Previsto', previsto: fg.tpvPrevisto, realizado: fg.tpvRealizado,
+      fmt: formatTPV, color: 'text-sky-400', bar: '#0ea5e9',
+    },
+    {
+      label: 'Faturamento Previsto', previsto: fg.faturamentoPrevisto, realizado: fg.faturamentoRealizado,
+      fmt: formatCurrency, color: 'text-emerald-400', bar: '#10b981',
+    },
+    {
+      label: 'Qtd. Transações', previsto: fg.qtdTransacoesPrevista, realizado: fg.qtdTransacoesRealizadas,
+      fmt: (v: number) => v.toLocaleString('pt-BR'), color: 'text-violet-400', bar: '#8b5cf6',
+    },
+    {
+      label: 'Margem Prevista', previsto: fg.margemPrevista, realizado: fg.margemRealizada,
+      fmt: (v: number) => formatPercent(v, 2), color: 'text-amber-400', bar: '#f59e0b',
+    },
+  ] : []
 
   return (
     <div className="min-h-screen bg-gray-950 p-6 space-y-5">
@@ -137,6 +169,52 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Forecast da Carteira — mês atual */}
+      {fg && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Forecast da Carteira — {formatMesRef(mesAtual)}</h3>
+              <p className="text-xs text-gray-600 mt-0.5">Evolução do realizado vs previsto no mês atual</p>
+            </div>
+            <span className="text-xs text-gray-700 bg-gray-800 px-2 py-1 rounded-lg">Atualizado em tempo real</span>
+          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            {fgCards.map(card => {
+              const pct = card.realizado != null && card.previsto > 0
+                ? Math.min((card.realizado / card.previsto) * 100, 150)
+                : null
+              const barPct = pct !== null ? Math.min(pct, 100) : 0
+              const barColor = pct === null ? '#374151' : pct >= 100 ? '#10b981' : pct >= 70 ? '#f59e0b' : '#ef4444'
+              return (
+                <div key={card.label}>
+                  <p className="text-xs text-gray-600 mb-1">{card.label}</p>
+                  <p className={`text-lg font-bold ${card.color}`}>{card.fmt(card.previsto)}</p>
+                  {card.realizado != null ? (
+                    <>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Realizado: <span className="text-gray-300">{card.fmt(card.realizado)}</span>
+                      </p>
+                      <div className="mt-2 h-1.5 bg-gray-800 rounded-full">
+                        <div className="h-1.5 rounded-full transition-all" style={{ width: `${barPct}%`, background: barColor }} />
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: barColor }}>
+                        {pct !== null ? `${pct.toFixed(0)}% do previsto` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-gray-700 mt-0.5">Realizado não lançado</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {fg.notas && (
+            <p className="mt-4 text-xs text-gray-600 border-t border-gray-800 pt-3">{fg.notas}</p>
+          )}
+        </div>
+      )}
 
       <DashboardCharts chartData={chartData} mrrEvolution={mrrEvolution} />
     </div>

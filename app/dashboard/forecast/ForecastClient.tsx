@@ -58,6 +58,12 @@ export default function ForecastClient() {
   function openNew() { setEditingId(null); setForm(emptyForm); setShowModal(true) }
   function openEdit(fc: ForecastGeral) { setEditingId(fc.id); setForm(fromForecast(fc)); setShowModal(true) }
 
+  async function handleDelete(fc: ForecastGeral) {
+    if (!confirm(`Excluir forecast de ${formatMesRef(fc.mesRef)}?`)) return
+    const res = await fetch(`/api/forecast-geral/${fc.id}`, { method: 'DELETE' })
+    if (res.ok) setForecasts(prev => prev.filter(f => f.id !== fc.id))
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     const n = (v: string) => v !== '' ? parseFloat(v) : null
@@ -170,7 +176,10 @@ export default function ForecastClient() {
                     {fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-gray-700">—</span>}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <button onClick={() => openEdit(fc)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">Editar</button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openEdit(fc)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">Editar</button>
+                      <button onClick={() => handleDelete(fc)} className="text-xs text-red-700 hover:text-red-400 transition-colors">Excluir</button>
+                    </div>
                   </td>
                 </tr>
               )

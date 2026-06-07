@@ -12,8 +12,10 @@ interface ChartPoint {
   receitaTarifaria: number
   floating: number
   tpv: number
-  receitaPrevista: number
-  receitaRealizada: number
+  faturamentoPrevisto: number
+  faturamentoRealizado: number
+  tpvPrevisto: number
+  tpvRealizado: number
   takeRate: number
 }
 
@@ -74,7 +76,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
         </ResponsiveContainer>
       </Card>
 
-      <Card title="Forecast vs Realizado" sub="Comparativo de receita prevista e realizada (R$)">
+      <Card title="Forecast — Faturamento Previsto vs Realizado" sub="Previsão geral da carteira vs realizado (R$)">
         <ResponsiveContainer width="100%" height={190}>
           <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
@@ -83,9 +85,25 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
               tickFormatter={v => `${(v / 1_000_000).toFixed(1)}M`} />
             <Tooltip {...tip} formatter={(v) => [Number(v) ? formatCurrency(Number(v)) : '—']} />
             <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
-            <Bar dataKey="receitaPrevista" name="Previsto" fill="#7c3aed" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
-            <Line type="monotone" dataKey="receitaRealizada" name="Realizado" stroke="#10b981" strokeWidth={2}
+            <Bar dataKey="faturamentoPrevisto" name="Fat. Previsto" fill="#7c3aed" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
+            <Line type="monotone" dataKey="faturamentoRealizado" name="Fat. Realizado" stroke="#10b981" strokeWidth={2}
               dot={{ fill: '#10b981', r: 3, strokeWidth: 0 }} connectNulls={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Card>
+
+      <Card title="Forecast — TPV Previsto vs Processado" sub="TPV previsto no forecast vs TPV processado real (R$)">
+        <ResponsiveContainer width="100%" height={190}>
+          <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+            <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false}
+              tickFormatter={v => `${(v / 1_000_000).toFixed(0)}M`} />
+            <Tooltip {...tip} formatter={(v) => [Number(v) ? formatTPV(Number(v)) : '—']} />
+            <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
+            <Bar dataKey="tpvPrevisto" name="TPV Previsto" fill="#0369a1" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
+            <Line type="monotone" dataKey="tpv" name="TPV Processado" stroke="#0ea5e9" strokeWidth={2}
+              dot={{ fill: '#0ea5e9', r: 3, strokeWidth: 0 }} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </Card>
