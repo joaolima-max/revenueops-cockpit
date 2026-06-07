@@ -48,6 +48,7 @@ async function getData() {
   const mrrWl = mrrWlAgg._sum.sustentacaoWhiteLabel || 0
   const mrr = mrrApi + mrrWl
   const takeRate = tpv > 0 ? (receita / tpv) * 100 : 0
+  const pmp = qtdTx > 0 ? receita / qtdTx : 0
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
   const receitaAno = rec12M.filter(r => r.mesRef.startsWith(anoAtual)).reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
 
@@ -77,7 +78,7 @@ async function getData() {
   })
 
   return {
-    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp },
+    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution: meses.map(mes => ({ mes, mrr })),
@@ -101,6 +102,7 @@ export default async function DashboardPage() {
     { label: 'Floating (Mês)', value: formatCurrency(kpis.floating), color: 'text-emerald-400' },
     { label: 'Take Rate', value: formatPercent(kpis.takeRate, 3), color: 'text-amber-400' },
     { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
+    { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
     { label: 'MED Médio', value: formatPercent(kpis.med, 2), color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]

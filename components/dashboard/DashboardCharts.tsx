@@ -32,7 +32,7 @@ const CHART_DEFS = [
   { id: 'receita', title: 'Receita Mensal', sub: 'Tarifária + Floating (R$)' },
   { id: 'mrr', title: 'Evolução MRR', sub: 'Receita Recorrente Mensal (R$)' },
   { id: 'fat_forecast', title: 'Forecast — Faturamento Previsto vs Realizado', sub: 'Previsão geral da carteira vs realizado (R$)' },
-  { id: 'tpv_forecast', title: 'Forecast — TPV Previsto vs Processado', sub: 'TPV previsto vs TPV real dos processamentos (R$)' },
+  { id: 'tpv_forecast', title: 'Forecast — TPV Previsto vs Realizado', sub: 'TPV previsto vs TPV realizado (ForecastGeral) (R$)' },
   { id: 'tpv', title: 'TPV Mensal', sub: 'Volume Total de Pagamentos (R$)' },
   { id: 'takerate', title: 'Take Rate Mensal', sub: 'Receita Tarifária ÷ TPV (%)' },
 ]
@@ -150,7 +150,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
           <Tooltip {...tip} formatter={(v) => [Number(v) ? formatTPV(Number(v)) : '—']} />
           <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
           <Bar dataKey="tpvPrevisto" name="TPV Previsto" fill="#0369a1" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
-          <Line type="monotone" dataKey="tpv" name="TPV Processado" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: '#0ea5e9', r: 3, strokeWidth: 0 }} connectNulls={false} />
+          <Line type="monotone" dataKey="tpvRealizado" name="TPV Realizado" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: '#0ea5e9', r: 3, strokeWidth: 0 }} connectNulls={false} />
         </ComposedChart>
       </ResponsiveContainer>
     ),

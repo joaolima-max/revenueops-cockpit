@@ -30,5 +30,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     update: { tpv: tpv || 0, qtdTransacoes: qtdTransacoes || 0, qtdMed: qtdMed || 0, receitaTarifaria: receitaTarifaria || 0, floating: floating || 0 },
   })
 
+  const [tpvAgg] = await Promise.all([
+    prisma.processamento.aggregate({
+      where: { mesRef },
+      _sum: { tpv: true, qtdTransacoes: true, receitaTarifaria: true },
+    }),
+  ])
+  await Promise.all([
+    prisma.meta.updateMany({ where: { tipo: 'TPV', periodo: mesRef }, data: { realizado: tpvAgg._sum.tpv || 0 } }),
+    prisma.meta.updateMany({ where: { tipo: 'TRANSACOES', periodo: mesRef }, data: { realizado: tpvAgg._sum.qtdTransacoes || 0 } }),
+  ])
+
   return NextResponse.json({ processamento: proc })
 }

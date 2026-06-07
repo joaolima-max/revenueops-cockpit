@@ -44,5 +44,11 @@ export async function POST(request: NextRequest) {
     update: { receitaTarifaria: receitaTarifaria || 0, floatingRealizado: floatingRealizado || 0 },
   })
 
+  const receitaTotal = (receitaTarifaria || 0) + (floatingRealizado || 0)
+  await Promise.all([
+    prisma.meta.updateMany({ where: { tipo: 'RECEITA', periodo: mesRef }, data: { realizado: receitaTotal } }),
+    prisma.meta.updateMany({ where: { tipo: 'FLOATING', periodo: mesRef }, data: { realizado: floatingRealizado || 0 } }),
+  ])
+
   return NextResponse.json({ receita })
 }
