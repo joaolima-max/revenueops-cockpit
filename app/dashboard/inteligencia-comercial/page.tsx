@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import {
@@ -11,7 +12,7 @@ import CacEditor from './CacEditor'
 import { CanaisChart, ConcentracaoChart } from './Charts'
 import type { CanalData, ConcentracaoData } from './Charts'
 
-// ─── Data types ────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface ClienteRow {
   id: string
@@ -22,7 +23,6 @@ interface ClienteRow {
   dataEncerramento: Date | null
   mensalidadeApi: number | null
   sustentacaoWhiteLabel: number | null
-  canal?: string | null
 }
 
 interface ProcRow {
@@ -45,8 +45,11 @@ async function getData() {
   const now = new Date()
   const d90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
 
-  // Fetch in parallel
-  const [clientes, proc12M, encerradosProc, cacParam] = await Promise.all([
+  // Prisma client may not have all models generated yet — use (prisma as any)
+  // for models not in the current generated client
+  const db = prisma as any
+
+  const [clientes, proc12MRaw, allTimeProcRaw, cacParam] = await Promise.all([
     prisma.cliente.findMany({
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: {
@@ -58,41 +61,42 @@ async function getData() {
         dataEncerramento: true,
         mensalidadeApi: true,
         sustentacaoWhiteLabel: true,
-        // canal is not in schema — skip
       },
     }) as Promise<ClienteRow[]>,
 
     prisma.processamento.groupBy({
-      by: ['clienteId'],
+      by: ['clienteId'] as any,
       where: { mesRef: { in: meses12 } },
       _sum: { receitaTarifaria: true, floating: true },
-      _count: { mesRef: true },
-    }) as Promise<ProcRow[]>,
-
-    // For ENCERRADO clients: all-time revenue
-    prisma.processamento.groupBy({
-      by: ['clienteId'],
-      _sum: { receitaTarifaria: true, floating: true },
-      _count: { mesRef: true },
-    }) as Promise<ProcRow[]>,
-
-    prisma.parametro.findFirst({
-      where: { chave: 'CAC_ESTIMADO' },
+      _count: { mesRef: true } as any,
     }),
+
+    prisma.processamento.groupBy({
+      by: ['clienteId'] as any,
+      _sum: { receitaTarifaria: true, floating: true },
+      _count: { mesRef: true } as any,
+    }),
+
+    db.parametro
+      ? db.parametro.findFirst({ where: { chave: 'CAC_ESTIMADO' } }).catch(() => null)
+      : Promise.resolve(null),
   ])
 
+  const proc12M = proc12MRaw as unknown as ProcRow[]
+  const allTimeProc = allTimeProcRaw as unknown as ProcRow[]
+
   // ── CAC ────────────────────────────────────────────────────────────────────
-  const cacAtual = cacParam ? parseFloat(cacParam.valor) || 0 : 0
+  const cacAtual = cacParam ? parseFloat(String(cacParam.valor)) || 0 : 0
 
   // ── Maps ───────────────────────────────────────────────────────────────────
-  const proc12Map = new Map(proc12M.map(p => [p.clienteId, p]))
-  const allTimeMap = new Map(encerradosProc.map(p => [p.clienteId, p]))
+  const proc12Map = new Map(proc12M.map((p: ProcRow) => [p.clienteId, p]))
+  const allTimeMap = new Map(allTimeProc.map((p: ProcRow) => [p.clienteId, p]))
 
-  const ativos = clientes.filter(c => c.status === 'ATIVO')
-  const encerrados = clientes.filter(c => c.status === 'ENCERRADO')
+  const ativos = clientes.filter((c: ClienteRow) => c.status === 'ATIVO')
+  const encerrados = clientes.filter((c: ClienteRow) => c.status === 'ENCERRADO')
 
   // ── LTV calculation ────────────────────────────────────────────────────────
-  // ATIVO: (avg monthly processamento revenue over 12M) × 24
+  // ATIVO: avg monthly processamento revenue × 24 (2yr projection)
   // ENCERRADO: total all-time revenue
   const ltvPorCliente: number[] = []
 
@@ -103,7 +107,6 @@ async function getData() {
       const avgMonthly = totalRev / p._count.mesRef
       ltvPorCliente.push(avgMonthly * 24)
     } else {
-      // No processamentos — use MRR as proxy × 24
       const mrr = (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0)
       if (mrr > 0) ltvPorCliente.push(mrr * 24)
     }
@@ -119,7 +122,7 @@ async function getData() {
 
   const ltvMedio =
     ltvPorCliente.length > 0
-      ? ltvPorCliente.reduce((a, b) => a + b, 0) / ltvPorCliente.length
+      ? ltvPorCliente.reduce((a: number, b: number) => a + b, 0) / ltvPorCliente.length
       : 0
 
   // ── LTV/CAC ────────────────────────────────────────────────────────────────
@@ -127,7 +130,7 @@ async function getData() {
 
   // ── Churn rate ─────────────────────────────────────────────────────────────
   const encerrados90d = clientes.filter(
-    c =>
+    (c: ClienteRow) =>
       c.status === 'ENCERRADO' &&
       c.dataEncerramento &&
       new Date(c.dataEncerramento) >= d90
@@ -137,11 +140,11 @@ async function getData() {
 
   // ── Ticket médio ───────────────────────────────────────────────────────────
   const receitaTotal12M = proc12M.reduce(
-    (s, p) => s + (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0),
+    (s: number, p: ProcRow) => s + (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0),
     0
   )
   const clientesComReceita = proc12M.filter(
-    p => (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0) > 0
+    (p: ProcRow) => (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0) > 0
   ).length
   const ticketMedio =
     clientesComReceita > 0 ? receitaTotal12M / clientesComReceita : 0
@@ -156,9 +159,10 @@ async function getData() {
     else receitaWL += rev
   }
 
-  // ── Canais de aquisição — canal not in schema, show placeholder ────────────
+  // ── Canais de aquisição ───────────────────────────────────────────────────
+  // canal field is not in the current Prisma schema — show placeholder
+  const hasCanal = false
   const canalData: CanalData[] = []
-  const hasCanal = false // canal field does not exist in Prisma schema
 
   // ── Coortes por trimestre ──────────────────────────────────────────────────
   const coorteMap = new Map<string, { clienteIds: string[]; mrrTotal: number }>()
@@ -178,7 +182,7 @@ async function getData() {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([quarter, { clienteIds, mrrTotal }]) => {
       const ltvs = clienteIds
-        .map(id => {
+        .map((id: string) => {
           const p = proc12Map.get(id)
           if (p && p._count.mesRef > 0) {
             const total = (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0)
@@ -186,15 +190,16 @@ async function getData() {
           }
           return 0
         })
-        .filter(v => v > 0)
-      const avgLtv = ltvs.length > 0 ? ltvs.reduce((a, b) => a + b, 0) / ltvs.length : 0
+        .filter((v: number) => v > 0)
+      const avgLtv =
+        ltvs.length > 0 ? ltvs.reduce((a: number, b: number) => a + b, 0) / ltvs.length : 0
       const avgMrr = clienteIds.length > 0 ? mrrTotal / clienteIds.length : 0
       return { quarter, count: clienteIds.length, avgLtv, avgMrr }
     })
 
   // ── Concentração de receita — top 5 clientes ──────────────────────────────
   const receitaListRaw = clientes
-    .map(c => {
+    .map((c: ClienteRow) => {
       const p = proc12Map.get(c.id)
       return {
         id: c.id,
@@ -202,22 +207,26 @@ async function getData() {
         receita: (p?._sum.receitaTarifaria || 0) + (p?._sum.floating || 0),
       }
     })
-    .filter(r => r.receita > 0)
-    .sort((a, b) => b.receita - a.receita)
+    .filter((r: { receita: number }) => r.receita > 0)
+    .sort((a: { receita: number }, b: { receita: number }) => b.receita - a.receita)
 
-  const receitaTotalAll = receitaListRaw.reduce((s, r) => s + r.receita, 0)
+  const receitaTotalAll = receitaListRaw.reduce(
+    (s: number, r: { receita: number }) => s + r.receita,
+    0
+  )
 
-  const top5: ConcentracaoData[] = receitaListRaw.slice(0, 5).map(r => ({
-    nome: r.nome.length > 18 ? r.nome.slice(0, 16) + '…' : r.nome,
-    receita: r.receita,
-    percentual: receitaTotalAll > 0 ? (r.receita / receitaTotalAll) * 100 : 0,
-  }))
+  const top5: ConcentracaoData[] = receitaListRaw
+    .slice(0, 5)
+    .map((r: { nome: string; receita: number }) => ({
+      nome: r.nome.length > 18 ? r.nome.slice(0, 16) + '…' : r.nome,
+      receita: r.receita,
+      percentual: receitaTotalAll > 0 ? (r.receita / receitaTotalAll) * 100 : 0,
+    }))
 
-  // Add "Outros" bucket if more than 5
   if (receitaListRaw.length > 5) {
     const outrosTotal = receitaListRaw
       .slice(5)
-      .reduce((s, r) => s + r.receita, 0)
+      .reduce((s: number, r: { receita: number }) => s + r.receita, 0)
     top5.push({
       nome: 'Outros',
       receita: outrosTotal,
@@ -225,17 +234,16 @@ async function getData() {
     })
   }
 
-  const maiorCliente = receitaListRaw[0]
+  const maiorCliente: { nome: string; receita: number } | undefined = receitaListRaw[0]
   const maiorPct =
     maiorCliente && receitaTotalAll > 0
       ? (maiorCliente.receita / receitaTotalAll) * 100
       : 0
 
   return {
-    // KPIs
     ltvMedio,
     cacAtual,
-    cacParamId: cacParam?.id ?? null,
+    cacParamId: (cacParam?.id as string) ?? null,
     ltvCacRatio,
     churnRate,
     encerrados90d,
@@ -245,19 +253,16 @@ async function getData() {
     receitaTotal12M,
     totalClientes: clientes.length,
     ativosCount: ativos.length,
-    // Canais
     hasCanal,
     canalData,
-    // Coortes
     coortes,
-    // Concentração
     top5,
     maiorPct,
     maiorClienteNome: maiorCliente?.nome ?? null,
   }
 }
 
-// ─── KPI card ──────────────────────────────────────────────────────────────────
+// ─── UI helpers ────────────────────────────────────────────────────────────────
 
 function KpiCard({
   label,
@@ -281,8 +286,6 @@ function KpiCard({
   )
 }
 
-// ─── Section heading ───────────────────────────────────────────────────────────
-
 function SectionHeading({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="flex items-center gap-3">
@@ -302,9 +305,7 @@ function SectionHeading({ title, sub }: { title: string; sub?: string }) {
 
 export default async function InteligenciaComercialPage() {
   const [session, data] = await Promise.all([getSession(), getData()])
-
   const isAdmin = session?.role === 'ADMIN'
-
   const receitaTotalModelo = data.receitaApi + data.receitaWL
 
   return (
@@ -319,12 +320,15 @@ export default async function InteligenciaComercialPage() {
 
       {/* ── KPIs ────────────────────────────────────────────────────────────── */}
       <section className="space-y-3">
-        <SectionHeading title="Indicadores Chave" sub="Baseado nos últimos 12 meses de processamento" />
+        <SectionHeading
+          title="Indicadores Chave"
+          sub="Baseado nos últimos 12 meses de processamento"
+        />
         <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
           <KpiCard
             label="LTV Médio"
             value={formatCurrency(data.ltvMedio)}
-            sub={`${data.ativosCount} clientes ativos + ${data.totalClientes - data.ativosCount} encerrados`}
+            sub={`${data.ativosCount} ativos + ${data.totalClientes - data.ativosCount} encerrados`}
             color="text-emerald-400"
             bg="bg-emerald-500/10"
           />
@@ -366,8 +370,14 @@ export default async function InteligenciaComercialPage() {
           <KpiCard
             label="Churn (últimos 90 dias)"
             value={formatPercent(data.churnRate, 1)}
-            sub={`${data.encerrados90d} encerramento${data.encerrados90d !== 1 ? 's' : ''} / ${data.totalClientes} clientes`}
-            color={data.churnRate > 5 ? 'text-red-400' : data.churnRate > 2 ? 'text-amber-400' : 'text-emerald-400'}
+            sub={`${data.encerrados90d} encerramentos / ${data.totalClientes} clientes`}
+            color={
+              data.churnRate > 5
+                ? 'text-red-400'
+                : data.churnRate > 2
+                ? 'text-amber-400'
+                : 'text-emerald-400'
+            }
             bg={data.churnRate > 5 ? 'bg-red-500/10' : 'bg-gray-900'}
           />
           <KpiCard
@@ -376,12 +386,13 @@ export default async function InteligenciaComercialPage() {
             sub={`Receita total ${formatCurrency(data.receitaTotal12M)}`}
             color="text-sky-400"
           />
+          {/* Receita por modelo */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <p className="text-gray-500 text-xs mb-3">Receita por Modelo (12M)</p>
             <div className="space-y-3">
               {[
-                { label: 'API', value: data.receitaApi, color: 'bg-sky-500' },
-                { label: 'White Label', value: data.receitaWL, color: 'bg-violet-500' },
+                { label: 'API', value: data.receitaApi, barColor: 'bg-sky-500' },
+                { label: 'White Label', value: data.receitaWL, barColor: 'bg-violet-500' },
               ].map(row => {
                 const pct =
                   receitaTotalModelo > 0
@@ -400,7 +411,7 @@ export default async function InteligenciaComercialPage() {
                     </div>
                     <div className="h-1.5 bg-gray-800 rounded-full">
                       <div
-                        className={`h-1.5 ${row.color} rounded-full`}
+                        className={`h-1.5 ${row.barColor} rounded-full`}
                         style={{ width: `${Math.min(pct, 100)}%` }}
                       />
                     </div>
@@ -418,7 +429,7 @@ export default async function InteligenciaComercialPage() {
           title="Canais de Aquisição"
           sub="Distribuição de clientes e receita por canal"
         />
-        {hasCanal(data.hasCanal, data.canalData) ? (
+        {data.hasCanal && data.canalData.length > 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
             <CanaisChart data={data.canalData} />
             <table className="w-full text-sm">
@@ -463,7 +474,8 @@ export default async function InteligenciaComercialPage() {
               Cadastre o canal de aquisição nos clientes para visualizar esta análise.
             </p>
             <p className="text-gray-700 text-xs mt-1">
-              O campo <code className="font-mono bg-gray-800 px-1 py-0.5 rounded">canal</code>{' '}
+              O campo{' '}
+              <code className="font-mono bg-gray-800 px-1 py-0.5 rounded">canal</code>{' '}
               não está disponível no modelo de dados atual.
             </p>
           </div>
@@ -530,72 +542,78 @@ export default async function InteligenciaComercialPage() {
           sub="Top 5 clientes por receita nos últimos 12 meses"
         />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {/* Chart */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             {data.top5.length === 0 ? (
               <div className="flex items-center justify-center h-48">
-                <p className="text-gray-500 text-sm">Nenhum dado de processamento disponível.</p>
+                <p className="text-gray-500 text-sm">
+                  Nenhum dado de processamento disponível.
+                </p>
               </div>
             ) : (
               <ConcentracaoChart data={data.top5} />
             )}
           </div>
 
-          {/* Table + risk */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
             {data.maiorPct >= 30 && data.maiorClienteNome && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-                <p className="text-red-400 text-xs font-semibold mb-0.5">Risco de concentração</p>
+                <p className="text-red-400 text-xs font-semibold mb-0.5">
+                  Risco de concentração
+                </p>
                 <p className="text-red-300 text-xs">
                   <strong>{data.maiorClienteNome}</strong> representa{' '}
-                  {formatPercent(data.maiorPct, 1)} da receita — qualquer churn impacta
-                  significativamente o faturamento.
+                  {formatPercent(data.maiorPct, 1)} da receita — qualquer churn
+                  impacta significativamente o faturamento.
                 </p>
               </div>
             )}
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  {['#', 'Cliente', 'Receita 12M', '%'].map(h => (
-                    <th
-                      key={h}
-                      className="text-xs font-medium text-gray-600 text-left py-2 px-2 first:pl-0"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.top5.map((row, i) => (
-                  <tr
-                    key={row.nome}
-                    className="border-b border-gray-800/40 hover:bg-gray-800/20 last:border-b-0"
-                  >
-                    <td className="py-2.5 px-2 pl-0 text-gray-600 text-xs w-6">{i + 1}</td>
-                    <td className="py-2.5 px-2 text-white font-medium max-w-[140px] truncate">
-                      {row.nome}
-                    </td>
-                    <td className="py-2.5 px-2 text-emerald-400 font-semibold whitespace-nowrap">
-                      {formatCurrency(row.receita)}
-                    </td>
-                    <td className="py-2.5 px-2">
-                      <span
-                        className={`text-xs font-semibold ${
-                          row.percentual >= 30
-                            ? 'text-red-400'
-                            : row.percentual >= 15
-                            ? 'text-amber-400'
-                            : 'text-gray-400'
-                        }`}
+            {data.top5.length === 0 ? (
+              <p className="text-gray-600 text-sm text-center py-8">Sem dados.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    {['#', 'Cliente', 'Receita 12M', '%'].map(h => (
+                      <th
+                        key={h}
+                        className="text-xs font-medium text-gray-600 text-left py-2 px-2 first:pl-0"
                       >
-                        {formatPercent(row.percentual, 1)}
-                      </span>
-                    </td>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.top5.map((row, i) => (
+                    <tr
+                      key={row.nome}
+                      className="border-b border-gray-800/40 hover:bg-gray-800/20 last:border-b-0"
+                    >
+                      <td className="py-2.5 px-2 pl-0 text-gray-600 text-xs w-6">{i + 1}</td>
+                      <td className="py-2.5 px-2 text-white font-medium max-w-[140px] truncate">
+                        {row.nome}
+                      </td>
+                      <td className="py-2.5 px-2 text-emerald-400 font-semibold whitespace-nowrap">
+                        {formatCurrency(row.receita)}
+                      </td>
+                      <td className="py-2.5 px-2">
+                        <span
+                          className={`text-xs font-semibold ${
+                            row.percentual >= 30
+                              ? 'text-red-400'
+                              : row.percentual >= 15
+                              ? 'text-amber-400'
+                              : 'text-gray-400'
+                          }`}
+                        >
+                          {formatPercent(row.percentual, 1)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </section>
@@ -607,7 +625,6 @@ export default async function InteligenciaComercialPage() {
           sub="Custo de Aquisição por Cliente — parâmetro configurável"
         />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {/* Editor */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <CacEditor
               parametroId={data.cacParamId}
@@ -616,51 +633,39 @@ export default async function InteligenciaComercialPage() {
             />
           </div>
 
-          {/* Explanation */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
             <h3 className="text-sm font-semibold text-white">O que é o CAC?</h3>
             <p className="text-gray-500 text-sm leading-relaxed">
-              O <strong className="text-gray-300">Custo de Aquisição por Cliente (CAC)</strong>{' '}
-              representa o investimento médio necessário para converter um prospect em cliente
-              pagante — somando gastos com marketing, vendas, comissões e onboarding.
+              O{' '}
+              <strong className="text-gray-300">
+                Custo de Aquisição por Cliente (CAC)
+              </strong>{' '}
+              é o investimento médio para converter um prospect em cliente pagante —
+              incluindo marketing, vendas, comissões e onboarding.
             </p>
             <div className="space-y-2">
               {[
                 {
                   label: 'LTV / CAC ≥ 3×',
-                  desc: 'Negócio saudável — retorno supera bem o custo de aquisição.',
-                  ok: true,
+                  desc: 'Saudável — retorno supera bem o custo de aquisição.',
+                  variant: 'emerald',
                 },
                 {
                   label: 'LTV / CAC entre 1× e 3×',
                   desc: 'Alerta — revise canais e processos de vendas.',
-                  ok: null,
+                  variant: 'amber',
                 },
                 {
                   label: 'LTV / CAC < 1×',
-                  desc: 'Crítico — cada cliente custa mais do que gera de retorno.',
-                  ok: false,
+                  desc: 'Crítico — cada cliente custa mais do que gera.',
+                  variant: 'red',
                 },
               ].map(item => (
                 <div
                   key={item.label}
-                  className={`flex gap-3 items-start px-3 py-2.5 rounded-lg ${
-                    item.ok === true
-                      ? 'bg-emerald-500/10'
-                      : item.ok === false
-                      ? 'bg-red-500/10'
-                      : 'bg-amber-500/10'
-                  }`}
+                  className={`flex gap-3 items-start px-3 py-2.5 rounded-lg bg-${item.variant}-500/10`}
                 >
-                  <span
-                    className={`text-xs font-bold mt-0.5 flex-shrink-0 ${
-                      item.ok === true
-                        ? 'text-emerald-400'
-                        : item.ok === false
-                        ? 'text-red-400'
-                        : 'text-amber-400'
-                    }`}
-                  >
+                  <span className={`text-xs font-bold mt-0.5 flex-shrink-0 text-${item.variant}-400`}>
                     {item.label}
                   </span>
                   <span className="text-xs text-gray-500">{item.desc}</span>
@@ -670,7 +675,7 @@ export default async function InteligenciaComercialPage() {
             {data.ltvCacRatio !== null && (
               <div className="pt-2 border-t border-gray-800">
                 <p className="text-xs text-gray-600">
-                  Sua relação atual:{' '}
+                  Relação atual:{' '}
                   <span
                     className={`font-bold ${
                       data.ltvCacRatio >= 3
@@ -690,9 +695,4 @@ export default async function InteligenciaComercialPage() {
       </section>
     </div>
   )
-}
-
-// Helper — keeps TypeScript happy when canal is not in schema
-function hasCanal(flag: boolean, data: CanalData[]): data is CanalData[] {
-  return flag && data.length > 0
 }

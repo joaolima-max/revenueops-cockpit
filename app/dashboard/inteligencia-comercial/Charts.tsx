@@ -17,7 +17,7 @@ const TOOLTIP_STYLE = {
   itemStyle: { color: '#e5e7eb' },
 }
 
-const COLORS = ['#10b981', '#0ea5e9', '#7c3aed', '#f59e0b', '#6366f1']
+const COLORS = ['#10b981', '#0ea5e9', '#7c3aed', '#f59e0b', '#6366f1', '#9ca3af']
 
 export interface CanalData {
   canal: string
@@ -29,6 +29,19 @@ export interface ConcentracaoData {
   nome: string
   receita: number
   percentual: number
+}
+
+function barFormatter(
+  value: number | string | undefined,
+  name: string | number | undefined
+): [string, string] {
+  const label = String(name ?? '')
+  if (label === 'Receita 12M') return [formatCurrency(Number(value ?? 0)), label]
+  return [String(value ?? ''), label]
+}
+
+function pieFormatter(value: number | string | undefined): [string, string] {
+  return [formatCurrency(Number(value ?? 0)), 'Receita 12M']
 }
 
 export function CanaisChart({ data }: { data: CanalData[] }) {
@@ -56,20 +69,53 @@ export function CanaisChart({ data }: { data: CanalData[] }) {
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v: number) => `R$${(v / 1000).toFixed(0)}k`}
           width={56}
         />
-        <Tooltip
-          {...TOOLTIP_STYLE}
-          formatter={(value: number, name: string) =>
-            name === 'Receita 12M' ? [formatCurrency(value), name] : [value, name]
-          }
-        />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        <Tooltip {...TOOLTIP_STYLE} formatter={barFormatter as any} />
         <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
-        <Bar yAxisId="left" dataKey="clientes" name="Clientes" fill="#0ea5e9" radius={[3, 3, 0, 0]} maxBarSize={40} />
-        <Bar yAxisId="right" dataKey="receita" name="Receita 12M" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={40} />
+        <Bar
+          yAxisId="left"
+          dataKey="clientes"
+          name="Clientes"
+          fill="#0ea5e9"
+          radius={[3, 3, 0, 0]}
+          maxBarSize={40}
+        />
+        <Bar
+          yAxisId="right"
+          dataKey="receita"
+          name="Receita 12M"
+          fill="#10b981"
+          radius={[3, 3, 0, 0]}
+          maxBarSize={40}
+        />
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+// Use `any` to satisfy recharts' PieLabelRenderProps which has all optional fields
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function PieLabel(props: any) {
+  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props as {
+    cx: number; cy: number; midAngle: number
+    innerRadius: number; outerRadius: number; percent: number
+  }
+  if (!percent || percent < 0.05) return null
+  const RADIAN = Math.PI / 180
+  const radius = (innerRadius ?? 0) + ((outerRadius ?? 0) - (innerRadius ?? 0)) * 0.5
+  const x = (cx ?? 0) + radius * Math.cos(-midAngle * RADIAN)
+  const y = (cy ?? 0) + radius * Math.sin(-midAngle * RADIAN)
+  return (
+    <text
+      x={x} y={y} fill="#fff"
+      textAnchor="middle" dominantBaseline="central"
+      fontSize={10} fontWeight={600}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
   )
 }
 
@@ -86,17 +132,15 @@ export function ConcentracaoChart({ data }: { data: ConcentracaoData[] }) {
           outerRadius={85}
           innerRadius={45}
           paddingAngle={2}
-          label={({ percentual }: { percentual: number }) => `${percentual.toFixed(0)}%`}
           labelLine={false}
+          label={PieLabel}
         >
           {data.map((_, i) => (
             <Cell key={i} fill={COLORS[i % COLORS.length]} />
           ))}
         </Pie>
-        <Tooltip
-          {...TOOLTIP_STYLE}
-          formatter={(value: number) => [formatCurrency(value), 'Receita 12M']}
-        />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        <Tooltip {...TOOLTIP_STYLE} formatter={pieFormatter as any} />
         <Legend
           wrapperStyle={{ fontSize: 11, color: '#9ca3af' }}
           formatter={(value: string) => <span style={{ color: '#9ca3af' }}>{value}</span>}
