@@ -9,8 +9,7 @@ export default async function FinanceiroPage() {
   if (!session) redirect('/login')
 
   const clientes = await prisma.cliente.findMany({
-    where: { status: { in: ['ATIVO', 'PROSPECCAO'] } },
-    select: { id: true, nome: true, modeloOperacional: true },
+    select: { id: true, nome: true, modeloOperacional: true, status: true },
     orderBy: { nome: 'asc' },
   })
 

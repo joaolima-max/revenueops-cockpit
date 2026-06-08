@@ -172,8 +172,6 @@ export default async function DashboardPage() {
   ]
 
   const secondary = [
-    { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400' },
-    { label: 'Floating (Mês)', value: formatCurrency(kpis.floating), color: 'text-emerald-400' },
     { label: 'Take Rate', value: kpis.takeRate > 0 ? formatPercent(kpis.takeRate, 3) : '—', color: 'text-amber-400' },
     { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
     {

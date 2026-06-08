@@ -20,7 +20,7 @@ interface ContaReceber {
   cliente: { id: string; nome: string; modeloOperacional: string }
 }
 
-interface Props { clientes: Cliente[] }
+interface Props { clientes: (Cliente['cliente'] & { status: string })[] }
 
 const STATUS_LABELS: Record<string, string> = {
   PENDENTE: 'Pendente', FATURADO: 'Faturado', PAGO: 'Pago', INADIMPLENTE: 'Inadimplente',
@@ -352,7 +352,11 @@ export default function FinanceiroClient({ clientes }: Props) {
                   <label className={lbl}>Cliente *</label>
                   <select required value={form.clienteId} onChange={f('clienteId')} className={inp}>
                     <option value="">Selecione...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    {clientes.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}{c.status !== 'ATIVO' ? ` (${c.status === 'ENCERRADO' ? 'Encerrado' : c.status === 'INATIVO' ? 'Inativo' : c.status})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
