@@ -78,9 +78,9 @@ async function getData() {
   const pmp = qtdTx > 0 ? receita / qtdTx : 0
   // MED médio: total MEDs / total transações do período
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
-  // Margem Transacional: (PMP - custo_pix) / PMP * 100
-  const custoPorPix = (custoPix as { valor: number } | null)?.valor ?? 0
-  const margemTransacional = pmp > 0 && custoPorPix > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
+  // Margem Transacional: (PMP - custo_pix) / PMP * 100  — padrão R$0,055 se não cadastrado
+  const custoPorPix = (custoPix as { valor: number } | null)?.valor ?? 0.055
+  const margemTransacional = pmp > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
   const setupsMap = new Map(setups12M.map((s: { mesRef: string; _sum: { valor: number | null } }) => [s.mesRef, s._sum.valor || 0]))
   const setupsMesVal = setupsMes._sum.valor || 0
   const receitaAno = rec12M
@@ -176,7 +176,7 @@ export default async function DashboardPage() {
     { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
     {
       label: 'Margem Transacional',
-      value: kpis.margemTransacional !== null ? formatPercent(kpis.margemTransacional, 1) : kpis.custoPorPix === 0 ? 'Configure custo PIX' : '—',
+      value: kpis.margemTransacional !== null ? formatPercent(kpis.margemTransacional, 1) : '—',
       color: kpis.margemTransacional !== null && kpis.margemTransacional >= 60 ? 'text-emerald-400' : kpis.margemTransacional !== null ? 'text-amber-400' : 'text-gray-600',
     },
     { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
