@@ -48,11 +48,15 @@ async function getData() {
     }),
   ])
 
-  const tpv = procMes._sum.tpv || 0
+  // TPV: processamento é primário; cai back em forecast realizado se vazio
+  const procTpv = procMes._sum.tpv || 0
+  const tpv = procTpv > 0 ? procTpv : (fgMesAtual?.tpvRealizado || 0)
   const receita = procMes._sum.receitaTarifaria || 0
   const floating = procMes._sum.floating || 0
   const qtdMed = procMes._sum.qtdMed || 0
-  const qtdTx = procMes._sum.qtdTransacoes || 0
+  // Transações: processamento é primário; cai back em forecast
+  const procQtdTx = procMes._sum.qtdTransacoes || 0
+  const qtdTx = procQtdTx > 0 ? procQtdTx : (fgMesAtual?.qtdTransacoesRealizadas || 0)
   const mrrApi = mrrApiAgg._sum.mensalidadeApi || 0
   const mrrWl = mrrWlAgg._sum.sustentacaoWhiteLabel || 0
   const mrr = mrrApi + mrrWl
@@ -68,28 +72,45 @@ async function getData() {
       .filter(([mes]) => mes.startsWith(anoAtual))
       .reduce((s, [, v]) => s + v, 0)
 
-  const fgComReal = fg12M.filter(f => f.faturamentoRealizado != null && f.faturamentoPrevisto > 0)
-  const precisao = fgComReal.length > 0
-    ? fgComReal.reduce((a, f) => a + (f.faturamentoRealizado! / f.faturamentoPrevisto) * 100, 0) / fgComReal.length
-    : 0
-
-  // Margem operacional: do forecast geral do mês atual, ou média dos realizados
-  const margemOp = fgMesAtual?.margemRealizada ?? fgMesAtual?.margemPrevista ?? null
-
   const procMap = new Map(proc12M.map(p => [p.mesRef, p._sum]))
   const recMap = new Map(rec12M.map(r => [r.mesRef, r]))
   const fgMap = new Map(fg12M.map(f => [f.mesRef, f]))
 
+  // Precision: considera tanto faturamentoRealizado do forecast quanto receitaRealizada
+  const fgComReal = fg12M.filter(f => {
+    if (f.faturamentoPrevisto <= 0) return false
+    const r = recMap.get(f.mesRef)
+    const realizado = f.faturamentoRealizado ?? ((r?.receitaTarifaria || 0) + (r?.floatingRealizado || 0))
+    return realizado > 0
+  })
+  const precisao = fgComReal.length > 0
+    ? fgComReal.reduce((a, f) => {
+        const r = recMap.get(f.mesRef)
+        const realizado = f.faturamentoRealizado ?? ((r?.receitaTarifaria || 0) + (r?.floatingRealizado || 0))
+        return a + (realizado / f.faturamentoPrevisto) * 100
+      }, 0) / fgComReal.length
+    : 0
+
+  // Margem operacional: do forecast geral do mês atual
+  const margemOp = fgMesAtual?.margemRealizada ?? fgMesAtual?.margemPrevista ?? null
+
   const chartData = meses.map(mes => {
     const p = procMap.get(mes), r = recMap.get(mes), fg = fgMap.get(mes)
     const t = p?.tpv || 0, rv = r?.receitaTarifaria || 0
+    // Faturamento realizado: forecast se disponível, senão receita lançada
+    const receitaReal = (r?.receitaTarifaria || 0) + (r?.floatingRealizado || 0)
+    const fatRealizado = fg?.faturamentoRealizado ?? (receitaReal > 0 ? receitaReal : null)
+    // TPV realizado: processamento se disponível, senão forecast
+    const tpvReal = t > 0 ? t : (fg?.tpvRealizado ?? null)
     return {
       mes, receitaTarifaria: rv, floating: r?.floatingRealizado || 0, tpv: t,
       faturamentoPrevisto: fg?.faturamentoPrevisto || 0,
-      faturamentoRealizado: fg?.faturamentoRealizado || 0,
+      faturamentoRealizado: fatRealizado,
       tpvPrevisto: fg?.tpvPrevisto || 0,
-      tpvRealizado: fg?.tpvRealizado || 0,
+      tpvRealizado: tpvReal,
       takeRate: t > 0 ? (rv / t) * 100 : 0,
+      margemPrevista: fg?.margemPrevista ?? null,
+      margemRealizada: fg?.margemRealizada ?? null,
     }
   })
 
@@ -116,11 +137,10 @@ export default async function DashboardPage() {
   const secondary = [
     { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400' },
     { label: 'Floating (Mês)', value: formatCurrency(kpis.floating), color: 'text-emerald-400' },
-    { label: 'Setups Faturados', value: kpis.setups > 0 ? formatCurrency(kpis.setups) : '—', color: 'text-amber-400' },
-    { label: 'Take Rate', value: formatPercent(kpis.takeRate, 3), color: 'text-amber-400' },
+    { label: 'Take Rate', value: kpis.takeRate > 0 ? formatPercent(kpis.takeRate, 3) : '—', color: 'text-amber-400' },
     { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
     { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
-    { label: 'MED Médio', value: formatPercent(kpis.med, 2), color: 'text-sky-400' },
+    { label: 'MED Médio', value: kpis.med > 0 ? formatPercent(kpis.med, 2) : '—', color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]
 
@@ -206,7 +226,6 @@ export default async function DashboardPage() {
           <div>
             <p className="text-xs text-gray-600 mb-1">Setups Faturados</p>
             <p className={`text-xl font-bold ${kpis.setups > 0 ? 'text-amber-400' : 'text-gray-700'}`}>{kpis.setups > 0 ? formatCurrency(kpis.setups) : '—'}</p>
-            <p className="text-xs text-gray-700 mt-0.5">Certificados · BG Check · 2ª Conta</p>
           </div>
           <div>
             <p className="text-xs text-gray-600 mb-1">Total Mensal</p>

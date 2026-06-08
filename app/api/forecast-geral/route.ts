@@ -49,5 +49,18 @@ export async function POST(request: NextRequest) {
     update: data,
   })
 
+  // Sync metas when realizado values are provided
+  const syncMetas: Promise<unknown>[] = []
+  if (tpvRealizado != null) {
+    syncMetas.push(prisma.meta.updateMany({ where: { tipo: 'TPV', periodo: mesRef }, data: { realizado: tpvRealizado } }))
+  }
+  if (qtdTransacoesRealizadas != null) {
+    syncMetas.push(prisma.meta.updateMany({ where: { tipo: 'TRANSACOES', periodo: mesRef }, data: { realizado: qtdTransacoesRealizadas } }))
+  }
+  if (faturamentoRealizado != null) {
+    syncMetas.push(prisma.meta.updateMany({ where: { tipo: 'RECEITA', periodo: mesRef }, data: { realizado: faturamentoRealizado } }))
+  }
+  if (syncMetas.length > 0) await Promise.all(syncMetas)
+
   return NextResponse.json({ forecast })
 }

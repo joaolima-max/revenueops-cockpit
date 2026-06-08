@@ -23,7 +23,7 @@ interface Cliente {
 
 const emptyForm = {
   nome: '', cnpj: '', email: '', telefone: '', modeloOperacional: 'API',
-  segmento: '', operacao: '', scoreRisco: '',
+  segmento: '', scoreRisco: '',
   mensalidadeApi: '', sustentacaoWhiteLabel: '', setup: '',
   tpvEsperado: '', qtdTransacoesEsperada: '', qtdMedEsperada: '',
   receitaPrevistaMensal: '', volumeMinimo: '',
@@ -34,6 +34,15 @@ const emptyForm = {
 const SEGMENTOS = ['IGAMING', 'ECOMMERCE', 'SAAS', 'ERP', 'TELECOM', 'CRIPTOMOEDAS', 'VAREJO', 'OUTROS']
 const OPERACOES = ['CASH_IN', 'CASH_OUT', 'BAAS', 'WHITE_LABEL']
 const SCORES = ['BAIXO', 'MEDIO', 'ALTO', 'CRITICO']
+const CRIAR_SEGMENTO_SENTINEL = '__CRIAR_SEGMENTO__'
+
+function loadLocalArray(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) return JSON.parse(raw) as string[]
+  } catch {}
+  return []
+}
 
 export default function CarteiraClient({ role }: { role: string }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
@@ -46,8 +55,67 @@ export default function CarteiraClient({ role }: { role: string }) {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
+  // Multi-select operations state
+  const [selectedOperacoes, setSelectedOperacoes] = useState<string[]>([])
+  const [customOperacoes, setCustomOperacoes] = useState<string[]>([])
+  const [showNewOp, setShowNewOp] = useState(false)
+  const [newOpInput, setNewOpInput] = useState('')
+
+  // Custom segments state
+  const [customSegmentos, setCustomSegmentos] = useState<string[]>([])
+  const [showNewSeg, setShowNewSeg] = useState(false)
+  const [newSegInput, setNewSegInput] = useState('')
+
+  useEffect(() => {
+    setCustomOperacoes(loadLocalArray('cliente_custom_operacoes'))
+    setCustomSegmentos(loadLocalArray('cliente_custom_segmentos'))
+  }, [])
+
   const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
+
+  function toggleOperacao(op: string) {
+    setSelectedOperacoes(prev =>
+      prev.includes(op) ? prev.filter(o => o !== op) : [...prev, op]
+    )
+  }
+
+  function handleAddCustomOp() {
+    const trimmed = newOpInput.trim().toUpperCase().replace(/\s+/g, '_')
+    if (!trimmed) return
+    const updated = [...customOperacoes, trimmed]
+    setCustomOperacoes(updated)
+    localStorage.setItem('cliente_custom_operacoes', JSON.stringify(updated))
+    setSelectedOperacoes(prev => [...prev, trimmed])
+    setNewOpInput('')
+    setShowNewOp(false)
+  }
+
+  function handleSegmentoChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value
+    if (val === CRIAR_SEGMENTO_SENTINEL) {
+      setShowNewSeg(true)
+      setForm(prev => ({ ...prev, segmento: '' }))
+    } else {
+      setShowNewSeg(false)
+      setForm(prev => ({ ...prev, segmento: val }))
+    }
+  }
+
+  function handleAddCustomSeg() {
+    const trimmed = newSegInput.trim()
+    if (!trimmed) return
+    const updated = [...customSegmentos, trimmed]
+    setCustomSegmentos(updated)
+    localStorage.setItem('cliente_custom_segmentos', JSON.stringify(updated))
+    setForm(prev => ({ ...prev, segmento: CRIAR_SEGMENTO_SENTINEL + trimmed }))
+    setNewSegInput('')
+    setShowNewSeg(false)
+  }
+
+  // Determine if the current segmento value is a custom one
+  const isCustomSeg = form.segmento.startsWith(CRIAR_SEGMENTO_SENTINEL)
+  const customSegValue = isCustomSeg ? form.segmento.slice(CRIAR_SEGMENTO_SENTINEL.length) : ''
 
   const fetchClientes = useCallback(async () => {
     const p = new URLSearchParams()
@@ -62,16 +130,46 @@ export default function CarteiraClient({ role }: { role: string }) {
 
   useEffect(() => { fetchClientes() }, [fetchClientes])
 
+  function resetModal() {
+    setShowModal(false)
+    setForm(emptyForm)
+    setSelectedOperacoes([])
+    setShowNewOp(false)
+    setNewOpInput('')
+    setShowNewSeg(false)
+    setNewSegInput('')
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     const n = (v: string) => v ? parseFloat(v) : null
     const ni = (v: string) => v ? parseInt(v) : null
+
+    // Build operacao: first selected goes to the field; extras go to notas
+    const primaryOp = selectedOperacoes[0] || null
+    const extraOps = selectedOperacoes.slice(1)
+
+    // Build notas additions
+    const notasExtras: string[] = []
+    if (extraOps.length > 0) {
+      notasExtras.push(`Operações: ${selectedOperacoes.join(', ')}`)
+    }
+
+    // Segmento: if custom, store in notas and set segmento to null (or OUTROS if preferred)
+    let segmentoVal: string | null = form.segmento || null
+    if (isCustomSeg) {
+      notasExtras.push(`Segmento: ${customSegValue}`)
+      segmentoVal = 'OUTROS'
+    }
+
+    const combinedNotas = [form.notas, ...notasExtras].filter(Boolean).join('\n')
+
     const res = await fetch('/api/clientes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        segmento: form.segmento || null,
-        operacao: form.operacao || null,
+        segmento: segmentoVal,
+        operacao: primaryOp,
         scoreRisco: form.scoreRisco || null,
         mensalidadeApi: n(form.mensalidadeApi), sustentacaoWhiteLabel: n(form.sustentacaoWhiteLabel),
         setup: n(form.setup), tpvEsperado: n(form.tpvEsperado),
@@ -81,9 +179,10 @@ export default function CarteiraClient({ role }: { role: string }) {
         descontoPercent: n(form.descontoPercent),
         overpricePercent: n(form.overpricePercent),
         dataFechamento: form.dataFechamento || null,
+        notas: combinedNotas || null,
       }),
     })
-    if (res.ok) { setShowModal(false); setForm(emptyForm); fetchClientes() }
+    if (res.ok) { resetModal(); fetchClientes() }
     setSaving(false)
   }
 
@@ -92,6 +191,14 @@ export default function CarteiraClient({ role }: { role: string }) {
 
   const input = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
   const lbl = 'block text-xs text-gray-500 mb-1'
+
+  const allOperacoes = [...OPERACOES, ...customOperacoes]
+  const allSegmentos = [...SEGMENTOS, ...customSegmentos]
+
+  // Determine current select value for segmento
+  const segSelectVal = isCustomSeg
+    ? (customSegmentos.includes(customSegValue) ? CRIAR_SEGMENTO_SENTINEL + customSegValue : '')
+    : (form.segmento || '')
 
   return (
     <div className="min-h-screen bg-gray-950 p-6">
@@ -152,8 +259,8 @@ export default function CarteiraClient({ role }: { role: string }) {
                 </td>
                 <td className="px-4 py-3.5">
                   {c.segmento ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[c.segmento]}`}>
-                      {SEGMENTO_LABELS[c.segmento]}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[c.segmento] ?? 'bg-gray-500/10 text-gray-400'}`}>
+                      {SEGMENTO_LABELS[c.segmento] ?? c.segmento}
                     </span>
                   ) : <span className="text-gray-700 text-xs">—</span>}
                 </td>
@@ -184,11 +291,11 @@ export default function CarteiraClient({ role }: { role: string }) {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && resetModal()}>
           <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-gray-800">
               <h2 className="text-base font-semibold text-white">Novo Cliente</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+              <button onClick={resetModal} className="text-gray-600 hover:text-white">✕</button>
             </div>
             <form onSubmit={handleCreate} className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -199,27 +306,116 @@ export default function CarteiraClient({ role }: { role: string }) {
                     <option value="API">API</option><option value="WHITE_LABEL">White Label</option>
                   </select>
                 </div>
-                <div><label className={lbl}>Segmento</label>
-                  <select value={form.segmento} onChange={f('segmento')} className={input}>
+
+                {/* Segmento with custom option */}
+                <div>
+                  <label className={lbl}>Segmento</label>
+                  <select
+                    value={showNewSeg ? CRIAR_SEGMENTO_SENTINEL : (form.segmento || '')}
+                    onChange={handleSegmentoChange}
+                    className={input}
+                  >
                     <option value="">Selecione</option>
                     {SEGMENTOS.map(s => <option key={s} value={s}>{SEGMENTO_LABELS[s]}</option>)}
+                    {customSegmentos.map(s => (
+                      <option key={CRIAR_SEGMENTO_SENTINEL + s} value={CRIAR_SEGMENTO_SENTINEL + s}>{s}</option>
+                    ))}
+                    <option value={CRIAR_SEGMENTO_SENTINEL}>+ Criar segmento...</option>
                   </select>
+                  {showNewSeg && (
+                    <div className="flex gap-2 mt-1.5">
+                      <input
+                        value={newSegInput}
+                        onChange={e => setNewSegInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSeg())}
+                        placeholder="Nome do segmento..."
+                        className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomSeg}
+                        disabled={!newSegInput.trim()}
+                        className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
+                        style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div><label className={lbl}>Operação Principal</label>
-                  <select value={form.operacao} onChange={f('operacao')} className={input}>
-                    <option value="">Selecione</option>
-                    {OPERACOES.map(o => <option key={o} value={o}>{OPERACAO_LABELS[o]}</option>)}
-                  </select>
-                </div>
+
                 <div><label className={lbl}>Score de Risco</label>
                   <select value={form.scoreRisco} onChange={f('scoreRisco')} className={input}>
                     <option value="">Selecione</option>
                     {SCORES.map(s => <option key={s} value={s}>{SCORE_RISCO_LABELS[s]}</option>)}
                   </select>
                 </div>
+
                 <div><label className={lbl}>Email</label><input type="email" value={form.email} onChange={f('email')} className={input} /></div>
                 <div><label className={lbl}>Telefone</label><input value={form.telefone} onChange={f('telefone')} className={input} /></div>
                 <div><label className={lbl}>Data de Fechamento</label><input type="date" value={form.dataFechamento} onChange={f('dataFechamento')} className={input} /></div>
+              </div>
+
+              {/* Operations multi-select checkboxes */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className={lbl + ' mb-0'}>Operações</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewOp(v => !v)}
+                    className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
+                  >
+                    <span className="text-base leading-none">+</span> Personalizada
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {allOperacoes.map(op => {
+                    const checked = selectedOperacoes.includes(op)
+                    return (
+                      <button
+                        key={op}
+                        type="button"
+                        onClick={() => toggleOperacao(op)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          checked
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
+                          checked ? 'bg-emerald-500 border-emerald-500' : 'border-gray-600'
+                        }`}>
+                          {checked && (
+                            <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 10 10">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 5l2.5 2.5 4.5-4" />
+                            </svg>
+                          )}
+                        </span>
+                        {OPERACAO_LABELS[op] ?? op}
+                      </button>
+                    )
+                  })}
+                </div>
+                {showNewOp && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      value={newOpInput}
+                      onChange={e => setNewOpInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomOp())}
+                      placeholder="Nome da operação..."
+                      className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomOp}
+                      disabled={!newOpInput.trim()}
+                      className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
+                      style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                    >
+                      OK
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-gray-800 pt-4">
@@ -241,7 +437,7 @@ export default function CarteiraClient({ role }: { role: string }) {
               <div><label className={lbl}>Notas</label><textarea rows={2} value={form.notas} onChange={f('notas')} className={input + ' resize-none'} /></div>
 
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="button" onClick={resetModal} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
                   style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>

@@ -14,10 +14,12 @@ interface ChartPoint {
   floating: number
   tpv: number
   faturamentoPrevisto: number
-  faturamentoRealizado: number
+  faturamentoRealizado: number | null
   tpvPrevisto: number
-  tpvRealizado: number
+  tpvRealizado: number | null
   takeRate: number
+  margemPrevista: number | null
+  margemRealizada: number | null
 }
 
 interface MRRPoint { mes: string; mrr: number }
@@ -35,6 +37,7 @@ const CHART_DEFS = [
   { id: 'tpv_forecast', title: 'Forecast — TPV Previsto vs Realizado', sub: 'TPV previsto vs TPV realizado (ForecastGeral) (R$)' },
   { id: 'tpv', title: 'TPV Mensal', sub: 'Volume Total de Pagamentos (R$)' },
   { id: 'takerate', title: 'Take Rate Mensal', sub: 'Receita Tarifária ÷ TPV (%)' },
+  { id: 'margem', title: 'Margem Bruta / Operacional', sub: 'Previsto vs Realizado (%)' },
 ]
 
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
@@ -186,6 +189,19 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
           <Tooltip {...tip} formatter={(v) => [`${Number(v).toFixed(3)}%`, 'Take Rate']} />
           <Area type="monotone" dataKey="takeRate" stroke="#f59e0b" fill="url(#trG)" strokeWidth={2} dot={false} />
         </AreaChart>
+      </ResponsiveContainer>
+    ),
+    margem: (
+      <ResponsiveContainer width="100%" height={190}>
+        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v.toFixed(1)}%`} />
+          <Tooltip {...tip} formatter={(v) => [v !== null && v !== undefined ? `${Number(v).toFixed(2)}%` : '—']} />
+          <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
+          <Bar dataKey="margemPrevista" name="Margem Prevista" fill="#7c3aed" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
+          <Line type="monotone" dataKey="margemRealizada" name="Margem Realizada" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3, strokeWidth: 0 }} connectNulls={false} />
+        </ComposedChart>
       </ResponsiveContainer>
     ),
   }
