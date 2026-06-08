@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
     clientesByStatus, clientesByModelo, clientesBySegmento,
     topClientes, fg12M,
     pedidosByTipo, metasMes,
+    receitaRealizadaRows,
   ] = await Promise.all([
     prisma.processamento.groupBy({
       by: ['mesRef'], where: procWhere,
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
     prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
     prisma.pedidoCobravel.groupBy({ by: ['tipo', 'status'], _sum: { valor: true }, _count: true }),
     prisma.meta.findMany({ where: { periodo: { in: meses } } }),
+    prisma.receitaRealizada.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
   ])
 
   const topClienteNames = await prisma.cliente.findMany({
@@ -85,9 +87,58 @@ export async function GET(request: NextRequest) {
   })
   const cMap = new Map(topClienteNames.map(c => [c.id, c]))
 
-  const receitaTotal = (tpvTotal._sum.receitaTarifaria || 0) + (tpvTotal._sum.floating || 0)
-  const takeRateMedio = (tpvTotal._sum.tpv || 0) > 0
-    ? ((tpvTotal._sum.receitaTarifaria || 0) / (tpvTotal._sum.tpv || 1)) * 100 : 0
+  // Build a lookup map for receitaRealizada by mesRef
+  const rrMap = new Map(receitaRealizadaRows.map(r => [r.mesRef, r]))
+
+  // Merge proc12M with receitaRealizada data
+  const mergedProc12M = proc12M.map(p => {
+    const rr = rrMap.get(p.mesRef)
+    const procReceitaTarifaria = p._sum.receitaTarifaria || 0
+    const procFloating = p._sum.floating || 0
+    const rrReceitaTarifaria = rr?.receitaTarifaria ?? 0
+    const rrFloating = rr?.floatingRealizado ?? 0
+
+    const mergedReceitaTarifaria = Math.max(procReceitaTarifaria, rrReceitaTarifaria)
+    const mergedFloating = procFloating > 0 ? procFloating : rrFloating
+    const tpv = p._sum.tpv || 0
+
+    return {
+      mes: p.mesRef,
+      tpv,
+      receitaTarifaria: mergedReceitaTarifaria,
+      floating: mergedFloating,
+      total: mergedReceitaTarifaria + mergedFloating,
+      qtdTransacoes: p._sum.qtdTransacoes || 0,
+      qtdMed: p._sum.qtdMed || 0,
+      takeRate: tpv > 0 ? (mergedReceitaTarifaria / tpv) * 100 : 0,
+    }
+  })
+
+  // Also include months that only exist in receitaRealizada (no processamento rows)
+  const procMesSet = new Set(proc12M.map(p => p.mesRef))
+  for (const rr of receitaRealizadaRows) {
+    if (!procMesSet.has(rr.mesRef)) {
+      mergedProc12M.push({
+        mes: rr.mesRef,
+        tpv: 0,
+        receitaTarifaria: rr.receitaTarifaria,
+        floating: rr.floatingRealizado,
+        total: rr.receitaTarifaria + rr.floatingRealizado,
+        qtdTransacoes: 0,
+        qtdMed: 0,
+        takeRate: 0,
+      })
+    }
+  }
+  mergedProc12M.sort((a, b) => a.mes.localeCompare(b.mes))
+
+  // Recalculate totals from merged data
+  const mergedReceitaTarifariaTotal = mergedProc12M.reduce((s, r) => s + r.receitaTarifaria, 0)
+  const mergedFloatingTotal = mergedProc12M.reduce((s, r) => s + r.floating, 0)
+  const mergedTpvTotal = tpvTotal._sum.tpv || 0
+  const receitaTotal = mergedReceitaTarifariaTotal + mergedFloatingTotal
+  const takeRateMedio = mergedTpvTotal > 0
+    ? (mergedReceitaTarifariaTotal / mergedTpvTotal) * 100 : 0
 
   const fgComReal = fg12M.filter(f => f.faturamentoRealizado != null && f.faturamentoPrevisto > 0)
   const precisaoForecast = fgComReal.length > 0
@@ -98,21 +149,13 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     periodo: { inicio, fim, meses },
     summary: {
-      receitaTotal, tpvTotal: tpvTotal._sum.tpv || 0,
-      receitaTarifaria: tpvTotal._sum.receitaTarifaria || 0,
-      floating: tpvTotal._sum.floating || 0,
+      receitaTotal,
+      tpvTotal: mergedTpvTotal,
+      receitaTarifaria: mergedReceitaTarifariaTotal,
+      floating: mergedFloatingTotal,
       takeRateMedio, precisaoForecast, margemOpMedia,
     },
-    proc12M: proc12M.map(p => ({
-      mes: p.mesRef,
-      tpv: p._sum.tpv || 0,
-      receitaTarifaria: p._sum.receitaTarifaria || 0,
-      floating: p._sum.floating || 0,
-      total: (p._sum.receitaTarifaria || 0) + (p._sum.floating || 0),
-      qtdTransacoes: p._sum.qtdTransacoes || 0,
-      qtdMed: p._sum.qtdMed || 0,
-      takeRate: (p._sum.tpv || 0) > 0 ? ((p._sum.receitaTarifaria || 0) / (p._sum.tpv || 1)) * 100 : 0,
-    })),
+    proc12M: mergedProc12M,
     clientesByStatus, clientesByModelo, clientesBySegmento,
     topClientes: topClientes.map(t => ({
       ...t, ...cMap.get(t.clienteId),

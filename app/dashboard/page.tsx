@@ -16,6 +16,7 @@ async function getData() {
     metaRec, metaTPV, metaMRR,
     fg12M, fgMesAtual,
     setupsMes, setups12M,
+    custoPix, clientesAll,
   ] = await Promise.all([
     prisma.cliente.count({ where: { status: 'ATIVO' } }),
     prisma.cliente.count({
@@ -46,13 +47,26 @@ async function getData() {
       by: ['mesRef'], where: { mesRef: { in: meses }, status: { in: ['FATURADO', 'PAGO'] } },
       _sum: { valor: true },
     }),
+    // Custo do PIX para margem transacional
+    (prisma as any).parametro?.findFirst({ where: { chave: 'CUSTO_PIX' } }).catch(() => null) as Promise<{ valor: number } | null>,
+    // Todos os clientes ATIVO com MRR para evolução histórica
+    prisma.cliente.findMany({
+      where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
+      select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, dataFechamento: true, dataEncerramento: true },
+    }),
   ])
 
+  // Receita do mês atual do módulo Receita (fallback para processamento)
+  const recMesAtual = rec12M.find(r => r.mesRef === mesAtual)
   // TPV: processamento é primário; cai back em forecast realizado se vazio
   const procTpv = procMes._sum.tpv || 0
   const tpv = procTpv > 0 ? procTpv : (fgMesAtual?.tpvRealizado || 0)
-  const receita = procMes._sum.receitaTarifaria || 0
-  const floating = procMes._sum.floating || 0
+  // Receita tarifária: processamento é primário; cai back em receitaRealizada
+  const procReceita = procMes._sum.receitaTarifaria || 0
+  const receita = procReceita > 0 ? procReceita : (recMesAtual?.receitaTarifaria || 0)
+  // Floating: processamento é primário; cai back em receitaRealizada
+  const procFloating = procMes._sum.floating || 0
+  const floating = procFloating > 0 ? procFloating : (recMesAtual?.floatingRealizado || 0)
   const qtdMed = procMes._sum.qtdMed || 0
   // Transações: processamento é primário; cai back em forecast
   const procQtdTx = procMes._sum.qtdTransacoes || 0
@@ -62,7 +76,11 @@ async function getData() {
   const mrr = mrrApi + mrrWl
   const takeRate = tpv > 0 ? (receita / tpv) * 100 : 0
   const pmp = qtdTx > 0 ? receita / qtdTx : 0
+  // MED médio: total MEDs / total transações do período
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
+  // Margem Transacional: (PMP - custo_pix) / PMP * 100
+  const custoPorPix = (custoPix as { valor: number } | null)?.valor ?? 0
+  const margemTransacional = pmp > 0 && custoPorPix > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
   const setupsMap = new Map(setups12M.map((s: { mesRef: string; _sum: { valor: number | null } }) => [s.mesRef, s._sum.valor || 0]))
   const setupsMesVal = setupsMes._sum.valor || 0
   const receitaAno = rec12M
@@ -96,14 +114,17 @@ async function getData() {
 
   const chartData = meses.map(mes => {
     const p = procMap.get(mes), r = recMap.get(mes), fg = fgMap.get(mes)
-    const t = p?.tpv || 0, rv = r?.receitaTarifaria || 0
+    const t = p?.tpv || 0
+    // Receita tarifária: processamento se disponível, senão receitaRealizada
+    const rv = (p?.receitaTarifaria || 0) > 0 ? (p?.receitaTarifaria || 0) : (r?.receitaTarifaria || 0)
+    const fl = (p?.floating || 0) > 0 ? (p?.floating || 0) : (r?.floatingRealizado || 0)
     // Faturamento realizado: forecast se disponível, senão receita lançada
-    const receitaReal = (r?.receitaTarifaria || 0) + (r?.floatingRealizado || 0)
+    const receitaReal = rv + fl
     const fatRealizado = fg?.faturamentoRealizado ?? (receitaReal > 0 ? receitaReal : null)
     // TPV realizado: processamento se disponível, senão forecast
     const tpvReal = t > 0 ? t : (fg?.tpvRealizado ?? null)
     return {
-      mes, receitaTarifaria: rv, floating: r?.floatingRealizado || 0, tpv: t,
+      mes, receitaTarifaria: rv, floating: fl, tpv: t,
       faturamentoPrevisto: fg?.faturamentoPrevisto || 0,
       faturamentoRealizado: fatRealizado,
       tpvPrevisto: fg?.tpvPrevisto || 0,
@@ -114,11 +135,27 @@ async function getData() {
     }
   })
 
+  // MRR evolution: compute per-month based on which clients were active
+  const mrrEvolution = meses.map(mes => {
+    const [y, m] = mes.split('-').map(Number)
+    const mesDate = new Date(y, m - 1, 1) // first day of the month
+    const mrrMes = (clientesAll as Array<{
+      mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null
+      dataFechamento: Date | null; dataEncerramento: Date | null
+    }>).reduce((sum, c) => {
+      const inicio = c.dataFechamento ? new Date(c.dataFechamento) : null
+      const fim = c.dataEncerramento ? new Date(c.dataEncerramento) : null
+      const ativo = (!inicio || inicio <= mesDate) && (!fim || fim > mesDate)
+      return ativo ? sum + (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0) : sum
+    }, 0)
+    return { mes, mrr: mrrMes }
+  })
+
   return {
-    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp, setups: setupsMesVal },
+    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp, setups: setupsMesVal, margemTransacional, custoPorPix },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
-    mrrEvolution: meses.map(mes => ({ mes, mrr })),
+    mrrEvolution,
     mesAtual, fgMesAtual, fg12M,
   }
 }
@@ -138,8 +175,13 @@ export default async function DashboardPage() {
     { label: 'Receita Tarifária', value: formatCurrency(kpis.receita), color: 'text-indigo-400' },
     { label: 'Floating (Mês)', value: formatCurrency(kpis.floating), color: 'text-emerald-400' },
     { label: 'Take Rate', value: kpis.takeRate > 0 ? formatPercent(kpis.takeRate, 3) : '—', color: 'text-amber-400' },
-    { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
     { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
+    {
+      label: 'Margem Transacional',
+      value: kpis.margemTransacional !== null ? formatPercent(kpis.margemTransacional, 1) : kpis.custoPorPix === 0 ? 'Configure custo PIX' : '—',
+      color: kpis.margemTransacional !== null && kpis.margemTransacional >= 60 ? 'text-emerald-400' : kpis.margemTransacional !== null ? 'text-amber-400' : 'text-gray-600',
+    },
+    { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
     { label: 'MED Médio', value: kpis.med > 0 ? formatPercent(kpis.med, 2) : '—', color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]

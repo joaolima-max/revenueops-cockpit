@@ -18,7 +18,16 @@ interface Cliente {
   mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null
   receitaPrevistaMensal: number | null; dataFechamento: string | null
   descontoPercent: number | null; overpricePercent: number | null
+  notas: string | null
   owner: { name: string }
+}
+
+function getSegmentLabel(segmento: string | null, notas: string | null): string {
+  if (notas) {
+    const match = notas.match(/Segmento: ([^\n]+)/)
+    if (match) return match[1].trim()
+  }
+  return SEGMENTO_LABELS[segmento as string] || segmento || '—'
 }
 
 const emptyForm = {
@@ -260,7 +269,7 @@ export default function CarteiraClient({ role }: { role: string }) {
                 <td className="px-4 py-3.5">
                   {c.segmento ? (
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[c.segmento] ?? 'bg-gray-500/10 text-gray-400'}`}>
-                      {SEGMENTO_LABELS[c.segmento] ?? c.segmento}
+                      {getSegmentLabel(c.segmento, c.notas)}
                     </span>
                   ) : <span className="text-gray-700 text-xs">—</span>}
                 </td>

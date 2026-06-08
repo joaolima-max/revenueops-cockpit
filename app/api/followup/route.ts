@@ -19,9 +19,24 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const body = await request.json()
-  const { clienteId, titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas } = body
+  const { clienteId, titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, frequenciaDias } = body
 
   if (!clienteId || !titulo) return NextResponse.json({ error: 'Cliente e título obrigatórios' }, { status: 400 })
+
+  // Ensure the synthetic "Carteira Geral" client exists to satisfy the FK constraint
+  if (clienteId === 'CARTEIRA_GERAL') {
+    await prisma.cliente.upsert({
+      where: { id: 'CARTEIRA_GERAL' },
+      create: {
+        id: 'CARTEIRA_GERAL',
+        nome: 'Carteira Geral',
+        modeloOperacional: 'API',
+        status: 'ATIVO',
+        ownerId: session.userId,
+      },
+      update: {},
+    })
+  }
 
   const followUp = await prisma.followUp.create({
     data: {
@@ -32,6 +47,7 @@ export async function POST(request: NextRequest) {
       dataInicio: !recorrente && dataInicio ? new Date(dataInicio) : null,
       dataFim: !recorrente && dataFim ? new Date(dataFim) : null,
       notas: notas || null,
+      frequenciaDias: frequenciaDias ? parseInt(frequenciaDias) : null,
     },
     include: { cliente: { select: { id: true, nome: true, segmento: true, modeloOperacional: true } } },
   })
