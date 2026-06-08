@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -65,7 +65,7 @@ const emptyForm = {
 }
 
 const emptyFreqForm = {
-  clienteId: '', titulo: '', tipo: 'FOLLOW_UP', frequenciaDias: '',
+  titulo: '', tipo: 'FOLLOW_UP', frequenciaDias: '',
 }
 
 function getMondayOfWeek(offset = 0): Date {
@@ -97,6 +97,107 @@ function proximoContatoColor(iso: string | null): string {
   return 'text-emerald-400'
 }
 
+function isCarteiraGeral(clienteId: string): boolean {
+  return clienteId === 'CARTEIRA_GERAL'
+}
+
+function CarteiraGeralBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold text-white"
+      style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+    >
+      🗂 Carteira Geral
+    </span>
+  )
+}
+
+// ─── Multi-select dropdown component ──────────────────────────────────────────
+interface MultiClientSelectProps {
+  clientes: Cliente[]
+  selected: string[]
+  onChange: (ids: string[]) => void
+}
+
+function MultiClientSelect({ clientes, selected, onChange }: MultiClientSelectProps) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const allSelected = clientes.length > 0 && selected.length === clientes.length
+
+  function toggleAll() {
+    onChange(allSelected ? [] : clientes.map(c => c.id))
+  }
+
+  function toggleOne(id: string) {
+    onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id])
+  }
+
+  const label = selected.length === 0
+    ? 'Selecione clientes...'
+    : selected.length === 1
+      ? clientes.find(c => c.id === selected[0])?.nome ?? '1 cliente'
+      : `${selected.length} clientes selecionados`
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-left flex items-center justify-between focus:outline-none focus:border-emerald-500"
+      >
+        <span className={selected.length === 0 ? 'text-gray-500' : 'text-white'}>{label}</span>
+        <svg className={`w-4 h-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+          {/* Selecionar todos */}
+          <label className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-800 cursor-pointer border-b border-gray-700/60">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="w-4 h-4 rounded accent-emerald-500"
+            />
+            <span className="text-xs font-semibold text-emerald-400">Selecionar todos</span>
+          </label>
+
+          {clientes.map(c => (
+            <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.includes(c.id)}
+                onChange={() => toggleOne(c.id)}
+                className="w-4 h-4 rounded accent-emerald-500"
+              />
+              <span className="text-sm text-gray-300 truncate">{c.nome}</span>
+            </label>
+          ))}
+
+          {clientes.length === 0 && (
+            <p className="text-xs text-gray-600 text-center py-4">Nenhum cliente disponível</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 export default function FollowUpClient({ clientes }: Props) {
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,9 +206,16 @@ export default function FollowUpClient({ clientes }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
+  // 'especifico' | 'carteira' — scope toggle for the new event modal
+  const [eventoScope, setEventoScope] = useState<'especifico' | 'carteira'>('especifico')
   const [saving, setSaving] = useState(false)
+
+  // Frequency form state
   const [freqForm, setFreqForm] = useState(emptyFreqForm)
+  const [freqSelectedClientes, setFreqSelectedClientes] = useState<string[]>([])
   const [savingFreq, setSavingFreq] = useState(false)
+  const [freqSaveProgress, setFreqSaveProgress] = useState<{ done: number; total: number } | null>(null)
+
   const [registrandoId, setRegistrandoId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
@@ -128,10 +236,11 @@ export default function FollowUpClient({ clientes }: Props) {
   ) => setFreqForm(p => ({ ...p, [field]: e.target.value }))
 
   function openNew() {
-    setEditingId(null); setForm(emptyForm); setShowModal(true)
+    setEditingId(null); setForm(emptyForm); setEventoScope('especifico'); setShowModal(true)
   }
   function openEdit(fu: FollowUp) {
     setEditingId(fu.id)
+    setEventoScope(isCarteiraGeral(fu.cliente.id) ? 'carteira' : 'especifico')
     setForm({
       clienteId: fu.cliente.id, titulo: fu.titulo, descricao: fu.descricao || '',
       tipo: fu.tipo, recorrente: fu.recorrente,
@@ -150,8 +259,9 @@ export default function FollowUpClient({ clientes }: Props) {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     const freqDias = form.frequenciaDias ? parseInt(form.frequenciaDias) : null
+    const resolvedClienteId = eventoScope === 'carteira' ? 'CARTEIRA_GERAL' : form.clienteId
     const payload = {
-      clienteId: form.clienteId, titulo: form.titulo, descricao: form.descricao,
+      clienteId: resolvedClienteId, titulo: form.titulo, descricao: form.descricao,
       tipo: form.tipo,
       recorrente: freqDias ? false : form.recorrente,
       diaSemana: (!freqDias && form.recorrente) ? form.diaSemana : null,
@@ -198,19 +308,35 @@ export default function FollowUpClient({ clientes }: Props) {
   }
 
   async function handleFreqSubmit(e: React.FormEvent) {
-    e.preventDefault(); setSavingFreq(true)
-    const payload = {
-      clienteId: freqForm.clienteId,
-      titulo: freqForm.titulo,
-      tipo: freqForm.tipo,
-      frequenciaDias: freqForm.frequenciaDias ? parseInt(freqForm.frequenciaDias) : null,
-      recorrente: false,
+    e.preventDefault()
+    if (freqSelectedClientes.length === 0) return
+    setSavingFreq(true)
+    setFreqSaveProgress({ done: 0, total: freqSelectedClientes.length })
+
+    const newFollowUps: FollowUp[] = []
+    for (let i = 0; i < freqSelectedClientes.length; i++) {
+      const clienteId = freqSelectedClientes[i]
+      const payload = {
+        clienteId,
+        titulo: freqForm.titulo,
+        tipo: freqForm.tipo,
+        frequenciaDias: freqForm.frequenciaDias ? parseInt(freqForm.frequenciaDias) : null,
+        recorrente: false,
+      }
+      const res = await fetch('/api/followup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) { const d = await res.json(); newFollowUps.push(d.followUp) }
+      setFreqSaveProgress({ done: i + 1, total: freqSelectedClientes.length })
     }
-    const res = await fetch('/api/followup', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) { const d = await res.json(); setFollowUps(p => [...p, d.followUp]); setFreqForm(emptyFreqForm) }
+
+    if (newFollowUps.length > 0) {
+      setFollowUps(p => [...p, ...newFollowUps])
+    }
+    setFreqForm(emptyFreqForm)
+    setFreqSelectedClientes([])
+    setFreqSaveProgress(null)
     setSavingFreq(false)
   }
 
@@ -352,7 +478,18 @@ export default function FollowUpClient({ clientes }: Props) {
                             {!fu.horaInicio && fu.dataInicio && new Date(fu.dataInicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
-                        <p className="text-xs font-medium text-white leading-snug truncate">{fu.cliente.nome}</p>
+                        {isCarteiraGeral(fu.cliente.id) ? (
+                          <p className="leading-snug">
+                            <span
+                              className="text-xs font-semibold text-white px-1.5 py-0.5 rounded-full"
+                              style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                            >
+                              🗂 Carteira
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="text-xs font-medium text-white leading-snug truncate">{fu.cliente.nome}</p>
+                        )}
                         <p className="text-xs text-gray-500 leading-tight truncate">{fu.titulo}</p>
                       </button>
                     ))}
@@ -380,7 +517,11 @@ export default function FollowUpClient({ clientes }: Props) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white truncate">{fu.titulo}</p>
-                        <p className="text-xs text-gray-500 truncate">{fu.cliente.nome}</p>
+                        {isCarteiraGeral(fu.cliente.id) ? (
+                          <CarteiraGeralBadge />
+                        ) : (
+                          <p className="text-xs text-gray-500 truncate">{fu.cliente.nome}</p>
+                        )}
                       </div>
                       <div className="text-right flex-shrink-0">
                         {fu.horaInicio && <p className="text-xs text-gray-400">{fu.horaInicio}{fu.horaFim ? `–${fu.horaFim}` : ''}</p>}
@@ -432,7 +573,11 @@ export default function FollowUpClient({ clientes }: Props) {
                     <div key={fu.id} className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex-1 min-w-0 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-white truncate">{fu.cliente.nome}</span>
+                          {isCarteiraGeral(fu.cliente.id) ? (
+                            <CarteiraGeralBadge />
+                          ) : (
+                            <span className="text-sm font-medium text-white truncate">{fu.cliente.nome}</span>
+                          )}
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
                             {TIPO_LABELS[fu.tipo]}
                           </span>
@@ -477,11 +622,12 @@ export default function FollowUpClient({ clientes }: Props) {
             <h3 className="text-sm font-semibold text-white mb-4">Adicionar Regra de Frequência</h3>
             <form onSubmit={handleFreqSubmit} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
               <div>
-                <label className={lbl}>Cliente *</label>
-                <select required value={freqForm.clienteId} onChange={ff('clienteId')} className={inp}>
-                  <option value="">Selecione...</option>
-                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
+                <label className={lbl}>Clientes * ({freqSelectedClientes.length} selecionados)</label>
+                <MultiClientSelect
+                  clientes={clientes}
+                  selected={freqSelectedClientes}
+                  onChange={setFreqSelectedClientes}
+                />
               </div>
               <div className="sm:col-span-1">
                 <label className={lbl}>Título *</label>
@@ -499,11 +645,33 @@ export default function FollowUpClient({ clientes }: Props) {
                 <input required type="number" min="1" value={freqForm.frequenciaDias} onChange={ff('frequenciaDias')} className={inp}
                   placeholder="Ex: 7" />
               </div>
-              <div className="col-span-2 sm:col-span-4 flex justify-end">
-                <button type="submit" disabled={savingFreq}
-                  className="px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+              <div className="col-span-2 sm:col-span-4 flex items-center justify-between gap-4">
+                {freqSaveProgress && (
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="flex-1 bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-1.5 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.round((freqSaveProgress.done / freqSaveProgress.total) * 100)}%`,
+                          background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)',
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                      {freqSaveProgress.done}/{freqSaveProgress.total} clientes
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={savingFreq || freqSelectedClientes.length === 0}
+                  className="ml-auto px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-                  {savingFreq ? 'Salvando...' : '+ Adicionar Regra'}
+                  {savingFreq
+                    ? `Salvando ${freqSaveProgress?.done ?? 0}/${freqSaveProgress?.total ?? freqSelectedClientes.length}...`
+                    : freqSelectedClientes.length > 1
+                      ? `+ Adicionar para ${freqSelectedClientes.length} clientes`
+                      : '+ Adicionar Regra'}
                 </button>
               </div>
             </form>
@@ -529,7 +697,12 @@ export default function FollowUpClient({ clientes }: Props) {
                 <tr><td colSpan={7} className="text-center text-gray-700 py-12 text-sm">Nenhum evento cadastrado</td></tr>
               ) : followUps.map(fu => (
                 <tr key={fu.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                  <td className="px-4 py-3 text-white font-medium">{fu.cliente.nome}</td>
+                  <td className="px-4 py-3">
+                    {isCarteiraGeral(fu.cliente.id)
+                      ? <CarteiraGeralBadge />
+                      : <span className="text-white font-medium">{fu.cliente.nome}</span>
+                    }
+                  </td>
                   <td className="px-4 py-3 text-gray-300">{fu.titulo}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
@@ -575,15 +748,59 @@ export default function FollowUpClient({ clientes }: Props) {
               <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
+              {/* Scope toggle + client select (new events only) */}
               {!editingId && (
-                <div>
-                  <label className={lbl}>Cliente *</label>
-                  <select required value={form.clienteId} onChange={f('clienteId')} className={inp}>
-                    <option value="">Selecione...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
+                <div className="space-y-2">
+                  {/* Toggle pills */}
+                  <div className="flex gap-1 p-1 bg-gray-800 rounded-lg w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setEventoScope('especifico')}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${eventoScope === 'especifico' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Específico ▾
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEventoScope('carteira')}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                        eventoScope === 'carteira'
+                          ? 'text-white'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                      style={eventoScope === 'carteira' ? { background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' } : {}}
+                    >
+                      Toda a Carteira
+                    </button>
+                  </div>
+
+                  {/* Client select — only when "específico" */}
+                  {eventoScope === 'especifico' && (
+                    <div>
+                      <label className={lbl}>Cliente *</label>
+                      <select required value={form.clienteId} onChange={f('clienteId')} className={inp}>
+                        <option value="">Selecione...</option>
+                        {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {eventoScope === 'carteira' && (
+                    <p className="text-xs text-emerald-400">
+                      Este evento será vinculado à carteira inteira (todos os clientes).
+                    </p>
+                  )}
                 </div>
               )}
+
+              {/* When editing a carteira event, show a read-only badge */}
+              {editingId && eventoScope === 'carteira' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Escopo:</span>
+                  <CarteiraGeralBadge />
+                </div>
+              )}
+
               <div>
                 <label className={lbl}>Título *</label>
                 <input required type="text" value={form.titulo} onChange={f('titulo')} className={inp}
