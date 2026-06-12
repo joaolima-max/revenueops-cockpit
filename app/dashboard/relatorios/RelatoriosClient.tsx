@@ -26,6 +26,7 @@ interface RelData {
   summary: {
     receitaTotal: number; tpvTotal: number; receitaTarifaria: number
     floating: number; takeRateMedio: number; precisaoForecast: number; margemOpMedia: number | null
+    qtdTransacoesTotal: number
   }
   proc12M: { mes: string; tpv: number; receitaTarifaria: number; floating: number; total: number; qtdTransacoes: number; qtdMed: number; takeRate: number }[]
   clientesByStatus: { status: string; _count: number }[]
@@ -191,6 +192,22 @@ export default function RelatoriosClient() {
                 <p className={`text-xl font-bold ${k.c}`}>{k.v}</p>
               </div>
             ))}
+          </div>
+
+          {/* TPV Total + Qtd. Transações — linha de destaque */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 divide-y xl:divide-y-0 xl:divide-x divide-gray-800">
+              <div className="text-center pb-6 xl:pb-0 xl:pr-8">
+                <p className="text-gray-600 text-xs font-semibold tracking-wider mb-3">TPV TOTAL DO PERÍODO</p>
+                <p className="text-4xl font-bold text-sky-400">{formatTPV(s.tpvTotal)}</p>
+                <p className="text-xs text-gray-700 mt-2">Volume Total de Pagamentos · {data.periodo.inicio} → {data.periodo.fim}</p>
+              </div>
+              <div className="text-center pt-6 xl:pt-0 xl:pl-8">
+                <p className="text-gray-600 text-xs font-semibold tracking-wider mb-3">QUANTIDADE DE TRANSAÇÕES TOTAL</p>
+                <p className="text-4xl font-bold text-violet-400">{s.qtdTransacoesTotal.toLocaleString('pt-BR')}</p>
+                <p className="text-xs text-gray-700 mt-2">Total de transações processadas · {data.periodo.inicio} → {data.periodo.fim}</p>
+              </div>
+            </div>
           </div>
 
           {/* Gráficos — linha 1 */}

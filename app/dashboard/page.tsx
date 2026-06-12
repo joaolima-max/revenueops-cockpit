@@ -119,15 +119,16 @@ async function getData() {
     // Faturamento realizado: forecast se disponível, senão receita lançada
     const receitaReal = rv + fl
     const fatRealizado = fg?.faturamentoRealizado ?? (receitaReal > 0 ? receitaReal : null)
-    // TPV realizado: processamento se disponível, senão forecast
+    // TPV combinado: processamento se disponível, senão forecastGeral realizado
     const tpvReal = t > 0 ? t : (fg?.tpvRealizado ?? null)
+    const tpvCombinado = tpvReal ?? 0
     return {
-      mes, receitaTarifaria: rv, floating: fl, tpv: t,
+      mes, receitaTarifaria: rv, floating: fl, tpv: tpvCombinado,
       faturamentoPrevisto: fg?.faturamentoPrevisto || 0,
       faturamentoRealizado: fatRealizado,
       tpvPrevisto: fg?.tpvPrevisto || 0,
       tpvRealizado: tpvReal,
-      takeRate: t > 0 ? (rv / t) * 100 : 0,
+      takeRate: tpvCombinado > 0 ? (rv / tpvCombinado) * 100 : 0,
       margemPrevista: fg?.margemPrevista ?? null,
       margemRealizada: fg?.margemRealizada ?? null,
     }
@@ -178,7 +179,7 @@ export default async function DashboardPage() {
       color: kpis.margemTransacional !== null && kpis.margemTransacional >= 60 ? 'text-emerald-400' : kpis.margemTransacional !== null ? 'text-amber-400' : 'text-gray-600',
     },
     { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
-    { label: 'MED Médio', value: kpis.med > 0 ? formatPercent(kpis.med, 2) : '—', color: 'text-sky-400' },
+    { label: 'MED Médio', value: kpis.qtdTx > 0 ? formatPercent(kpis.med, 2) : '—', color: 'text-sky-400' },
     { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
   ]
 

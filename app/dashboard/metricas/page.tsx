@@ -7,7 +7,7 @@ async function getMetricas() {
   const meses = getLast12Months()
   const mesAtual = getCurrentMonth()
 
-  const [clientes, processamentos12M, procMesAtual, receitaRealizada12M, receitaMesAtual, metas] = await Promise.all([
+  const [clientes, processamentos12M, procMesAtual, receitaRealizada12M, receitaMesAtual, metas, fgMesAtual] = await Promise.all([
     prisma.cliente.findMany({
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: {
@@ -36,6 +36,7 @@ async function getMetricas() {
     }),
     prisma.receitaRealizada.findFirst({ where: { mesRef: mesAtual } }),
     prisma.meta.findMany({ where: { periodo: mesAtual } }),
+    prisma.forecastGeral.findFirst({ where: { mesRef: mesAtual } }),
   ])
 
   const procMap = new Map(processamentos12M.map(p => [p.clienteId, p]))
@@ -87,9 +88,10 @@ async function getMetricas() {
   const receitaMesLancada = receitaMesAtual ? receitaMesAtual.receitaTarifaria + receitaMesAtual.floatingRealizado : 0
   const receitaMesTotal = Math.max(receitaMesProc, receitaMesLancada)
 
-  // TPV mês
-  const tpvMes = procMesAtual.reduce((s, p) => s + (p._sum.tpv || 0), 0)
-  const takeRateMes = tpvMes > 0 ? (receitaMesProc / tpvMes) * 100 : 0
+  // TPV mês: processamento se disponível, senão forecastGeral realizado
+  const tpvMesProc = procMesAtual.reduce((s, p) => s + (p._sum.tpv || 0), 0)
+  const tpvMes = tpvMesProc > 0 ? tpvMesProc : (fgMesAtual?.tpvRealizado || 0)
+  const takeRateMes = tpvMes > 0 ? (receitaMesTotal / tpvMes) * 100 : 0
 
   // Metas do mês
   const metaReceita = metas.find(m => m.tipo === 'RECEITA')

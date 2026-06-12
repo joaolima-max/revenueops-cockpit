@@ -87,12 +87,14 @@ export async function GET(request: NextRequest) {
   })
   const cMap = new Map(topClienteNames.map(c => [c.id, c]))
 
-  // Build a lookup map for receitaRealizada by mesRef
+  // Build lookup maps
   const rrMap = new Map(receitaRealizadaRows.map(r => [r.mesRef, r]))
+  const fgMap = new Map(fg12M.map(f => [f.mesRef, f]))
 
-  // Merge proc12M with receitaRealizada data
+  // Merge proc12M with receitaRealizada + forecastGeral fallback for TPV
   const mergedProc12M = proc12M.map(p => {
     const rr = rrMap.get(p.mesRef)
+    const fg = fgMap.get(p.mesRef)
     const procReceitaTarifaria = p._sum.receitaTarifaria || 0
     const procFloating = p._sum.floating || 0
     const rrReceitaTarifaria = rr?.receitaTarifaria ?? 0
@@ -100,7 +102,9 @@ export async function GET(request: NextRequest) {
 
     const mergedReceitaTarifaria = Math.max(procReceitaTarifaria, rrReceitaTarifaria)
     const mergedFloating = procFloating > 0 ? procFloating : rrFloating
-    const tpv = p._sum.tpv || 0
+    // TPV: processamento se disponível, senão forecastGeral realizado
+    const procTpv = p._sum.tpv || 0
+    const tpv = procTpv > 0 ? procTpv : (fg?.tpvRealizado || 0)
 
     return {
       mes: p.mesRef,
@@ -118,15 +122,17 @@ export async function GET(request: NextRequest) {
   const procMesSet = new Set(proc12M.map(p => p.mesRef))
   for (const rr of receitaRealizadaRows) {
     if (!procMesSet.has(rr.mesRef)) {
+      const fg = fgMap.get(rr.mesRef)
+      const tpv = fg?.tpvRealizado || 0
       mergedProc12M.push({
         mes: rr.mesRef,
-        tpv: 0,
+        tpv,
         receitaTarifaria: rr.receitaTarifaria,
         floating: rr.floatingRealizado,
         total: rr.receitaTarifaria + rr.floatingRealizado,
         qtdTransacoes: 0,
         qtdMed: 0,
-        takeRate: 0,
+        takeRate: tpv > 0 ? (rr.receitaTarifaria / tpv) * 100 : 0,
       })
     }
   }
@@ -135,7 +141,8 @@ export async function GET(request: NextRequest) {
   // Recalculate totals from merged data
   const mergedReceitaTarifariaTotal = mergedProc12M.reduce((s, r) => s + r.receitaTarifaria, 0)
   const mergedFloatingTotal = mergedProc12M.reduce((s, r) => s + r.floating, 0)
-  const mergedTpvTotal = tpvTotal._sum.tpv || 0
+  const mergedTpvTotal = mergedProc12M.reduce((s, r) => s + r.tpv, 0)
+  const qtdTransacoesTotal = mergedProc12M.reduce((s, r) => s + r.qtdTransacoes, 0)
   const receitaTotal = mergedReceitaTarifariaTotal + mergedFloatingTotal
   const takeRateMedio = mergedTpvTotal > 0
     ? (mergedReceitaTarifariaTotal / mergedTpvTotal) * 100 : 0
@@ -154,6 +161,7 @@ export async function GET(request: NextRequest) {
       receitaTarifaria: mergedReceitaTarifariaTotal,
       floating: mergedFloatingTotal,
       takeRateMedio, precisaoForecast, margemOpMedia,
+      qtdTransacoesTotal,
     },
     proc12M: mergedProc12M,
     clientesByStatus, clientesByModelo, clientesBySegmento,
