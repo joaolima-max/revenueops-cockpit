@@ -99,12 +99,15 @@ export async function GET(request: NextRequest) {
     const procFloating = p._sum.floating || 0
     const rrReceitaTarifaria = rr?.receitaTarifaria ?? 0
     const rrFloating = rr?.floatingRealizado ?? 0
+    const wlTarif = fg?.receitaTarifariaWl || 0
 
-    const mergedReceitaTarifaria = Math.max(procReceitaTarifaria, rrReceitaTarifaria)
+    // WL tariff adds to tarifária total
+    const mergedReceitaTarifaria = Math.max(procReceitaTarifaria, rrReceitaTarifaria) + wlTarif
     const mergedFloating = procFloating > 0 ? procFloating : rrFloating
     // TPV: processamento se disponível, senão forecastGeral realizado
     const procTpv = p._sum.tpv || 0
     const tpv = procTpv > 0 ? procTpv : (fg?.tpvRealizado || 0)
+    const qtdTransacoes = (p._sum.qtdTransacoes || 0) > 0 ? (p._sum.qtdTransacoes || 0) : (fg?.qtdTransacoesRealizadas || 0)
 
     return {
       mes: p.mesRef,
@@ -112,30 +115,52 @@ export async function GET(request: NextRequest) {
       receitaTarifaria: mergedReceitaTarifaria,
       floating: mergedFloating,
       total: mergedReceitaTarifaria + mergedFloating,
-      qtdTransacoes: (p._sum.qtdTransacoes || 0) > 0 ? (p._sum.qtdTransacoes || 0) : (fg?.qtdTransacoesRealizadas || 0),
-      qtdMed: p._sum.qtdMed || 0,
+      qtdTransacoes,
+      qtdMed: (p._sum.qtdMed || 0) > 0 ? (p._sum.qtdMed || 0) : (fg?.qtdMedRealizada || 0),
       takeRate: tpv > 0 ? (mergedReceitaTarifaria / tpv) * 100 : 0,
     }
   })
 
-  // Also include months that only exist in receitaRealizada (no processamento rows)
   const procMesSet = new Set(proc12M.map(p => p.mesRef))
+
+  // Include months only in receitaRealizada (no processamento rows)
   for (const rr of receitaRealizadaRows) {
     if (!procMesSet.has(rr.mesRef)) {
       const fg = fgMap.get(rr.mesRef)
       const tpv = fg?.tpvRealizado || 0
+      const wlTarif = fg?.receitaTarifariaWl || 0
+      const receitaTarifaria = rr.receitaTarifaria + wlTarif
       mergedProc12M.push({
         mes: rr.mesRef,
         tpv,
-        receitaTarifaria: rr.receitaTarifaria,
+        receitaTarifaria,
         floating: rr.floatingRealizado,
-        total: rr.receitaTarifaria + rr.floatingRealizado,
-        qtdTransacoes: 0,
-        qtdMed: 0,
-        takeRate: tpv > 0 ? (rr.receitaTarifaria / tpv) * 100 : 0,
+        total: receitaTarifaria + rr.floatingRealizado,
+        qtdTransacoes: fg?.qtdTransacoesRealizadas || 0,
+        qtdMed: fg?.qtdMedRealizada || 0,
+        takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : 0,
       })
     }
   }
+
+  // Include months only in forecastGeral (no processamento, no receitaRealizada)
+  for (const fg of fg12M) {
+    if (!procMesSet.has(fg.mesRef) && !rrMap.has(fg.mesRef)) {
+      const tpv = fg.tpvRealizado || 0
+      const receitaTarifaria = fg.receitaTarifariaWl || 0
+      mergedProc12M.push({
+        mes: fg.mesRef,
+        tpv,
+        receitaTarifaria,
+        floating: 0,
+        total: receitaTarifaria,
+        qtdTransacoes: fg.qtdTransacoesRealizadas || 0,
+        qtdMed: fg.qtdMedRealizada || 0,
+        takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : 0,
+      })
+    }
+  }
+
   mergedProc12M.sort((a, b) => a.mes.localeCompare(b.mes))
 
   // Recalculate totals from merged data
