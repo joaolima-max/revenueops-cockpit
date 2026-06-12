@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { formatCurrency, formatTPV, formatPercent, formatCompact, getLast12Months, getCurrentMonth, formatMesRef } from '@/lib/utils'
+import { formatCurrency, formatTPV, formatPercent, getLast12Months, getCurrentMonth, formatMesRef } from '@/lib/utils'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
 
 async function getData() {
@@ -172,7 +172,7 @@ async function getData() {
   })
 
   return {
-    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp, setups: setupsMesVal + contaReceberMesVal, margemTransacional, custoPorPix, receitaTarifariaWlMes },
+    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, precisao, qtdTx, margemOp, setups: setupsMesVal + contaReceberMesVal, margemTransacional, custoPorPix, receitaTarifariaWlMes },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution,
