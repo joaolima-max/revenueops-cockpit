@@ -16,7 +16,7 @@ async function getData() {
     metaRec, metaTPV, metaMRR,
     fg12M, fgMesAtual,
     setupsMes, setups12M,
-    custoPix, clientesAll,
+    clientesAll,
   ] = await Promise.all([
     prisma.cliente.count({ where: { status: 'ATIVO' } }),
     prisma.cliente.count({
@@ -47,9 +47,7 @@ async function getData() {
       by: ['mesRef'], where: { mesRef: { in: meses }, status: { in: ['FATURADO', 'PAGO'] } },
       _sum: { valor: true },
     }),
-    // Custo do PIX para margem transacional
-    (prisma as any).parametro?.findFirst({ where: { chave: 'CUSTO_PIX' } }).catch(() => null) as Promise<{ valor: number } | null>,
-    // Todos os clientes ATIVO com MRR para evolução histórica
+    // Todos os clientes para evolução histórica de MRR
     prisma.cliente.findMany({
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, dataFechamento: true, dataEncerramento: true },
@@ -78,8 +76,8 @@ async function getData() {
   const pmp = qtdTx > 0 ? receita / qtdTx : 0
   // MED médio: total MEDs / total transações do período
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
-  // Margem Transacional: (PMP - custo_pix) / PMP * 100  — padrão R$0,055 se não cadastrado
-  const custoPorPix = (custoPix as { valor: number } | null)?.valor ?? 0.055
+  // Margem Transacional: (PMP - custo_pix) / PMP * 100 — custo fixo R$0,055
+  const custoPorPix = 0.055
   const margemTransacional = pmp > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
   const setupsMap = new Map(setups12M.map((s: { mesRef: string; _sum: { valor: number | null } }) => [s.mesRef, s._sum.valor || 0]))
   const setupsMesVal = setupsMes._sum.valor || 0

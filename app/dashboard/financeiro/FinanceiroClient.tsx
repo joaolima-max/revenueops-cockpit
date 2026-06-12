@@ -20,7 +20,7 @@ interface ContaReceber {
   cliente: { id: string; nome: string; modeloOperacional: string }
 }
 
-interface Props { clientes: (Cliente['cliente'] & { status: string })[] }
+interface Props { clientes: (Cliente & { status: string })[] }
 
 const STATUS_LABELS: Record<string, string> = {
   PENDENTE: 'Pendente', FATURADO: 'Faturado', PAGO: 'Pago', INADIMPLENTE: 'Inadimplente',
