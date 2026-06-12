@@ -44,11 +44,11 @@ async function getData() {
     prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'desc' } }),
     prisma.forecastGeral.findFirst({ where: { mesRef: mesAtual } }),
     prisma.pedidoCobravel.aggregate({
-      where: { mesRef: mesAtual, status: { in: ['FATURADO', 'PAGO'] } },
+      where: { mesRef: mesAtual, status: 'PAGO' },
       _sum: { valor: true },
     }),
     prisma.pedidoCobravel.groupBy({
-      by: ['mesRef'], where: { mesRef: { in: meses }, status: { in: ['FATURADO', 'PAGO'] } },
+      by: ['mesRef'], where: { mesRef: { in: meses }, status: 'PAGO' },
       _sum: { valor: true },
     }),
     // Todos os clientes para evolução histórica de MRR
@@ -56,10 +56,10 @@ async function getData() {
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, dataFechamento: true, dataEncerramento: true },
     }),
-    // Serviços e setups do módulo financeiro (ContaReceber) no mês atual
+    // Serviços e setups do módulo financeiro (ContaReceber) no mês atual — apenas PAGO
     prisma.contaReceber.aggregate({
       where: {
-        status: { in: ['FATURADO', 'PAGO'] },
+        status: 'PAGO',
         dataVenc: { gte: inicioMes, lt: fimMes },
         tipo: { notIn: ['Mensalidade API', 'Sustentação White Label'] },
       },
@@ -185,7 +185,7 @@ export default async function DashboardPage() {
   const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual, fg12M } = await getData()
 
   const primary = [
-    { label: 'Receita Total (Ano)', value: formatCompact(kpis.receitaAno), sub: 'Tarifária + Floating', color: 'text-indigo-400', bg: 'bg-indigo-500/10', meta: metas.receita, metaVal: kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups },
+    { label: `Faturamento ${formatMesRef(mesAtual)}`, value: formatCurrency(kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups), sub: 'Tarifária + WL + Floating + MRR + Setups', color: 'text-indigo-400', bg: 'bg-indigo-500/10', meta: metas.receita, metaVal: kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups },
     { label: 'MRR', value: formatCurrency(kpis.mrr), sub: 'Receita recorrente mensal', color: 'text-emerald-400', bg: 'bg-emerald-500/10', meta: metas.mrr, metaVal: kpis.mrr },
     { label: `TPV ${formatMesRef(mesAtual)}`, value: formatTPV(kpis.tpv), sub: 'Volume processado no mês', color: 'text-sky-400', bg: 'bg-sky-500/10', meta: metas.tpv, metaVal: kpis.tpv },
     { label: 'Clientes Ativos', value: String(kpis.clientesAtivos), sub: kpis.churn > 0 ? `-${kpis.churn} churn este mês` : 'sem churn este mês', color: 'text-violet-400', bg: 'bg-violet-500/10', meta: null, metaVal: 0 },
@@ -266,8 +266,8 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
           <div>
             <p className="text-xs text-gray-600 mb-1">Receita Tarifária</p>
-            <p className="text-xl font-bold text-indigo-400">{formatCurrency(kpis.receita)}</p>
-            <p className="text-xs text-gray-700 mt-0.5">Do processamento</p>
+            <p className="text-xl font-bold text-indigo-400">{formatCurrency(kpis.receita + kpis.receitaTarifariaWlMes)}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Processamento + WL</p>
           </div>
           <div>
             <p className="text-xs text-gray-600 mb-1">Floating</p>
