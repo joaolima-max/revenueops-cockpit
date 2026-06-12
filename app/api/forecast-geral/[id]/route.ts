@@ -10,6 +10,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const {
     tpvPrevisto, qtdTransacoesPrevista, faturamentoPrevisto, margemPrevista,
     tpvRealizado, qtdTransacoesRealizadas, faturamentoRealizado, margemRealizada, notas,
+    qtdMedRealizada, receitaTarifariaWl, dataLancamento,
   } = await request.json()
 
   const forecast = await prisma.forecastGeral.update({
@@ -23,6 +24,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       qtdTransacoesRealizadas: qtdTransacoesRealizadas ?? undefined,
       faturamentoRealizado: faturamentoRealizado ?? undefined,
       margemRealizada: margemRealizada ?? undefined,
+      qtdMedRealizada: qtdMedRealizada !== undefined ? (qtdMedRealizada ?? null) : undefined,
+      receitaTarifariaWl: receitaTarifariaWl !== undefined ? (receitaTarifariaWl ?? null) : undefined,
+      dataLancamento: dataLancamento !== undefined ? (dataLancamento ? new Date(dataLancamento) : null) : undefined,
       notas: notas ?? undefined,
     },
   })

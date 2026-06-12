@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
   const {
     mesRef, tpvPrevisto, qtdTransacoesPrevista, faturamentoPrevisto, margemPrevista,
     tpvRealizado, qtdTransacoesRealizadas, faturamentoRealizado, margemRealizada, notas,
+    qtdMedRealizada, receitaTarifariaWl, dataLancamento,
   } = body
 
   if (!mesRef) return NextResponse.json({ error: 'Mês é obrigatório' }, { status: 400 })
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
     qtdTransacoesRealizadas: qtdTransacoesRealizadas ?? null,
     faturamentoRealizado: faturamentoRealizado ?? null,
     margemRealizada: margemRealizada ?? null,
+    qtdMedRealizada: qtdMedRealizada ?? null,
+    receitaTarifariaWl: receitaTarifariaWl ?? null,
+    dataLancamento: dataLancamento ? new Date(dataLancamento) : null,
     notas: notas ?? null,
   }
 

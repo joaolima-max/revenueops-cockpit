@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
       receitaTarifaria: mergedReceitaTarifaria,
       floating: mergedFloating,
       total: mergedReceitaTarifaria + mergedFloating,
-      qtdTransacoes: p._sum.qtdTransacoes || 0,
+      qtdTransacoes: (p._sum.qtdTransacoes || 0) > 0 ? (p._sum.qtdTransacoes || 0) : (fg?.qtdTransacoesRealizadas || 0),
       qtdMed: p._sum.qtdMed || 0,
       takeRate: tpv > 0 ? (mergedReceitaTarifaria / tpv) * 100 : 0,
     }

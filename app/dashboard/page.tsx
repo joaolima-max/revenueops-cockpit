@@ -9,6 +9,9 @@ async function getData() {
   const meses = getLast12Months()
   const mesAtual = getCurrentMonth()
   const anoAtual = new Date().getFullYear().toString()
+  const [mesAno, mesNum] = mesAtual.split('-').map(Number)
+  const inicioMes = new Date(mesAno, mesNum - 1, 1)
+  const fimMes = new Date(mesAno, mesNum, 1)
 
   const [
     clientesAtivos, clientesEncerradosMes,
@@ -17,6 +20,7 @@ async function getData() {
     fg12M, fgMesAtual,
     setupsMes, setups12M,
     clientesAll,
+    contaReceberMes,
   ] = await Promise.all([
     prisma.cliente.count({ where: { status: 'ATIVO' } }),
     prisma.cliente.count({
@@ -52,6 +56,15 @@ async function getData() {
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, dataFechamento: true, dataEncerramento: true },
     }),
+    // Serviços e setups do módulo financeiro (ContaReceber) no mês atual
+    prisma.contaReceber.aggregate({
+      where: {
+        status: { in: ['FATURADO', 'PAGO'] },
+        dataVenc: { gte: inicioMes, lt: fimMes },
+        tipo: { notIn: ['Mensalidade API', 'Sustentação White Label'] },
+      },
+      _sum: { valor: true },
+    }),
   ])
 
   // Receita do mês atual do módulo Receita (fallback para processamento)
@@ -62,18 +75,25 @@ async function getData() {
   // Receita tarifária: processamento é primário; cai back em receitaRealizada
   const procReceita = procMes._sum.receitaTarifaria || 0
   const receita = procReceita > 0 ? procReceita : (recMesAtual?.receitaTarifaria || 0)
+  // Receita tarifária WL do forecast (adiciona ao total tarifário)
+  const receitaTarifariaWlMes = fgMesAtual?.receitaTarifariaWl || 0
+  // Receita tarifária total: processamento/lançada + WL
+  const receitaTarifTotal = receita + receitaTarifariaWlMes
   // Floating: processamento é primário; cai back em receitaRealizada
   const procFloating = procMes._sum.floating || 0
   const floating = procFloating > 0 ? procFloating : (recMesAtual?.floatingRealizado || 0)
-  const qtdMed = procMes._sum.qtdMed || 0
+  // MED: processamento tem prioridade, senão usa forecast
+  const qtdMedProc = procMes._sum.qtdMed || 0
+  const qtdMedTotal = qtdMedProc > 0 ? qtdMedProc : (fgMesAtual?.qtdMedRealizada || 0)
+  const qtdMed = qtdMedTotal
   // Transações: processamento é primário; cai back em forecast
   const procQtdTx = procMes._sum.qtdTransacoes || 0
   const qtdTx = procQtdTx > 0 ? procQtdTx : (fgMesAtual?.qtdTransacoesRealizadas || 0)
   const mrrApi = mrrApiAgg._sum.mensalidadeApi || 0
   const mrrWl = mrrWlAgg._sum.sustentacaoWhiteLabel || 0
   const mrr = mrrApi + mrrWl
-  const takeRate = tpv > 0 ? (receita / tpv) * 100 : 0
-  const pmp = qtdTx > 0 ? receita / qtdTx : 0
+  const takeRate = tpv > 0 ? (receitaTarifTotal / tpv) * 100 : 0
+  const pmp = qtdTx > 0 ? receitaTarifTotal / qtdTx : 0
   // MED médio: total MEDs / total transações do período
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
   // Margem Transacional: (PMP - custo_pix) / PMP * 100 — custo fixo R$0,055
@@ -81,6 +101,7 @@ async function getData() {
   const margemTransacional = pmp > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
   const setupsMap = new Map(setups12M.map((s: { mesRef: string; _sum: { valor: number | null } }) => [s.mesRef, s._sum.valor || 0]))
   const setupsMesVal = setupsMes._sum.valor || 0
+  const contaReceberMesVal = contaReceberMes._sum.valor || 0
   const receitaAno = rec12M
     .filter(r => r.mesRef.startsWith(anoAtual))
     .reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
@@ -151,7 +172,7 @@ async function getData() {
   })
 
   return {
-    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp, setups: setupsMesVal, margemTransacional, custoPorPix },
+    kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, receitaAno, precisao, qtdTx, margemOp, setups: setupsMesVal + contaReceberMesVal, margemTransacional, custoPorPix, receitaTarifariaWlMes },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution,
@@ -263,12 +284,13 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div>
-            <p className="text-xs text-gray-600 mb-1">Setups Faturados</p>
+            <p className="text-xs text-gray-600 mb-1">Serviços / Setups</p>
             <p className={`text-xl font-bold ${kpis.setups > 0 ? 'text-amber-400' : 'text-gray-700'}`}>{kpis.setups > 0 ? formatCurrency(kpis.setups) : '—'}</p>
+            <p className="text-xs text-gray-700 mt-0.5">Financeiro + Pedidos</p>
           </div>
           <div>
             <p className="text-xs text-gray-600 mb-1">Total Mensal</p>
-            <p className="text-xl font-bold text-white">{formatCurrency(kpis.receita + kpis.floating + kpis.mrr + kpis.setups)}</p>
+            <p className="text-xl font-bold text-white">{formatCurrency(kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups)}</p>
             <p className="text-xs text-gray-700 mt-0.5">Tarifária + Floating + MRR + Setups</p>
           </div>
         </div>

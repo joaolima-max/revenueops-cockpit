@@ -387,6 +387,9 @@ model ForecastGeral {
   faturamentoRealizado    Float?
   margemRealizada         Float?
   notas                   String?
+  qtdMedRealizada        Int?
+  receitaTarifariaWl     Float?
+  dataLancamento         DateTime?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

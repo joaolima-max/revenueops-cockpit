@@ -7,14 +7,20 @@ interface ForecastGeral {
   id: string; mesRef: string
   tpvPrevisto: number; qtdTransacoesPrevista: number; faturamentoPrevisto: number; margemPrevista: number
   tpvRealizado: number | null; qtdTransacoesRealizadas: number | null
-  faturamentoRealizado: number | null; margemRealizada: number | null
+  margemRealizada: number | null
+  qtdMedRealizada: number | null; receitaTarifariaWl: number | null
+  dataLancamento: string | null
   notas: string | null
 }
+
+const today = () => new Date().toISOString().split('T')[0]
 
 const emptyForm = {
   mesRef: getCurrentMonth(),
   tpvPrevisto: '', qtdTransacoesPrevista: '', faturamentoPrevisto: '', margemPrevista: '',
-  tpvRealizado: '', qtdTransacoesRealizadas: '', faturamentoRealizado: '', margemRealizada: '',
+  tpvRealizado: '', qtdTransacoesRealizadas: '', margemRealizada: '',
+  qtdMedRealizada: '', receitaTarifariaWl: '',
+  dataLancamento: today(),
   notas: '',
 }
 
@@ -27,8 +33,10 @@ function fromForecast(fc: ForecastGeral) {
     margemPrevista: String(fc.margemPrevista || ''),
     tpvRealizado: fc.tpvRealizado != null ? String(fc.tpvRealizado) : '',
     qtdTransacoesRealizadas: fc.qtdTransacoesRealizadas != null ? String(fc.qtdTransacoesRealizadas) : '',
-    faturamentoRealizado: fc.faturamentoRealizado != null ? String(fc.faturamentoRealizado) : '',
     margemRealizada: fc.margemRealizada != null ? String(fc.margemRealizada) : '',
+    qtdMedRealizada: fc.qtdMedRealizada != null ? String(fc.qtdMedRealizada) : '',
+    receitaTarifariaWl: fc.receitaTarifariaWl != null ? String(fc.receitaTarifariaWl) : '',
+    dataLancamento: fc.dataLancamento ? new Date(fc.dataLancamento).toISOString().split('T')[0] : today(),
     notas: fc.notas || '',
   }
 }
@@ -55,7 +63,7 @@ export default function ForecastClient() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  function openNew() { setEditingId(null); setForm(emptyForm); setShowModal(true) }
+  function openNew() { setEditingId(null); setForm({ ...emptyForm, dataLancamento: today() }); setShowModal(true) }
   function openEdit(fc: ForecastGeral) { setEditingId(fc.id); setForm(fromForecast(fc)); setShowModal(true) }
 
   async function handleDelete(fc: ForecastGeral) {
@@ -78,8 +86,10 @@ export default function ForecastClient() {
         margemPrevista: parseFloat(form.margemPrevista) || 0,
         tpvRealizado: n(form.tpvRealizado),
         qtdTransacoesRealizadas: ni(form.qtdTransacoesRealizadas),
-        faturamentoRealizado: n(form.faturamentoRealizado),
         margemRealizada: n(form.margemRealizada),
+        qtdMedRealizada: ni(form.qtdMedRealizada),
+        receitaTarifariaWl: n(form.receitaTarifariaWl),
+        dataLancamento: form.dataLancamento || null,
         notas: form.notas || null,
       }),
     })
@@ -87,13 +97,6 @@ export default function ForecastClient() {
   }
 
   const currentMonthFc = forecasts.find(fc => fc.mesRef === getCurrentMonth())
-
-  const totals = forecasts.reduce((a, fc) => ({
-    tpvPrevisto: a.tpvPrevisto + fc.tpvPrevisto,
-    faturamentoPrevisto: a.faturamentoPrevisto + fc.faturamentoPrevisto,
-    tpvRealizado: a.tpvRealizado + (fc.tpvRealizado || 0),
-    faturamentoRealizado: a.faturamentoRealizado + (fc.faturamentoRealizado || 0),
-  }), { tpvPrevisto: 0, faturamentoPrevisto: 0, tpvRealizado: 0, faturamentoRealizado: 0 })
 
   const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
   const lbl = 'block text-xs text-gray-500 mb-1'
@@ -117,7 +120,7 @@ export default function ForecastClient() {
           {[
             { l: 'TPV Previsto (mês atual)', v: formatTPV(currentMonthFc.tpvPrevisto), r: currentMonthFc.tpvRealizado ? formatTPV(currentMonthFc.tpvRealizado) : null, c: 'text-sky-400' },
             { l: 'Qtd. Transações Prevista', v: currentMonthFc.qtdTransacoesPrevista.toLocaleString('pt-BR'), r: currentMonthFc.qtdTransacoesRealizadas ? currentMonthFc.qtdTransacoesRealizadas.toLocaleString('pt-BR') : null, c: 'text-violet-400' },
-            { l: 'Faturamento Previsto', v: formatCurrency(currentMonthFc.faturamentoPrevisto), r: currentMonthFc.faturamentoRealizado ? formatCurrency(currentMonthFc.faturamentoRealizado) : null, c: 'text-emerald-400' },
+            { l: 'Faturamento Previsto', v: formatCurrency(currentMonthFc.faturamentoPrevisto), r: null, c: 'text-emerald-400' },
             { l: 'Margem Prevista', v: formatPercent(currentMonthFc.margemPrevista, 2), r: currentMonthFc.margemRealizada != null ? formatPercent(currentMonthFc.margemRealizada, 2) : null, c: 'text-amber-400' },
           ].map(k => (
             <div key={k.l} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -137,42 +140,45 @@ export default function ForecastClient() {
         )}
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-800">
-              {['Mês', 'TPV Previsto', 'TPV Realizado', 'Qtd. Transações', 'Faturamento Prev.', 'Faturamento Real.', 'Margem Prev.', 'Margem Real.', ''].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${h === 'Mês' || h === '' ? 'text-left px-5' : 'text-right px-3'}`}>{h}</th>
+              {['Mês', 'Lançamento', 'TPV Previsto', 'TPV Realizado', 'Qtd. Tx', 'Qtd. MED', 'Rec. Tarif. WL', 'Margem Prev.', 'Margem Real.', ''].map(h => (
+                <th key={h} className={`text-xs font-medium text-gray-600 py-3 whitespace-nowrap ${h === 'Mês' || h === '' ? 'text-left px-5' : 'text-right px-3'}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
+              <tr><td colSpan={10} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
             ) : forecasts.length === 0 ? (
-              <tr><td colSpan={9} className="text-center text-gray-700 py-12 text-sm">Nenhum forecast cadastrado</td></tr>
+              <tr><td colSpan={10} className="text-center text-gray-700 py-12 text-sm">Nenhum forecast cadastrado</td></tr>
             ) : forecasts.map(fc => {
-              const precFat = fc.faturamentoRealizado && fc.faturamentoPrevisto > 0
-                ? (fc.faturamentoRealizado / fc.faturamentoPrevisto) * 100 : null
+              const medPct = fc.qtdMedRealizada != null && fc.qtdTransacoesRealizadas && fc.qtdTransacoesRealizadas > 0
+                ? (fc.qtdMedRealizada / fc.qtdTransacoesRealizadas) * 100 : null
               return (
                 <tr key={fc.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                  <td className="px-5 py-3 text-sm font-semibold text-white">{formatMesRef(fc.mesRef)}</td>
-                  <td className="px-3 py-3 text-right text-sm text-sky-400">{formatTPV(fc.tpvPrevisto)}</td>
-                  <td className="px-3 py-3 text-right text-sm text-sky-300">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
-                  <td className="px-3 py-3 text-right text-sm text-violet-400">
+                  <td className="px-5 py-3 text-sm font-semibold text-white whitespace-nowrap">{formatMesRef(fc.mesRef)}</td>
+                  <td className="px-3 py-3 text-right text-xs text-gray-600 whitespace-nowrap">
+                    {fc.dataLancamento ? new Date(fc.dataLancamento).toLocaleDateString('pt-BR') : '—'}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm text-sky-400 whitespace-nowrap">{formatTPV(fc.tpvPrevisto)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-sky-300 whitespace-nowrap">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
+                  <td className="px-3 py-3 text-right text-sm text-violet-400 whitespace-nowrap">
                     {fc.qtdTransacoesPrevista.toLocaleString('pt-BR')}
-                    {fc.qtdTransacoesRealizadas != null && <span className="text-gray-600"> / {fc.qtdTransacoesRealizadas.toLocaleString('pt-BR')}</span>}
+                    {fc.qtdTransacoesRealizadas != null && <span className="text-gray-600 text-xs"> / {fc.qtdTransacoesRealizadas.toLocaleString('pt-BR')}</span>}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm text-emerald-400">{formatCurrency(fc.faturamentoPrevisto)}</td>
-                  <td className="px-3 py-3 text-right text-sm">
-                    {fc.faturamentoRealizado != null ? (
-                      <span className={precFat! >= 90 ? 'text-emerald-400' : precFat! >= 70 ? 'text-amber-400' : 'text-red-400'}>
-                        {formatCurrency(fc.faturamentoRealizado)}
-                      </span>
-                    ) : <span className="text-gray-700">—</span>}
+                  <td className="px-3 py-3 text-right text-sm whitespace-nowrap">
+                    {fc.qtdMedRealizada != null
+                      ? <span className="text-indigo-400">{fc.qtdMedRealizada.toLocaleString('pt-BR')}{medPct !== null && <span className="text-gray-600 text-xs ml-1">({medPct.toFixed(1)}%)</span>}</span>
+                      : <span className="text-gray-700">—</span>}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm text-amber-400">{formatPercent(fc.margemPrevista, 2)}</td>
-                  <td className="px-3 py-3 text-right text-sm text-amber-300">
+                  <td className="px-3 py-3 text-right text-sm text-emerald-400 whitespace-nowrap">
+                    {fc.receitaTarifariaWl != null ? formatCurrency(fc.receitaTarifariaWl) : <span className="text-gray-700">—</span>}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm text-amber-400 whitespace-nowrap">{formatPercent(fc.margemPrevista, 2)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-amber-300 whitespace-nowrap">
                     {fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-gray-700">—</span>}
                   </td>
                   <td className="px-5 py-3 text-right">
@@ -196,9 +202,15 @@ export default function ForecastClient() {
               <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
-              <div>
-                <label className={lbl}>Mês de Referência *</label>
-                <input required type="month" value={form.mesRef} onChange={f('mesRef')} disabled={!!editingId} className={inp + (editingId ? ' opacity-50 cursor-not-allowed' : '')} />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={lbl}>Mês de Referência *</label>
+                  <input required type="month" value={form.mesRef} onChange={f('mesRef')} disabled={!!editingId} className={inp + (editingId ? ' opacity-50 cursor-not-allowed' : '')} />
+                </div>
+                <div>
+                  <label className={lbl}>Data do Lançamento</label>
+                  <input type="date" value={form.dataLancamento} onChange={f('dataLancamento')} className={inp} />
+                </div>
               </div>
 
               <div className="border-t border-gray-800 pt-4">
@@ -216,7 +228,8 @@ export default function ForecastClient() {
                 <div className="grid grid-cols-2 gap-4">
                   <div><label className={lbl}>TPV Realizado (R$)</label><input type="number" step="0.01" value={form.tpvRealizado} onChange={f('tpvRealizado')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. Transações Realizadas</label><input type="number" value={form.qtdTransacoesRealizadas} onChange={f('qtdTransacoesRealizadas')} className={inp} /></div>
-                  <div><label className={lbl}>Faturamento Realizado (R$)</label><input type="number" step="0.01" value={form.faturamentoRealizado} onChange={f('faturamentoRealizado')} className={inp} /></div>
+                  <div><label className={lbl}>Qtd. MED Realizadas</label><input type="number" value={form.qtdMedRealizada} onChange={f('qtdMedRealizada')} className={inp} placeholder="Qtd. de transações MED" /></div>
+                  <div><label className={lbl}>Rec. Tarifária WL (R$)</label><input type="number" step="0.01" value={form.receitaTarifariaWl} onChange={f('receitaTarifariaWl')} className={inp} placeholder="Tarifas cobradas dos WL" /></div>
                   <div><label className={lbl}>Margem Realizada (%)</label><input type="number" step="0.01" min="0" max="100" value={form.margemRealizada} onChange={f('margemRealizada')} className={inp} /></div>
                 </div>
               </div>
