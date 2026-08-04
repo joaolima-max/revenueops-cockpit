@@ -1,0 +1,435 @@
+export const dynamic = 'force-dynamic'
+
+import Link from 'next/link'
+import { prisma } from '@/lib/prisma'
+import PrintButton from '@/components/relatorios/PrintButton'
+import { formatCurrency, formatTPV, formatPercent, formatMesRef, SEGMENTO_LABELS, META_TIPO_LABELS } from '@/lib/utils'
+
+const PRINT_CSS = `
+@media print {
+  aside, .no-print { display: none !important; }
+  body { background: white !important; }
+  .report-paper { box-shadow: none !important; max-width: none !important; border-radius: 0 !important; margin: 0 !important; }
+  .report-wrap { background: white !important; padding: 0 !important; }
+  .page-break { page-break-before: always; }
+}
+@page { size: A4; margin: 15mm 20mm; }
+`
+
+async function getData() {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const d11 = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+  const startMonth = `${d11.getFullYear()}-${String(d11.getMonth() + 1).padStart(2, '0')}`
+  const prevYear = currentYear - 1
+  const startPrevYear = `${prevYear}-01`
+  const endPrevYear = `${prevYear}-12`
+
+  const [monthlyProc, forecasts, metas, clientesAtivos, segmentoGroup, statusGroup, parametros] = await Promise.all([
+    prisma.processamento.groupBy({
+      by: ['mesRef'],
+      _sum: { tpv: true, receitaTarifaria: true, floating: true, qtdTransacoes: true, qtdMed: true },
+      where: { mesRef: { gte: startMonth } },
+      orderBy: { mesRef: 'asc' },
+    }),
+    prisma.forecastGeral.findMany({
+      where: { mesRef: { gte: startMonth } },
+      orderBy: { mesRef: 'asc' },
+    }),
+    prisma.meta.findMany({
+      where: { periodo: { startsWith: String(currentYear) } },
+      orderBy: { tipo: 'asc' },
+    }),
+    prisma.cliente.findMany({
+      where: { status: 'ATIVO' },
+      select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, segmento: true, modeloOperacional: true },
+    }),
+    prisma.cliente.groupBy({
+      by: ['segmento'],
+      _count: { id: true },
+      where: { status: 'ATIVO' },
+    }),
+    prisma.cliente.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
+    prisma.parametro.findMany({ where: { chave: { in: ['CAC', 'LTV_MESES'] } } }),
+  ])
+
+  const topClientsRaw = await prisma.processamento.groupBy({
+    by: ['clienteId'],
+    _sum: { tpv: true, receitaTarifaria: true, floating: true },
+    where: { mesRef: { gte: startMonth } },
+    orderBy: { _sum: { receitaTarifaria: 'desc' } },
+    take: 10,
+  })
+  const topClientIds = topClientsRaw.map(t => t.clienteId)
+  const topClientData = topClientIds.length > 0 ? await prisma.cliente.findMany({
+    where: { id: { in: topClientIds } },
+    select: { id: true, nome: true, segmento: true, modeloOperacional: true },
+  }) : []
+
+  const prevYearProc = await prisma.processamento.groupBy({
+    by: ['mesRef'],
+    _sum: { tpv: true, receitaTarifaria: true, floating: true },
+    where: { mesRef: { gte: startPrevYear, lte: endPrevYear } },
+  })
+
+  return { monthlyProc, forecasts, metas, clientesAtivos, segmentoGroup, statusGroup, parametros, topClientsRaw, topClientData, prevYearProc, currentYear, startMonth }
+}
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" />
+          <circle cx="12" cy="12" r="2.5" fill="white" stroke="none" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-gray-900 font-bold text-base leading-none">Bass Pago</p>
+        <p className="text-gray-400 text-xs mt-0.5">RevenueOps</p>
+      </div>
+    </div>
+  )
+}
+
+function KpiBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border border-gray-200 rounded-lg p-4">
+      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-widest mb-1.5">{label}</p>
+      <p className="text-gray-900 text-2xl font-bold leading-none">{value}</p>
+      {sub && <p className="text-gray-400 text-xs mt-1.5">{sub}</p>}
+    </div>
+  )
+}
+
+function MiniBar({ pct, color = '#10b981' }: { pct: number; color?: string }) {
+  return (
+    <div className="h-1.5 bg-gray-100 rounded-full flex-1">
+      <div className="h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
+    </div>
+  )
+}
+
+export default async function ConselhoPage() {
+  const { monthlyProc, forecasts, metas, clientesAtivos, segmentoGroup, statusGroup, parametros, topClientsRaw, topClientData, prevYearProc, currentYear, startMonth } = await getData()
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+  const periodLabel = `${formatMesRef(startMonth)} – ${formatMesRef(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)}`
+
+  const totRec = monthlyProc.reduce((s, m) => s + (m._sum.receitaTarifaria || 0) + (m._sum.floating || 0), 0)
+  const totTpv = monthlyProc.reduce((s, m) => s + (m._sum.tpv || 0), 0)
+  const totTarifaria = monthlyProc.reduce((s, m) => s + (m._sum.receitaTarifaria || 0), 0)
+  const totFloating = monthlyProc.reduce((s, m) => s + (m._sum.floating || 0), 0)
+  const takeRateMedio = totTpv > 0 ? (totTarifaria / totTpv) * 100 : 0
+  const mrr = clientesAtivos.reduce((s, c) => s + (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0), 0)
+
+  const prevTotRec = prevYearProc.reduce((s, m) => s + (m._sum.receitaTarifaria || 0) + (m._sum.floating || 0), 0)
+  const prevTotTpv = prevYearProc.reduce((s, m) => s + (m._sum.tpv || 0), 0)
+  const yoyRec = prevTotRec > 0 ? ((totRec - prevTotRec) / prevTotRec) * 100 : null
+  const yoyTpv = prevTotTpv > 0 ? ((totTpv - prevTotTpv) / prevTotTpv) * 100 : null
+
+  const fwComp = forecasts.filter(f => f.faturamentoRealizado != null && (f.faturamentoPrevisto || 0) > 0)
+  const forecastPrec = fwComp.length > 0 ? fwComp.reduce((s, f) => s + ((f.faturamentoRealizado! / (f.faturamentoPrevisto || 1)) * 100), 0) / fwComp.length : null
+
+  const topClients = topClientsRaw.map(t => {
+    const info = topClientData.find(c => c.id === t.clienteId)
+    const receita = (t._sum.receitaTarifaria || 0) + (t._sum.floating || 0)
+    return { ...t, nome: info?.nome || '—', segmento: info?.segmento, receita }
+  }).sort((a, b) => b.receita - a.receita)
+
+  const top3Share = totRec > 0 ? (topClients.slice(0, 3).reduce((s, t) => s + t.receita, 0) / totRec) * 100 : 0
+  const totalClientes = statusGroup.reduce((s, g) => s + g._count, 0)
+  const ativos = statusGroup.find(g => g.status === 'ATIVO')?._count || 0
+  const metasComRealizado = metas.filter(m => m.realizado != null)
+
+  const last2 = monthlyProc.slice(-2)
+  const momRec = last2.length === 2 && ((last2[0]._sum.receitaTarifaria || 0) + (last2[0]._sum.floating || 0)) > 0
+    ? ((((last2[1]._sum.receitaTarifaria || 0) + (last2[1]._sum.floating || 0)) - ((last2[0]._sum.receitaTarifaria || 0) + (last2[0]._sum.floating || 0))) / ((last2[0]._sum.receitaTarifaria || 0) + (last2[0]._sum.floating || 0))) * 100
+    : null
+  const momTpv = last2.length === 2 && (last2[0]._sum.tpv || 0) > 0
+    ? (((last2[1]._sum.tpv || 0) - (last2[0]._sum.tpv || 0)) / (last2[0]._sum.tpv || 1)) * 100
+    : null
+
+  return (
+    <>
+      <style>{PRINT_CSS}</style>
+      <div className="report-wrap min-h-screen bg-gray-100 py-8 px-6">
+        <div className="no-print max-w-4xl mx-auto mb-5 flex items-center justify-between">
+          <Link href="/dashboard/relatorios" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1.5 transition-colors">← Relatórios</Link>
+          <PrintButton label="Exportar PDF" />
+        </div>
+
+        <div className="report-paper max-w-4xl mx-auto bg-white shadow-2xl rounded-2xl overflow-hidden">
+          <div className="h-2" style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)' }} />
+
+          <div className="p-10">
+            <div className="flex items-start justify-between mb-8 pb-6 border-b-2 border-gray-100">
+              <Logo />
+              <div className="text-right">
+                <span className="text-xs font-bold text-red-500 tracking-widest">CONFIDENCIAL</span>
+                <h1 className="text-2xl font-bold text-gray-900 mt-1">Relatório do Conselho</h1>
+                <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
+                <p className="text-gray-400 text-xs mt-0.5">Gerado em {dateStr}</p>
+              </div>
+            </div>
+
+            <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Resumo de Indicadores — {currentYear}</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <KpiBox label="Receita Total" value={formatCurrency(totRec)} sub={yoyRec != null ? `${yoyRec >= 0 ? '▲' : '▼'} ${Math.abs(yoyRec).toFixed(1)}% vs ${currentYear - 1}` : undefined} />
+              <KpiBox label="TPV Total" value={formatTPV(totTpv)} sub={yoyTpv != null ? `${yoyTpv >= 0 ? '▲' : '▼'} ${Math.abs(yoyTpv).toFixed(1)}% vs ${currentYear - 1}` : undefined} />
+              <KpiBox label="MRR" value={mrr > 0 ? formatCurrency(mrr) : '—'} sub="Receita recorrente mensal" />
+              <KpiBox label="Take Rate Médio" value={formatPercent(takeRateMedio, 3)} sub="Receita / TPV" />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+              <KpiBox label="Clientes Ativos" value={String(ativos)} sub={`de ${totalClientes} na base`} />
+              <KpiBox label="Precisão Forecast" value={forecastPrec != null ? formatPercent(forecastPrec, 1) : '—'} sub={`${fwComp.length} meses analisados`} />
+              <KpiBox label="Floating" value={formatCurrency(totFloating)} sub="Receita em trânsito" />
+              <KpiBox label="Concentração Top 3" value={formatPercent(top3Share, 1)} sub="Share de receita" />
+            </div>
+
+            {(momRec !== null || momTpv !== null) && (
+              <div className="mb-10">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Comparativo Mensal</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {momRec !== null && (
+                    <div className="border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Receita MoM</p>
+                        <p className="text-gray-900 font-medium mt-1">{formatMesRef(last2[1].mesRef)} vs {formatMesRef(last2[0].mesRef)}</p>
+                      </div>
+                      <p className={`text-2xl font-bold ${momRec >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {momRec >= 0 ? '▲' : '▼'} {Math.abs(momRec).toFixed(1)}%
+                      </p>
+                    </div>
+                  )}
+                  {momTpv !== null && (
+                    <div className="border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">TPV MoM</p>
+                        <p className="text-gray-900 font-medium mt-1">{formatMesRef(last2[1].mesRef)} vs {formatMesRef(last2[0].mesRef)}</p>
+                      </div>
+                      <p className={`text-2xl font-bold ${momTpv >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {momTpv >= 0 ? '▲' : '▼'} {Math.abs(momTpv).toFixed(1)}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-10">
+              <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Receita Mensal — Últimos 12 Meses</h2>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="text-left text-xs text-gray-500 font-semibold py-2">Mês</th>
+                    <th className="text-right text-xs text-gray-500 font-semibold py-2">TPV</th>
+                    <th className="text-right text-xs text-gray-500 font-semibold py-2">Tarifária</th>
+                    <th className="text-right text-xs text-gray-500 font-semibold py-2">Floating</th>
+                    <th className="text-right text-xs text-gray-500 font-semibold py-2">Total</th>
+                    <th className="text-right text-xs text-gray-500 font-semibold py-2">Take Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyProc.map((m, i) => {
+                    const rec = (m._sum.receitaTarifaria || 0) + (m._sum.floating || 0)
+                    const tr = (m._sum.tpv || 0) > 0 ? ((m._sum.receitaTarifaria || 0) / (m._sum.tpv || 1)) * 100 : 0
+                    const prev = monthlyProc[i - 1]
+                    const prevRec = prev ? (prev._sum.receitaTarifaria || 0) + (prev._sum.floating || 0) : null
+                    const delta = prevRec && prevRec > 0 ? ((rec - prevRec) / prevRec) * 100 : null
+                    return (
+                      <tr key={m.mesRef} className="border-b border-gray-100">
+                        <td className="py-2 text-gray-900 font-medium">{formatMesRef(m.mesRef)}</td>
+                        <td className="py-2 text-right text-gray-700">{formatTPV(m._sum.tpv || 0)}</td>
+                        <td className="py-2 text-right text-gray-700">{formatCurrency(m._sum.receitaTarifaria || 0)}</td>
+                        <td className="py-2 text-right text-gray-700">{formatCurrency(m._sum.floating || 0)}</td>
+                        <td className="py-2 text-right text-gray-900 font-semibold">
+                          {formatCurrency(rec)}
+                          {delta !== null && <span className={`text-[10px] ml-1.5 ${delta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{delta >= 0 ? '▲' : '▼'}{Math.abs(delta).toFixed(0)}%</span>}
+                        </td>
+                        <td className="py-2 text-right text-gray-600">{formatPercent(tr, 3)}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="bg-gray-50 border-t-2 border-gray-300">
+                    <td className="py-2.5 text-gray-700 font-bold text-xs">TOTAL</td>
+                    <td className="py-2.5 text-right text-gray-800 font-bold">{formatTPV(totTpv)}</td>
+                    <td className="py-2.5 text-right text-gray-800 font-bold">{formatCurrency(totTarifaria)}</td>
+                    <td className="py-2.5 text-right text-gray-800 font-bold">{formatCurrency(totFloating)}</td>
+                    <td className="py-2.5 text-right text-gray-900 font-bold">{formatCurrency(totRec)}</td>
+                    <td className="py-2.5 text-right text-gray-700 font-bold">{formatPercent(takeRateMedio, 3)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {forecasts.length > 0 && (
+              <div className="mb-10 page-break">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Forecast Geral</h2>
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      {['Mês', 'TPV Previsto', 'Fat. Previsto', 'Fat. Realizado', 'Margem Prev.', 'Margem Real.', 'Precisão'].map(h => (
+                        <th key={h} className={`text-xs text-gray-500 font-semibold py-2 ${h === 'Mês' ? 'text-left' : 'text-right'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {forecasts.map(f => {
+                      const prec = f.faturamentoRealizado != null && (f.faturamentoPrevisto || 0) > 0
+                        ? (f.faturamentoRealizado / (f.faturamentoPrevisto || 1)) * 100 : null
+                      return (
+                        <tr key={f.mesRef} className="border-b border-gray-100">
+                          <td className="py-2 text-gray-900 font-medium">{formatMesRef(f.mesRef)}</td>
+                          <td className="py-2 text-right text-gray-700">{formatTPV(f.tpvPrevisto)}</td>
+                          <td className="py-2 text-right text-gray-700">{formatCurrency(f.faturamentoPrevisto)}</td>
+                          <td className="py-2 text-right text-gray-900">{f.faturamentoRealizado != null ? formatCurrency(f.faturamentoRealizado) : '—'}</td>
+                          <td className="py-2 text-right text-gray-600">{formatPercent(f.margemPrevista, 1)}</td>
+                          <td className="py-2 text-right text-gray-600">{f.margemRealizada != null ? formatPercent(f.margemRealizada, 1) : '—'}</td>
+                          <td className={`py-2 text-right font-semibold ${prec == null ? 'text-gray-400' : prec >= 90 ? 'text-emerald-600' : prec >= 70 ? 'text-amber-500' : 'text-red-500'}`}>
+                            {prec != null ? formatPercent(prec, 1) : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {topClients.length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Top Clientes por Receita</h2>
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      <th className="text-left text-xs text-gray-500 font-semibold py-2">#</th>
+                      <th className="text-left text-xs text-gray-500 font-semibold py-2">Cliente</th>
+                      <th className="text-left text-xs text-gray-500 font-semibold py-2">Segmento</th>
+                      <th className="text-right text-xs text-gray-500 font-semibold py-2">TPV</th>
+                      <th className="text-right text-xs text-gray-500 font-semibold py-2">Receita</th>
+                      <th className="text-right text-xs text-gray-500 font-semibold py-2">Share</th>
+                      <th className="text-right text-xs text-gray-500 font-semibold py-2">Concentração</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topClients.map((t, i) => {
+                      const share = totRec > 0 ? (t.receita / totRec) * 100 : 0
+                      return (
+                        <tr key={t.clienteId} className="border-b border-gray-100">
+                          <td className="py-2 text-gray-400 text-xs">{i + 1}</td>
+                          <td className="py-2 text-gray-900 font-medium">{t.nome}</td>
+                          <td className="py-2 text-gray-500 text-xs">{t.segmento ? SEGMENTO_LABELS[t.segmento] : '—'}</td>
+                          <td className="py-2 text-right text-gray-700">{formatTPV(t._sum.tpv || 0)}</td>
+                          <td className="py-2 text-right text-gray-900 font-semibold">{formatCurrency(t.receita)}</td>
+                          <td className="py-2 text-right text-gray-600">{formatPercent(share, 1)}</td>
+                          <td className="py-2">
+                            <MiniBar pct={share} color="#4f46e5" />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {segmentoGroup.filter(g => g.segmento).length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Receita por Segmento (Carteira Ativa)</h2>
+                <div className="space-y-3">
+                  {segmentoGroup.filter(g => g.segmento).sort((a, b) => b._count - a._count).map(g => {
+                    const pct = ativos > 0 ? (g._count / ativos) * 100 : 0
+                    return (
+                      <div key={g.segmento} className="flex items-center gap-4">
+                        <span className="text-sm text-gray-700 w-28 flex-shrink-0">{g.segmento ? SEGMENTO_LABELS[g.segmento] : 'Outros'}</span>
+                        <MiniBar pct={pct} color="#6366f1" />
+                        <span className="text-sm text-gray-900 font-semibold w-16 text-right">{g._count} clientes</span>
+                        <span className="text-xs text-gray-400 w-10 text-right">{formatPercent(pct, 0)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {metas.length > 0 && (
+              <div className="mb-10 page-break">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Metas {currentYear}</h2>
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      {['Indicador', 'Período', 'Meta', 'Realizado', 'Gap', 'Atingimento'].map(h => (
+                        <th key={h} className={`text-xs text-gray-500 font-semibold py-2 ${h === 'Indicador' || h === 'Período' ? 'text-left' : 'text-right'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metas.map(m => {
+                      const pct = m.realizado != null && m.valor > 0 ? (m.realizado / m.valor) * 100 : null
+                      const gap = m.realizado != null ? m.realizado - m.valor : null
+                      return (
+                        <tr key={m.id} className="border-b border-gray-100">
+                          <td className="py-2 text-gray-900 font-medium">{META_TIPO_LABELS[m.tipo] || m.tipo}</td>
+                          <td className="py-2 text-gray-500 text-xs">{m.periodo}</td>
+                          <td className="py-2 text-right text-gray-700">{m.valor.toLocaleString('pt-BR')}</td>
+                          <td className="py-2 text-right text-gray-900 font-semibold">{m.realizado != null ? m.realizado.toLocaleString('pt-BR') : '—'}</td>
+                          <td className={`py-2 text-right font-medium ${gap == null ? 'text-gray-400' : gap >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {gap != null ? (gap >= 0 ? '+' : '') + gap.toLocaleString('pt-BR') : '—'}
+                          </td>
+                          <td className={`py-2 text-right font-bold ${pct == null ? 'text-gray-400' : pct >= 100 ? 'text-emerald-600' : pct >= 80 ? 'text-amber-500' : 'text-red-500'}`}>
+                            {pct != null ? formatPercent(pct, 1) : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Principais Riscos e Oportunidades</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="border border-red-100 rounded-lg p-4 bg-red-50">
+                  <p className="text-red-700 font-bold text-xs uppercase tracking-wide mb-3">⚠ Riscos Identificados</p>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    {top3Share > 50 && <p>• Concentração de receita no Top 3 ({formatPercent(top3Share, 1)}) — risco de churn</p>}
+                    {forecastPrec != null && forecastPrec < 80 && <p>• Precisão de forecast abaixo de 80% — impacto no planejamento</p>}
+                    {ativos < 5 && <p>• Base ativa reduzida — risco de dependência de poucos clientes</p>}
+                    {metasComRealizado.some(m => m.realizado != null && m.realizado < m.valor * 0.8) && <p>• Metas abaixo de 80% de atingimento identificadas</p>}
+                    {top3Share <= 50 && forecastPrec != null && forecastPrec >= 80 && ativos >= 5 && <p className="text-gray-400">Sem riscos críticos identificados automaticamente neste período.</p>}
+                  </div>
+                </div>
+                <div className="border border-emerald-100 rounded-lg p-4 bg-emerald-50">
+                  <p className="text-emerald-700 font-bold text-xs uppercase tracking-wide mb-3">✓ Oportunidades</p>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    {mrr > 0 && <p>• MRR de {formatCurrency(mrr)}/mês — base de receita recorrente estável</p>}
+                    {yoyRec != null && yoyRec > 0 && <p>• Crescimento de receita de {formatPercent(yoyRec, 1)} vs {new Date().getFullYear() - 1}</p>}
+                    {forecastPrec != null && forecastPrec >= 90 && <p>• Alta precisão de forecast ({formatPercent(forecastPrec, 1)}) — planejamento confiável</p>}
+                    {takeRateMedio > 0 && <p>• Take Rate médio de {formatPercent(takeRateMedio, 3)} — espaço para otimização tarifária</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <p className="text-gray-500 font-bold text-xs uppercase tracking-wide mb-2">Espaço para Comentários Executivos</p>
+              <div className="min-h-16 border-b border-dashed border-gray-300" />
+              <div className="min-h-12" />
+            </div>
+          </div>
+
+          <div className="px-10 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <p className="text-xs text-gray-400">Bass Pago · RevenueOps · Documento Estritamente Confidencial</p>
+            <p className="text-xs text-gray-400">Gerado em {dateStr}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
