@@ -5,8 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { formatCurrency, formatTPV, formatPercent, getLast12Months, getCurrentMonth, formatMesRef } from '@/lib/utils'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
 import KpiEvolved from '@/components/dashboard/KpiEvolved'
-import type { KpiTrends, KpiPrevMonth } from '@/components/dashboard/KpiEvolved'
-
+import InsightsPanel from '@/components/dashboard/InsightsPanel'
 async function getData() {
   const meses = getLast12Months()
   const mesAtual = getCurrentMonth()
