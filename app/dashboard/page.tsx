@@ -4,6 +4,8 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { formatCurrency, formatTPV, formatPercent, getLast12Months, getCurrentMonth, formatMesRef } from '@/lib/utils'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
+import KpiEvolved from '@/components/dashboard/KpiEvolved'
+import type { KpiTrends, KpiPrevMonth } from '@/components/dashboard/KpiEvolved'
 
 async function getData() {
   const meses = getLast12Months()
@@ -51,12 +53,10 @@ async function getData() {
       by: ['mesRef'], where: { mesRef: { in: meses }, status: 'PAGO' },
       _sum: { valor: true },
     }),
-    // Todos os clientes para evolução histórica de MRR
     prisma.cliente.findMany({
       where: { status: { in: ['ATIVO', 'ENCERRADO'] } },
       select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, dataFechamento: true, dataEncerramento: true },
     }),
-    // Serviços e setups do módulo financeiro (ContaReceber) no mês atual — apenas PAGO
     prisma.contaReceber.aggregate({
       where: {
         status: 'PAGO',
@@ -67,26 +67,18 @@ async function getData() {
     }),
   ])
 
-  // Receita do mês atual do módulo Receita (fallback para processamento)
   const recMesAtual = rec12M.find(r => r.mesRef === mesAtual)
-  // TPV: processamento é primário; cai back em forecast realizado se vazio
   const procTpv = procMes._sum.tpv || 0
   const tpv = procTpv > 0 ? procTpv : (fgMesAtual?.tpvRealizado || 0)
-  // Receita tarifária: processamento é primário; cai back em receitaRealizada
   const procReceita = procMes._sum.receitaTarifaria || 0
   const receita = procReceita > 0 ? procReceita : (recMesAtual?.receitaTarifaria || 0)
-  // Receita tarifária WL do forecast (adiciona ao total tarifário)
   const receitaTarifariaWlMes = fgMesAtual?.receitaTarifariaWl || 0
-  // Receita tarifária total: processamento/lançada + WL
   const receitaTarifTotal = receita + receitaTarifariaWlMes
-  // Floating: processamento é primário; cai back em receitaRealizada
   const procFloating = procMes._sum.floating || 0
   const floating = procFloating > 0 ? procFloating : (recMesAtual?.floatingRealizado || 0)
-  // MED: processamento tem prioridade, senão usa forecast
   const qtdMedProc = procMes._sum.qtdMed || 0
   const qtdMedTotal = qtdMedProc > 0 ? qtdMedProc : (fgMesAtual?.qtdMedRealizada || 0)
   const qtdMed = qtdMedTotal
-  // Transações: processamento é primário; cai back em forecast
   const procQtdTx = procMes._sum.qtdTransacoes || 0
   const qtdTx = procQtdTx > 0 ? procQtdTx : (fgMesAtual?.qtdTransacoesRealizadas || 0)
   const mrrApi = mrrApiAgg._sum.mensalidadeApi || 0
@@ -94,26 +86,16 @@ async function getData() {
   const mrr = mrrApi + mrrWl
   const takeRate = tpv > 0 ? (receitaTarifTotal / tpv) * 100 : 0
   const pmp = qtdTx > 0 ? receitaTarifTotal / qtdTx : 0
-  // MED médio: total MEDs / total transações do período
   const med = qtdTx > 0 ? (qtdMed / qtdTx) * 100 : 0
-  // Margem Transacional: (PMP - custo_pix) / PMP * 100 — custo fixo R$0,055
   const custoPorPix = 0.055
   const margemTransacional = pmp > 0 ? ((pmp - custoPorPix) / pmp) * 100 : null
   const setupsMap = new Map(setups12M.map((s: { mesRef: string; _sum: { valor: number | null } }) => [s.mesRef, s._sum.valor || 0]))
   const setupsMesVal = setupsMes._sum.valor || 0
   const contaReceberMesVal = contaReceberMes._sum.valor || 0
-  const receitaAno = rec12M
-    .filter(r => r.mesRef.startsWith(anoAtual))
-    .reduce((s, r) => s + r.receitaTarifaria + r.floatingRealizado, 0)
-    + Array.from(setupsMap.entries())
-      .filter(([mes]) => mes.startsWith(anoAtual))
-      .reduce((s, [, v]) => s + v, 0)
-
   const procMap = new Map(proc12M.map(p => [p.mesRef, p._sum]))
   const recMap = new Map(rec12M.map(r => [r.mesRef, r]))
   const fgMap = new Map(fg12M.map(f => [f.mesRef, f]))
 
-  // Precision: considera tanto faturamentoRealizado do forecast quanto receitaRealizada
   const fgComReal = fg12M.filter(f => {
     if (f.faturamentoPrevisto <= 0) return false
     const r = recMap.get(f.mesRef)
@@ -128,19 +110,15 @@ async function getData() {
       }, 0) / fgComReal.length
     : 0
 
-  // Margem operacional: do forecast geral do mês atual
   const margemOp = fgMesAtual?.margemRealizada ?? fgMesAtual?.margemPrevista ?? null
 
   const chartData = meses.map(mes => {
     const p = procMap.get(mes), r = recMap.get(mes), fg = fgMap.get(mes)
     const t = p?.tpv || 0
-    // Receita tarifária: processamento se disponível, senão receitaRealizada
     const rv = (p?.receitaTarifaria || 0) > 0 ? (p?.receitaTarifaria || 0) : (r?.receitaTarifaria || 0)
     const fl = (p?.floating || 0) > 0 ? (p?.floating || 0) : (r?.floatingRealizado || 0)
-    // Faturamento realizado: forecast se disponível, senão receita lançada
     const receitaReal = rv + fl
     const fatRealizado = fg?.faturamentoRealizado ?? (receitaReal > 0 ? receitaReal : null)
-    // TPV combinado: processamento se disponível, senão forecastGeral realizado
     const tpvReal = t > 0 ? t : (fg?.tpvRealizado ?? null)
     const tpvCombinado = tpvReal ?? 0
     return {
@@ -155,10 +133,9 @@ async function getData() {
     }
   })
 
-  // MRR evolution: compute per-month based on which clients were active
   const mrrEvolution = meses.map(mes => {
     const [y, m] = mes.split('-').map(Number)
-    const mesDate = new Date(y, m - 1, 1) // first day of the month
+    const mesDate = new Date(y, m - 1, 1)
     const mrrMes = (clientesAll as Array<{
       mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null
       dataFechamento: Date | null; dataEncerramento: Date | null
@@ -171,40 +148,61 @@ async function getData() {
     return { mes, mrr: mrrMes }
   })
 
+  const n = meses.length
+  const prevIdx = Math.max(0, n - 2)
+
+  const trends: KpiTrends = {
+    faturamento: meses.map((mes, i) => {
+      const cd = chartData[i]
+      const fg = fgMap.get(mes)
+      const mrrVal = mrrEvolution[i]?.mrr || 0
+      const setupVal = setupsMap.get(mes) || 0
+      return (cd?.receitaTarifaria || 0) + (cd?.floating || 0) + (fg?.receitaTarifariaWl || 0) + mrrVal + setupVal
+    }),
+    tpv: chartData.map(d => d.tpv),
+    mrr: mrrEvolution.map(m => m.mrr),
+    takeRate: chartData.map(d => d.takeRate),
+    receita: meses.map((mes, i) => {
+      const cd = chartData[i]
+      const fg = fgMap.get(mes)
+      return (cd?.receitaTarifaria || 0) + (fg?.receitaTarifariaWl || 0)
+    }),
+    floating: chartData.map(d => d.floating),
+    margem: chartData.map(d => d.margemRealizada ?? d.margemPrevista ?? 0),
+  }
+
+  const prevCd = chartData[prevIdx]
+  const prevFgEntry = fgMap.get(meses[prevIdx])
+  const prevMrrVal = mrrEvolution[prevIdx]?.mrr || 0
+  const prevSetupsVal = setupsMap.get(meses[prevIdx]) || 0
+
+  const prevMonth: KpiPrevMonth = {
+    faturamento: (prevCd?.receitaTarifaria || 0) + (prevCd?.floating || 0) +
+      (prevFgEntry?.receitaTarifariaWl || 0) + prevMrrVal + prevSetupsVal,
+    tpv: prevCd?.tpv || 0,
+    mrr: prevMrrVal,
+    takeRate: prevCd?.takeRate || 0,
+    receita: (prevCd?.receitaTarifaria || 0) + (prevFgEntry?.receitaTarifariaWl || 0),
+    floating: prevCd?.floating || 0,
+    margemOp: prevCd?.margemRealizada ?? prevCd?.margemPrevista ?? 0,
+    mes: meses[prevIdx] || '',
+  }
+
   return {
     kpis: { clientesAtivos, mrr, mrrApi, mrrWl, tpv, receita, floating, takeRate, pmp, med, churn: clientesEncerradosMes, precisao, qtdTx, margemOp, setups: setupsMesVal + contaReceberMesVal, margemTransacional, custoPorPix, receitaTarifariaWlMes },
     metas: { receita: metaRec, tpv: metaTPV, mrr: metaMRR },
     chartData,
     mrrEvolution,
     mesAtual, fgMesAtual, fg12M,
+    trends,
+    prevMonth,
   }
 }
 
 export default async function DashboardPage() {
   const session = await getSession()
-  const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual, fg12M } = await getData()
+  const { kpis, metas, chartData, mrrEvolution, mesAtual, fgMesAtual, fg12M, trends, prevMonth } = await getData()
 
-  const primary = [
-    { label: `Faturamento ${formatMesRef(mesAtual)}`, value: formatCurrency(kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups), sub: 'Tarifária + WL + Floating + MRR + Setups', color: 'text-indigo-400', bg: 'bg-indigo-500/10', meta: metas.receita, metaVal: kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups },
-    { label: 'MRR', value: formatCurrency(kpis.mrr), sub: 'Receita recorrente mensal', color: 'text-emerald-400', bg: 'bg-emerald-500/10', meta: metas.mrr, metaVal: kpis.mrr },
-    { label: `TPV ${formatMesRef(mesAtual)}`, value: formatTPV(kpis.tpv), sub: 'Volume processado no mês', color: 'text-sky-400', bg: 'bg-sky-500/10', meta: metas.tpv, metaVal: kpis.tpv },
-    { label: 'Clientes Ativos', value: String(kpis.clientesAtivos), sub: kpis.churn > 0 ? `-${kpis.churn} churn este mês` : 'sem churn este mês', color: 'text-violet-400', bg: 'bg-violet-500/10', meta: null, metaVal: 0 },
-  ]
-
-  const secondary = [
-    { label: 'Take Rate', value: kpis.takeRate > 0 ? formatPercent(kpis.takeRate, 3) : '—', color: 'text-amber-400' },
-    { label: 'PMP (Preço Médio Pix)', value: kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—', color: 'text-violet-400' },
-    {
-      label: 'Margem Transacional',
-      value: kpis.margemTransacional !== null ? formatPercent(kpis.margemTransacional, 1) : '—',
-      color: kpis.margemTransacional !== null && kpis.margemTransacional >= 60 ? 'text-emerald-400' : kpis.margemTransacional !== null ? 'text-amber-400' : 'text-gray-600',
-    },
-    { label: 'Margem Operacional', value: kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—', color: kpis.margemOp !== null && kpis.margemOp >= 30 ? 'text-emerald-400' : kpis.margemOp !== null ? 'text-amber-400' : 'text-gray-600' },
-    { label: 'MED Médio', value: kpis.qtdTx > 0 ? formatPercent(kpis.med, 2) : '—', color: 'text-sky-400' },
-    { label: 'Precisão Forecast', value: kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—', color: kpis.precisao >= 90 ? 'text-emerald-400' : kpis.precisao > 0 ? 'text-amber-400' : 'text-gray-600' },
-  ]
-
-  // Cards do forecast do mês atual
   const fg = fgMesAtual
   const fgCards = fg ? [
     { label: 'TPV Previsto', previsto: fg.tpvPrevisto, realizado: fg.tpvRealizado, fmt: formatTPV, color: 'text-sky-400' },
@@ -222,45 +220,14 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* KPIs primários */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {primary.map(k => {
-          const pct = k.meta && k.metaVal > 0 ? Math.min((k.metaVal / k.meta.valor) * 100, 100) : null
-          return (
-            <div key={k.label} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-gray-500 text-xs">{k.label}</span>
-                <div className={`w-7 h-7 ${k.bg} rounded-lg`} />
-              </div>
-              <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-              <p className="text-xs text-gray-700 mt-1">{k.sub}</p>
-              {pct !== null && (
-                <div className="mt-2.5">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-700">Meta</span>
-                    <span className="text-gray-500">{pct.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-1 bg-gray-800 rounded-full">
-                    <div className={`h-1 rounded-full ${pct >= 90 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      <KpiEvolved
+        kpis={kpis}
+        metas={metas}
+        trends={trends}
+        prevMonth={prevMonth}
+        mesAtual={mesAtual}
+      />
 
-      {/* KPIs secundários */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        {secondary.map(k => (
-          <div key={k.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-gray-600 text-xs mb-1.5">{k.label}</p>
-            <p className={`text-base font-bold ${k.color}`}>{k.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Receita Mensal — mês atual */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-semibold text-white mb-4">Receita Mensal — {formatMesRef(mesAtual)}</h3>
         <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
@@ -296,7 +263,6 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Forecast da Carteira — mês atual */}
       {fg && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
@@ -334,7 +300,6 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Tabela de Forecast — todos os meses */}
       {fg12M.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Histórico de Forecast da Carteira</h3>
