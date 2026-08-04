@@ -1,62 +1,8 @@
-import { formatCurrency, formatTPV, formatPercent, formatMesRef } from '@/lib/utils'
+'use client'
 
-function Sparkline({ values, color, w = 80, h = 32 }: { values: number[], color: string, w?: number, h?: number }) {
-  const pos = values.filter(v => isFinite(v) && v > 0)
-  if (pos.length < 2) return <span style={{ display: 'inline-block', width: w, height: h }} />
-  const min = Math.min(...pos)
-  const max = Math.max(...pos)
-  const range = max - min || 1
-  const pts = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w
-      const y = h - 2 - ((Math.max(v, 0) - min) / range) * (h - 4)
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-  return (
-    <svg width={w} height={h} style={{ overflow: 'visible', flexShrink: 0 }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5"
-        strokeLinejoin="round" strokeLinecap="round" opacity={0.6} />
-    </svg>
-  )
-}
+import { formatCurrency, formatTPV, formatPercent } from '@/lib/utils'
 
-function Delta({
-  current, prev, unit = 'currency', small,
-}: {
-  current: number, prev: number,
-  unit?: 'currency' | 'percent' | 'number',
-  small?: boolean,
-}) {
-  if (!prev || !isFinite(current / prev)) return null
-  const delta = current - prev
-  const pct = (delta / Math.abs(prev)) * 100
-  const up = delta >= 0
-  const color = up ? 'text-emerald-400' : 'text-red-400'
-  const arrow = up ? '▲' : '▼'
-  let abs = ''
-  if (unit === 'currency') abs = formatCurrency(Math.abs(delta))
-  else if (unit === 'percent') abs = `${Math.abs(delta).toFixed(2)}pp`
-  else abs = Math.abs(Math.round(delta)).toLocaleString('pt-BR')
-
-  if (small) {
-    return (
-      <span className={`text-[10px] font-medium ${color}`}>
-        {arrow} {(up ? '+' : '')}{pct.toFixed(1)}%
-      </span>
-    )
-  }
-
-  return (
-    <div className={`flex items-center gap-1.5 text-xs ${color}`}>
-      <span className="font-semibold">{arrow} {(up ? '+' : '')}{pct.toFixed(1)}%</span>
-      <span className="text-gray-700">·</span>
-      <span className="text-gray-500">{up ? '+' : '−'}{abs} vs mês ant.</span>
-    </div>
-  )
-}
-
-export interface KpiTrends {
+export type KpiTrends = {
   faturamento: number[]
   tpv: number[]
   mrr: number[]
@@ -66,7 +12,7 @@ export interface KpiTrends {
   margem: number[]
 }
 
-export interface KpiPrevMonth {
+export type KpiPrevMonth = {
   faturamento: number
   tpv: number
   mrr: number
@@ -77,233 +23,178 @@ export interface KpiPrevMonth {
   mes: string
 }
 
-interface KpiEvolvedProps {
+type MetaItem = { valor: number; realizado?: number | null } | null
+
+type KpiEvolvedProps = {
   kpis: {
-    receita: number
-    receitaTarifariaWlMes: number
-    floating: number
+    clientesAtivos: number
     mrr: number
     mrrApi: number
     mrrWl: number
-    setups: number
     tpv: number
+    receita: number
+    floating: number
     takeRate: number
     pmp: number
     med: number
-    margemOp: number | null
-    margemTransacional: number | null
+    churn: number
     precisao: number
     qtdTx: number
-    clientesAtivos: number
-    churn: number
+    margemOp: number | null
+    setups: number
+    margemTransacional: number | null
+    custoPorPix: number
+    receitaTarifariaWlMes: number
   }
-  metas: {
-    receita: { valor: number } | null
-    tpv: { valor: number } | null
-    mrr: { valor: number } | null
-  }
+  metas: { receita: MetaItem; tpv: MetaItem; mrr: MetaItem }
   trends: KpiTrends
   prevMonth: KpiPrevMonth
   mesAtual: string
 }
 
-function PrimaryCard({
-  label, formatted, value, sub, color, accentBg, sparkColor, sparkValues,
-  prevValue, unit, meta, metaVal,
-}: {
-  label: string, formatted: string, value: number, sub: string,
-  color: string, accentBg: string, sparkColor: string, sparkValues: number[],
-  prevValue: number, unit?: 'currency' | 'percent' | 'number',
-  meta?: { valor: number } | null, metaVal?: number,
-}) {
-  const mv = metaVal ?? value
-  const pct = meta && mv > 0 ? (mv / meta.valor) * 100 : null
-  const barPct = pct !== null ? Math.min(pct, 100) : 0
-  const barColor = pct === null ? '#374151' : pct >= 90 ? '#10b981' : pct >= 70 ? '#f59e0b' : '#ef4444'
-  const falta = meta && pct !== null && pct < 100 ? meta.valor - mv : null
-
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return null
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  const range = max - min || max || 1
+  const W = 72, H = 24
+  const pts = values.map((v, i) => ({
+    x: (i / (values.length - 1)) * W,
+    y: H - ((v - min) / range) * H * 0.85 - H * 0.075,
+  }))
+  const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3">
-      <div className="flex items-start justify-between">
-        <span className="text-gray-500 text-[11px] font-medium tracking-wide uppercase leading-none">{label}</span>
-        <div className={`w-6 h-6 rounded-lg ${accentBg} flex-shrink-0`} />
+    <svg width={W} height={H} className="opacity-50">
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="2" fill={color} />
+    </svg>
+  )
+}
+
+function MomChip({ curr, prev, isRate = false }: { curr: number; prev: number; isRate?: boolean }) {
+  if (prev <= 0 || curr <= 0) return null
+  const delta = isRate ? curr - prev : ((curr - prev) / prev) * 100
+  const pos = delta >= 0
+  const label = isRate
+    ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2).replace('.', ',')} p.p.`
+    : `${delta >= 0 ? '+' : ''}${delta.toFixed(1).replace('.', ',')}%`
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${pos ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+      {label}
+    </span>
+  )
+}
+
+function MetaBar({ current, meta }: { current: number; meta: MetaItem }) {
+  if (!meta || meta.valor <= 0) return null
+  const pct = Math.min((current / meta.valor) * 100, 100)
+  const color = pct >= 100 ? '#10b981' : pct >= 70 ? '#f59e0b' : '#ef4444'
+  return (
+    <div className="mt-2">
+      <div className="flex justify-between items-center mb-0.5">
+        <span className="text-[9px] text-gray-700">Meta</span>
+        <span className="text-[9px]" style={{ color }}>{pct.toFixed(0)}%</span>
       </div>
-
-      <div className="flex items-end justify-between gap-2">
-        <p className={`text-2xl font-bold ${color} leading-none`}>{formatted}</p>
-        {sparkValues.length > 1 && (
-          <Sparkline values={sparkValues} color={sparkColor} w={72} h={28} />
-        )}
+      <div className="h-1 bg-gray-800 rounded-full">
+        <div className="h-1 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
-
-      <Delta current={value} prev={prevValue} unit={unit} />
-
-      {pct !== null && (
-        <div>
-          <div className="flex justify-between items-center text-[11px] mb-1.5">
-            <span className="text-gray-700">Meta {meta ? formatCurrency(meta.valor) : ''}</span>
-            <span style={{ color: barColor }} className="font-semibold">{pct.toFixed(0)}%</span>
-          </div>
-          <div className="h-[3px] bg-gray-800 rounded-full">
-            <div className="h-[3px] rounded-full" style={{ width: `${barPct}%`, background: barColor }} />
-          </div>
-          {falta !== null && falta > 0 && (
-            <p className="text-[10px] text-gray-700 mt-1">Falta {formatCurrency(falta)}</p>
-          )}
-        </div>
-      )}
-
-      <p className="text-[11px] text-gray-700 leading-tight">{sub}</p>
     </div>
   )
 }
 
-function SecondaryCard({
-  label, formatted, color, sparkColor, sparkValues, currentValue, prevValue, unit,
-}: {
-  label: string, formatted: string, color: string,
-  sparkColor?: string, sparkValues?: number[],
-  currentValue?: number, prevValue?: number,
-  unit?: 'currency' | 'percent' | 'number',
-}) {
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <p className="text-gray-600 text-[10px] font-medium tracking-wide uppercase mb-2">{label}</p>
-      <p className={`text-base font-bold ${color} leading-none mb-2`}>{formatted}</p>
-      {sparkValues && sparkValues.length > 1 && sparkColor && (
-        <Sparkline values={sparkValues} color={sparkColor} w={80} h={22} />
-      )}
-      {currentValue !== undefined && prevValue !== undefined && prevValue > 0 && (
-        <div className="mt-1.5">
-          <Delta current={currentValue} prev={prevValue} unit={unit} small />
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function KpiEvolved({ kpis, metas, trends, prevMonth, mesAtual }: KpiEvolvedProps) {
+export default function KpiEvolved({ kpis, metas, trends, prevMonth }: KpiEvolvedProps) {
   const fatAtual = kpis.receita + kpis.receitaTarifariaWlMes + kpis.floating + kpis.mrr + kpis.setups
+  const recTotal = kpis.receita + kpis.receitaTarifariaWlMes
+
+  const primary = [
+    {
+      label: 'TPV',
+      value: formatTPV(kpis.tpv),
+      curr: kpis.tpv, prev: prevMonth.tpv,
+      trend: trends.tpv, meta: metas.tpv,
+      color: '#0ea5e9', sub: `${kpis.qtdTx.toLocaleString('pt-BR')} transações`,
+    },
+    {
+      label: 'Faturamento Total',
+      value: formatCurrency(fatAtual),
+      curr: fatAtual, prev: prevMonth.faturamento,
+      trend: trends.faturamento, meta: null,
+      color: '#10b981', sub: 'Tarifária + Floating + MRR + Setups',
+    },
+    {
+      label: 'Receita Tarifária',
+      value: formatCurrency(recTotal),
+      curr: recTotal, prev: prevMonth.receita,
+      trend: trends.receita, meta: metas.receita,
+      color: '#6366f1', sub: 'API + White Label',
+    },
+    {
+      label: 'Take Rate',
+      value: formatPercent(kpis.takeRate, 3),
+      curr: kpis.takeRate, prev: prevMonth.takeRate,
+      trend: trends.takeRate, meta: null,
+      color: '#f59e0b', isRate: true, sub: `PMP: ${formatCurrency(kpis.pmp)}`,
+    },
+  ]
+
+  const secondary = [
+    {
+      label: 'MRR',
+      value: formatCurrency(kpis.mrr),
+      curr: kpis.mrr, prev: prevMonth.mrr,
+      trend: trends.mrr, meta: metas.mrr,
+      color: '#a855f7', sub: `API ${formatCurrency(kpis.mrrApi)} · WL ${formatCurrency(kpis.mrrWl)}`,
+    },
+    {
+      label: 'Clientes Ativos',
+      value: kpis.clientesAtivos.toString(),
+      curr: kpis.clientesAtivos, prev: kpis.clientesAtivos + kpis.churn,
+      trend: [], meta: null,
+      color: '#2563EB',
+      sub: kpis.churn > 0 ? `${kpis.churn} encerrado${kpis.churn > 1 ? 's' : ''} no mês` : 'Sem churn no mês',
+      subColor: kpis.churn > 0 ? '#ef4444' : '#6b7280',
+    },
+    {
+      label: 'Floating',
+      value: formatCurrency(kpis.floating),
+      curr: kpis.floating, prev: prevMonth.floating,
+      trend: trends.floating, meta: null,
+      color: '#22d3ee', sub: 'Rendimento em trânsito',
+    },
+    {
+      label: kpis.margemOp != null ? 'Margem Operacional' : 'Med. Transacional',
+      value: kpis.margemOp != null ? formatPercent(kpis.margemOp, 2) : (kpis.margemTransacional != null ? formatPercent(kpis.margemTransacional, 2) : '—'),
+      curr: kpis.margemOp ?? kpis.margemTransacional ?? 0,
+      prev: prevMonth.margemOp,
+      trend: trends.margem, meta: null,
+      color: '#f43f5e', isRate: true,
+      sub: kpis.margemOp != null ? 'Realizado / Previsto' : `MED ${formatPercent(kpis.med, 1)}`,
+    },
+  ]
+
+  const renderCard = (card: typeof primary[0] & { subColor?: string; isRate?: boolean }) => (
+    <div key={card.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
+      <div className="flex items-start justify-between mb-1">
+        <p className="text-xs text-gray-600">{card.label}</p>
+        <Sparkline values={card.trend} color={card.color} />
+      </div>
+      <p className="text-xl font-bold leading-none mb-1.5" style={{ color: card.color }}>{card.value}</p>
+      <div className="flex items-center gap-1.5">
+        <MomChip curr={card.curr} prev={card.prev} isRate={card.isRate} />
+      </div>
+      <p className="text-[10px] mt-1.5" style={{ color: card.subColor ?? '#4b5563' }}>{card.sub}</p>
+      <MetaBar current={card.curr} meta={card.meta ?? null} />
+    </div>
+  )
 
   return (
-    <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <PrimaryCard
-          label={`Faturamento ${formatMesRef(mesAtual)}`}
-          value={fatAtual}
-          formatted={formatCurrency(fatAtual)}
-          sub="Tarifária + WL + Floating + MRR + Setups"
-          color="text-indigo-400"
-          accentBg="bg-indigo-500/10"
-          sparkColor="#6366f1"
-          sparkValues={trends.faturamento}
-          prevValue={prevMonth.faturamento}
-          unit="currency"
-          meta={metas.receita}
-          metaVal={fatAtual}
-        />
-        <PrimaryCard
-          label="MRR"
-          value={kpis.mrr}
-          formatted={formatCurrency(kpis.mrr)}
-          sub={`API ${formatCurrency(kpis.mrrApi)} · WL ${formatCurrency(kpis.mrrWl)}`}
-          color="text-emerald-400"
-          accentBg="bg-emerald-500/10"
-          sparkColor="#10b981"
-          sparkValues={trends.mrr}
-          prevValue={prevMonth.mrr}
-          unit="currency"
-          meta={metas.mrr}
-          metaVal={kpis.mrr}
-        />
-        <PrimaryCard
-          label={`TPV ${formatMesRef(mesAtual)}`}
-          value={kpis.tpv}
-          formatted={formatTPV(kpis.tpv)}
-          sub="Volume processado no mês"
-          color="text-sky-400"
-          accentBg="bg-sky-500/10"
-          sparkColor="#0ea5e9"
-          sparkValues={trends.tpv}
-          prevValue={prevMonth.tpv}
-          unit="currency"
-          meta={metas.tpv}
-          metaVal={kpis.tpv}
-        />
-        <PrimaryCard
-          label="Clientes Ativos"
-          value={kpis.clientesAtivos}
-          formatted={String(kpis.clientesAtivos)}
-          sub={kpis.churn > 0 ? `${kpis.churn} churn este mês` : 'Sem churn este mês'}
-          color="text-violet-400"
-          accentBg="bg-violet-500/10"
-          sparkColor="#8b5cf6"
-          sparkValues={[]}
-          prevValue={0}
-          unit="number"
-        />
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {primary.map(renderCard)}
       </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        <SecondaryCard
-          label="Take Rate"
-          formatted={kpis.takeRate > 0 ? formatPercent(kpis.takeRate, 3) : '—'}
-          color="text-amber-400"
-          sparkColor="#f59e0b"
-          sparkValues={trends.takeRate}
-          currentValue={kpis.takeRate}
-          prevValue={prevMonth.takeRate}
-          unit="percent"
-        />
-        <SecondaryCard
-          label="PMP (Preço Médio Pix)"
-          formatted={kpis.pmp > 0 ? formatCurrency(kpis.pmp) : '—'}
-          color="text-violet-400"
-        />
-        <SecondaryCard
-          label="Margem Transacional"
-          formatted={kpis.margemTransacional !== null ? formatPercent(kpis.margemTransacional, 1) : '—'}
-          color={
-            kpis.margemTransacional !== null && kpis.margemTransacional >= 60
-              ? 'text-emerald-400'
-              : kpis.margemTransacional !== null
-              ? 'text-amber-400'
-              : 'text-gray-600'
-          }
-        />
-        <SecondaryCard
-          label="Margem Operacional"
-          formatted={kpis.margemOp !== null ? formatPercent(kpis.margemOp, 2) : '—'}
-          color={
-            kpis.margemOp !== null && kpis.margemOp >= 30
-              ? 'text-emerald-400'
-              : kpis.margemOp !== null
-              ? 'text-amber-400'
-              : 'text-gray-600'
-          }
-          sparkColor="#10b981"
-          sparkValues={trends.margem}
-          currentValue={kpis.margemOp ?? undefined}
-          prevValue={prevMonth.margemOp}
-          unit="percent"
-        />
-        <SecondaryCard
-          label="MED Médio"
-          formatted={kpis.qtdTx > 0 ? formatPercent(kpis.med, 2) : '—'}
-          color="text-sky-400"
-        />
-        <SecondaryCard
-          label="Precisão Forecast"
-          formatted={kpis.precisao > 0 ? formatPercent(kpis.precisao, 1) : '—'}
-          color={
-            kpis.precisao >= 90
-              ? 'text-emerald-400'
-              : kpis.precisao > 0
-              ? 'text-amber-400'
-              : 'text-gray-600'
-          }
-        />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {secondary.map(renderCard)}
       </div>
-    </>
+    </div>
   )
 }
