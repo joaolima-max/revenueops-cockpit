@@ -1,0 +1,136 @@
+export type InsightType = 'positive' | 'negative' | 'warning' | 'neutral'
+
+export interface Insight {
+  id: string
+  text: string
+  type: InsightType
+}
+
+function fmt(n: number, d = 1): string {
+  return n.toFixed(d).replace('.', ',')
+}
+
+function pct(atual: number, prev: number): number {
+  if (prev === 0) return 0
+  return ((atual - prev) / prev) * 100
+}
+
+export function ruleReceitaMoM(recAtual: number, recPrev: number): Insight | null {
+  if (recAtual <= 0 || recPrev <= 0) return null
+  const delta = pct(recAtual, recPrev)
+  if (Math.abs(delta) < 0.5) return null
+  const sinal = delta > 0 ? 'aumentou' : 'caiu'
+  const tipo: InsightType = delta > 0 ? 'positive' : 'negative'
+  return {
+    id: 'receita-mom',
+    text: `A Receita ${sinal} ${fmt(Math.abs(delta))}% em relação ao mês anterior.`,
+    type: tipo,
+  }
+}
+
+export function ruleTakeRateMoM(
+  tpvAtual: number, recAtual: number,
+  tpvPrev: number, recPrev: number,
+): Insight | null {
+  if (tpvAtual <= 0 || tpvPrev <= 0) return null
+  const trAtual = (recAtual / tpvAtual) * 100
+  const trPrev = (recPrev / tpvPrev) * 100
+  const delta = trAtual - trPrev
+  if (Math.abs(delta) < 0.01) return null
+  const tpvDelta = pct(tpvAtual, tpvPrev)
+  const recDelta = pct(recAtual, recPrev)
+  const sinalTR = delta > 0 ? 'aumentou' : 'reduziu'
+  const tipo: InsightType = delta < 0 && tpvDelta > recDelta ? 'warning' : delta > 0 ? 'positive' : 'neutral'
+  let text = `O Take Rate ${sinalTR} ${fmt(Math.abs(delta), 2)} p.p.`
+  if (tpvDelta > recDelta + 1) {
+    text = `O TPV cresceu acima da Receita. O Take Rate ${sinalTR} ${fmt(Math.abs(delta), 2)} p.p.`
+  } else if (recDelta > tpvDelta + 1) {
+    text = `A Receita cresceu acima do TPV. O Take Rate ${sinalTR} ${fmt(Math.abs(delta), 2)} p.p.`
+  }
+  return { id: 'takerate-mom', text, type: tipo }
+}
+
+export function ruleSegmentoTop(
+  receitaPorSegmento: Array<{ segmento: string; receita: number }>,
+  totalReceita: number,
+  labels: Record<string, string>,
+): Insight | null {
+  if (totalReceita <= 0 || receitaPorSegmento.length === 0) return null
+  const top = receitaPorSegmento.reduce((a, b) => (a.receita > b.receita ? a : b))
+  const share = (top.receita / totalReceita) * 100
+  if (share < 20) return null
+  const nome = labels[top.segmento] ?? top.segmento
+  const tipo: InsightType = share > 60 ? 'warning' : 'neutral'
+  return {
+    id: 'segmento-top',
+    text: `O segmento ${nome} representa ${fmt(share, 0)}% da receita.`,
+    type: tipo,
+  }
+}
+
+export function ruleConcentracaoTop5(shareAtual: number, sharePrev: number): Insight | null {
+  if (shareAtual <= 0) return null
+  const delta = shareAtual - sharePrev
+  if (Math.abs(delta) < 1) return null
+  const sinal = delta > 0 ? 'aumentou' : 'reduziu'
+  const tipo: InsightType = delta > 0 ? 'warning' : 'positive'
+  return {
+    id: 'concentracao-top5',
+    text: `A concentração dos Top 5 clientes ${sinal} ${fmt(Math.abs(delta), 1)} p.p. (${fmt(shareAtual, 0)}% da receita).`,
+    type: tipo,
+  }
+}
+
+export function ruleFloatingTrend(floatings: number[]): Insight | null {
+  if (floatings.length < 3) return null
+  const last3 = floatings.slice(-3)
+  if (last3.some(v => v <= 0)) return null
+  const caindo = last3[0] > last3[1] && last3[1] > last3[2]
+  const subindo = last3[0] < last3[1] && last3[1] < last3[2]
+  if (caindo) {
+    return { id: 'floating-trend', text: 'O Floating caiu nos últimos 3 meses consecutivos.', type: 'warning' }
+  }
+  if (subindo) {
+    return { id: 'floating-trend', text: 'O Floating cresceu nos últimos 3 meses consecutivos.', type: 'positive' }
+  }
+  return null
+}
+
+export function ruleForecastPrecisao(precisao: number, mesesAnalisados: number): Insight | null {
+  if (mesesAnalisados < 2) return null
+  const tipo: InsightType = precisao >= 95 ? 'positive' : precisao >= 85 ? 'neutral' : 'warning'
+  return {
+    id: 'forecast-precisao',
+    text: `O Forecast possui precisão de ${fmt(precisao, 0)}% nos últimos ${mesesAnalisados} meses.`,
+    type: tipo,
+  }
+}
+
+export function ruleInadimplencia(clientesCount: number): Insight | null {
+  if (clientesCount === 0) return null
+  const tipo: InsightType = clientesCount >= 3 ? 'negative' : 'warning'
+  return {
+    id: 'inadimplencia',
+    text: `${clientesCount} cliente${clientesCount > 1 ? 's' : ''} com cobrança em aberto no mês.`,
+    type: tipo,
+  }
+}
+
+export function ruleNovosClientes(count: number): Insight | null {
+  if (count === 0) return null
+  return {
+    id: 'novos-clientes',
+    text: `${count} novo${count > 1 ? 's cliente' : ' cliente'} fechado${count > 1 ? 's' : ''} no mês.`,
+    type: 'positive',
+  }
+}
+
+export function ruleChurn(count: number): Insight | null {
+  if (count === 0) return null
+  const tipo: InsightType = count >= 2 ? 'negative' : 'warning'
+  return {
+    id: 'churn',
+    text: `${count} cliente${count > 1 ? 's' : ''} encerrado${count > 1 ? 's' : ''} no mês.`,
+    type: tipo,
+  }
+}
