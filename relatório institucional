@@ -1,0 +1,106 @@
+export const dynamic = 'force-dynamic'
+
+import Link from 'next/link'
+import { prisma } from '@/lib/prisma'
+import PrintButton from '@/components/relatorios/PrintButton'
+import { formatCurrency, formatTPV, formatPercent, formatMesRef, SEGMENTO_LABELS } from '@/lib/utils'
+
+const PRINT_CSS = `
+@media print {
+  aside, .no-print { display: none !important; }
+  body { background: white !important; }
+  .report-paper { box-shadow: none !important; max-width: none !important; border-radius: 0 !important; margin: 0 !important; }
+  .report-wrap { background: white !important; padding: 0 !important; }
+  .page-break { page-break-before: always; }
+}
+@page { size: A4; margin: 15mm 20mm; }
+`
+
+async function getData() {
+  const now = new Date()
+  const d23 = new Date(now.getFullYear(), now.getMonth() - 23, 1)
+  const start24 = `${d23.getFullYear()}-${String(d23.getMonth() + 1).padStart(2, '0')}`
+  const d11 = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+  const start12 = `${d11.getFullYear()}-${String(d11.getMonth() + 1).padStart(2, '0')}`
+  const prevYearStart = `${now.getFullYear() - 1}-01`
+  const prevYearEnd = `${now.getFullYear() - 1}-12`
+  const curYearStart = `${now.getFullYear()}-01`
+
+  const [monthlyProc24, clientesAtivos, segmentoGroup, statusGroup, modeloGroup, forecasts, parametros] = await Promise.all([
+    prisma.processamento.groupBy({
+      by: ['mesRef'],
+      _sum: { tpv: true, receitaTarifaria: true, floating: true, qtdTransacoes: true },
+      where: { mesRef: { gte: start24 } },
+      orderBy: { mesRef: 'asc' },
+    }),
+    prisma.cliente.findMany({
+      where: { status: 'ATIVO' },
+      select: { mensalidadeApi: true, sustentacaoWhiteLabel: true, segmento: true, modeloOperacional: true, dataFechamento: true },
+    }),
+    prisma.cliente.groupBy({
+      by: ['segmento'],
+      _count: { id: true },
+      where: { status: 'ATIVO' },
+    }),
+    prisma.cliente.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
+    prisma.cliente.groupBy({
+      by: ['modeloOperacional'],
+      _count: { id: true },
+      where: { status: 'ATIVO' },
+    }),
+    prisma.forecastGeral.findMany({
+      where: { mesRef: { gte: start12 } },
+      orderBy: { mesRef: 'asc' },
+    }),
+    prisma.parametro.findMany({ where: { chave: { in: ['CAC', 'LTV_MESES'] } } }),
+  ])
+
+  const topClientsRaw = await prisma.processamento.groupBy({
+    by: ['clienteId'],
+    _sum: { tpv: true, receitaTarifaria: true, floating: true },
+    where: { mesRef: { gte: start12 } },
+    orderBy: { _sum: { tpv: 'desc' } },
+    take: 10,
+  })
+  const topIds = topClientsRaw.map(t => t.clienteId)
+  const topClientData = topIds.length > 0 ? await prisma.cliente.findMany({
+    where: { id: { in: topIds } },
+    select: { id: true, nome: true, segmento: true, modeloOperacional: true, status: true },
+  }) : []
+
+  return { monthlyProc24, clientesAtivos, segmentoGroup, statusGroup, modeloGroup, forecasts, parametros, topClientsRaw, topClientData, start24, start12, prevYearStart, prevYearEnd, curYearStart }
+}
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" />
+          <circle cx="12" cy="12" r="2.5" fill="white" stroke="none" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-gray-900 font-bold text-base leading-none">Bass Pago</p>
+        <p className="text-gray-400 text-xs mt-0.5">RevenueOps</p>
+      </div>
+    </div>
+  )
+}
+
+function MiniBar({ pct, color = '#6366f1' }: { pct: number; color?: string }) {
+  return (
+    <div className="flex-1 h-1.5 bg-gray-100 rounded-full">
+      <div className="h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
+    </div>
+  )
+}
+
+export default async function InstitucionalPage() {
+  const { monthlyProc24, clientesAtivos, segmentoGroup, statusGroup, modeloGroup, forecasts, parametros, topClientsRaw, topClientData, start24, start12, prevYearStart, prevYearEnd, curYearStart } = await getData()
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString
