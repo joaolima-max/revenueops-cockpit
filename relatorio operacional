@@ -1,0 +1,357 @@
+export const dynamic = 'force-dynamic'
+
+import Link from 'next/link'
+import { prisma } from '@/lib/prisma'
+import PrintButton from '@/components/relatorios/PrintButton'
+import { formatCurrency, formatTPV } from '@/lib/utils'
+
+const PRINT_CSS = `
+@media print {
+  aside, .no-print { display: none !important; }
+  body { background: white !important; }
+  .report-paper { box-shadow: none !important; max-width: none !important; border-radius: 0 !important; margin: 0 !important; }
+  .report-wrap { background: white !important; padding: 0 !important; }
+  .page-break { page-break-before: always; }
+}
+@page { size: A4; margin: 15mm 20mm; }
+`
+
+const CRIT_ORDER = ['CRITICA', 'ALTA', 'MEDIA', 'BAIXA']
+const CRIT_LABELS: Record<string, string> = { CRITICA: 'Crítica', ALTA: 'Alta', MEDIA: 'Média', BAIXA: 'Baixa' }
+const CRIT_COLOR: Record<string, string> = {
+  CRITICA: 'bg-red-100 text-red-700',
+  ALTA: 'bg-orange-100 text-orange-700',
+  MEDIA: 'bg-amber-100 text-amber-700',
+  BAIXA: 'bg-gray-100 text-gray-500',
+}
+
+function getMesRef(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function subtractMonths(date: Date, n: number): Date {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() - n)
+  return d
+}
+
+async function getData() {
+  const now = new Date()
+  const threeMonthsAgo = subtractMonths(now, 3)
+  const threeMonthsRef = getMesRef(threeMonthsAgo)
+
+  const [incidentes, processamentos, clientesAtivos] = await Promise.all([
+    prisma.incidente.findMany({
+      where: { inicio: { gte: threeMonthsAgo } },
+      include: {
+        clientesAfetados: {
+          include: { cliente: { select: { nome: true } } },
+        },
+      },
+      orderBy: { inicio: 'desc' },
+    }),
+    prisma.processamento.findMany({
+      where: { mesRef: { gte: threeMonthsRef } },
+      include: { cliente: { select: { id: true, nome: true, tpvEsperado: true, status: true } } },
+      orderBy: [{ mesRef: 'desc' }, { tpv: 'desc' }],
+    }),
+    prisma.cliente.findMany({
+      where: { status: 'ATIVO' },
+      select: { id: true, nome: true, tpvEsperado: true },
+    }),
+  ])
+
+  return { incidentes, processamentos, clientesAtivos }
+}
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" />
+          <circle cx="12" cy="12" r="2.5" fill="white" stroke="none" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-gray-900 font-bold text-base leading-none">Bass Pago</p>
+        <p className="text-gray-400 text-xs mt-0.5">RevenueOps</p>
+      </div>
+    </div>
+  )
+}
+
+function KpiBox({ label, value, sub, alert }: { label: string; value: string | number; sub?: string; alert?: boolean }) {
+  return (
+    <div className={`border rounded-lg p-4 ${alert ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
+      <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-2">{label}</p>
+      <p className={`text-2xl font-bold ${alert ? 'text-red-600' : 'text-gray-900'}`}>{value}</p>
+      {sub && <p className={`text-xs mt-1 ${alert ? 'text-red-500' : 'text-gray-400'}`}>{sub}</p>}
+    </div>
+  )
+}
+
+export default async function OperacionalPage() {
+  const { incidentes, processamentos, clientesAtivos } = await getData()
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+
+  const incCritica = incidentes.filter(i => i.criticidade === 'CRITICA')
+  const incEmAberto = incidentes.filter(i => !i.fim)
+  const totalDowntime = incidentes.reduce((s, i) => s + (i.downtimeMins ?? 0), 0)
+  const clientesImpactados = new Set(incidentes.flatMap(i => i.clientesAfetados.map(c => c.clienteId))).size
+
+  const byMes: Record<string, typeof processamentos> = {}
+  processamentos.forEach(p => {
+    if (!byMes[p.mesRef]) byMes[p.mesRef] = []
+    byMes[p.mesRef].push(p)
+  })
+  const meses = Object.keys(byMes).sort().reverse()
+
+  const mesSummary = meses.map(mes => {
+    const procs = byMes[mes]
+    const totalTPV = procs.reduce((s, p) => s + p.tpv, 0)
+    const totalMED = procs.reduce((s, p) => s + p.qtdMed, 0)
+    const totalTx = procs.reduce((s, p) => s + p.qtdTransacoes, 0)
+    const totalReceita = procs.reduce((s, p) => s + p.receitaTarifaria, 0)
+    return { mes, totalTPV, totalMED, totalTx, totalReceita, qtdClientes: procs.length }
+  })
+
+  const latestMes = meses[0]
+  const alertasAbaixo: Array<{ nome: string; esperado: number; realizado: number; pct: number }> = []
+  if (latestMes) {
+    const latestProcs = byMes[latestMes]
+    const procByCliente = new Map(latestProcs.map(p => [p.clienteId, p]))
+    clientesAtivos.forEach(c => {
+      if (!c.tpvEsperado || c.tpvEsperado <= 0) return
+      const proc = procByCliente.get(c.id)
+      const realizado = proc?.tpv ?? 0
+      const pct = (realizado / c.tpvEsperado) * 100
+      if (pct < 90) alertasAbaixo.push({ nome: c.nome, esperado: c.tpvEsperado, realizado, pct })
+    })
+    alertasAbaixo.sort((a, b) => a.pct - b.pct)
+  }
+
+  const topClientes = latestMes ? [...byMes[latestMes]].sort((a, b) => b.tpv - a.tpv).slice(0, 10) : []
+  const sortedIncidentes = [...incidentes].sort((a, b) => CRIT_ORDER.indexOf(a.criticidade) - CRIT_ORDER.indexOf(b.criticidade))
+
+  return (
+    <>
+      <style>{PRINT_CSS}</style>
+      <div className="report-wrap min-h-screen bg-gray-100 py-8 px-6">
+        <div className="no-print max-w-4xl mx-auto mb-5 flex items-center justify-between">
+          <Link href="/dashboard/relatorios" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1.5 transition-colors">← Relatórios</Link>
+          <PrintButton label="Exportar PDF" />
+        </div>
+
+        <div className="report-paper max-w-4xl mx-auto bg-white shadow-2xl rounded-2xl overflow-hidden">
+          <div className="h-2" style={{ background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)' }} />
+
+          <div className="p-10">
+            <div className="flex items-start justify-between mb-8 pb-6 border-b-2 border-gray-100">
+              <Logo />
+              <div className="text-right">
+                <div className="flex items-center justify-end gap-2 mb-1">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 tracking-wide">USO INTERNO</span>
+                </div>
+                <h1 className="text-2xl font-bold text-gray-900">Relatório Operacional</h1>
+                <p className="text-gray-500 text-sm mt-1">Últimos 3 meses · COO / Operações</p>
+                <p className="text-gray-400 text-xs mt-0.5">Gerado em {dateStr}</p>
+              </div>
+            </div>
+
+            <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Resumo Operacional</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+              <KpiBox label="Incidentes (3M)" value={incidentes.length} sub={`${incEmAberto.length} em aberto`} alert={incEmAberto.length > 0} />
+              <KpiBox label="Críticos" value={incCritica.length} sub="nível CRÍTICA" alert={incCritica.length > 0} />
+              <KpiBox label="Downtime Total" value={totalDowntime > 0 ? `${Math.round(totalDowntime / 60)}h ${totalDowntime % 60}min` : '—'} sub="soma de todos incidentes" />
+              <KpiBox label="Clientes Impactados" value={clientesImpactados} sub="clientes únicos" alert={clientesImpactados > 0} />
+            </div>
+
+            {alertasAbaixo.length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4 flex items-center gap-3">
+                  Alertas — TPV Abaixo do Mínimo
+                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">{alertasAbaixo.length} cliente(s)</span>
+                </h2>
+                <div className="border border-red-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-red-50">
+                        {['Cliente', 'TPV Esperado', 'TPV Realizado', 'Atingimento', 'Situação'].map(h => (
+                          <th key={h} className={`text-xs text-red-700 font-semibold py-2 px-3 ${h === 'Cliente' ? 'text-left' : 'text-right'}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alertasAbaixo.map((a, i) => (
+                        <tr key={i} className="border-t border-red-100">
+                          <td className="py-2 px-3 text-gray-900 font-semibold">{a.nome}</td>
+                          <td className="py-2 px-3 text-right text-gray-600">{formatTPV(a.esperado)}</td>
+                          <td className="py-2 px-3 text-right text-gray-900 font-semibold">{formatTPV(a.realizado)}</td>
+                          <td className={`py-2 px-3 text-right font-bold ${a.pct < 50 ? 'text-red-600' : 'text-orange-500'}`}>{a.pct.toFixed(1)}%</td>
+                          <td className="py-2 px-3 text-right">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${a.realizado === 0 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {a.realizado === 0 ? 'Sem movimento' : 'Abaixo'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Incidentes — Últimos 3 Meses</h2>
+            {incidentes.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 border border-gray-200 rounded-lg mb-10">
+                <p className="font-medium">Nenhum incidente registrado no período</p>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-lg overflow-hidden mb-10">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200">
+                      {['Criticidade', 'Título', 'Início', 'Downtime', 'Clientes', 'Status'].map(h => (
+                        <th key={h} className={`text-xs text-gray-500 font-semibold py-2 px-3 ${h === 'Criticidade' || h === 'Título' ? 'text-left' : 'text-right'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedIncidentes.map(inc => (
+                      <tr key={inc.id} className="border-b border-gray-100">
+                        <td className="py-2 px-3">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${CRIT_COLOR[inc.criticidade]}`}>
+                            {CRIT_LABELS[inc.criticidade]}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-gray-900 font-medium max-w-[200px] truncate">{inc.titulo}</td>
+                        <td className="py-2 px-3 text-right text-gray-600 text-xs whitespace-nowrap">{new Date(inc.inicio).toLocaleDateString('pt-BR')}</td>
+                        <td className="py-2 px-3 text-right text-gray-700">{inc.downtimeMins ? `${inc.downtimeMins}min` : '—'}</td>
+                        <td className="py-2 px-3 text-right text-gray-600">{inc.clientesAfetados.length}</td>
+                        <td className="py-2 px-3 text-right">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${inc.fim ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {inc.fim ? 'Resolvido' : 'Em aberto'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="page-break" />
+            <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Volume de Processamentos — Últimos 3 Meses</h2>
+            <div className="border border-gray-200 rounded-lg overflow-hidden mb-8">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-2 border-gray-200 bg-gray-50">
+                    {['Mês', 'Clientes', 'TPV Total', 'MED', 'Transações', 'Receita Tarifária'].map(h => (
+                      <th key={h} className={`text-xs text-gray-500 font-semibold py-2 px-3 ${h === 'Mês' ? 'text-left' : 'text-right'}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {mesSummary.map((row, i) => (
+                    <tr key={row.mes} className={`border-b border-gray-100 ${i === 0 ? 'bg-rose-50' : ''}`}>
+                      <td className="py-2 px-3 font-semibold text-gray-900">{row.mes}</td>
+                      <td className="py-2 px-3 text-right text-gray-700">{row.qtdClientes}</td>
+                      <td className="py-2 px-3 text-right text-gray-900 font-semibold">{formatTPV(row.totalTPV)}</td>
+                      <td className="py-2 px-3 text-right text-gray-700">{row.totalMED.toLocaleString('pt-BR')}</td>
+                      <td className="py-2 px-3 text-right text-gray-700">{row.totalTx.toLocaleString('pt-BR')}</td>
+                      <td className="py-2 px-3 text-right text-gray-900 font-semibold">{formatCurrency(row.totalReceita)}</td>
+                    </tr>
+                  ))}
+                  {mesSummary.length === 0 && (
+                    <tr><td colSpan={6} className="py-8 text-center text-gray-400">Nenhum processamento registrado no período</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {topClientes.length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Top Clientes por TPV — {latestMes}</h2>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-gray-200 bg-gray-50">
+                        {['#', 'Cliente', 'TPV', 'MED', 'Transações', 'Receita'].map(h => (
+                          <th key={h} className={`text-xs text-gray-500 font-semibold py-2 px-3 ${h === 'Cliente' ? 'text-left' : 'text-right'}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topClientes.map((p, i) => (
+                        <tr key={p.id} className="border-b border-gray-100">
+                          <td className="py-2 px-3 text-gray-400 text-xs font-bold">{i + 1}</td>
+                          <td className="py-2 px-3 text-gray-900 font-semibold">{p.cliente.nome}</td>
+                          <td className="py-2 px-3 text-right text-gray-900 font-semibold">{formatTPV(p.tpv)}</td>
+                          <td className="py-2 px-3 text-right text-gray-700">{p.qtdMed.toLocaleString('pt-BR')}</td>
+                          <td className="py-2 px-3 text-right text-gray-700">{p.qtdTransacoes.toLocaleString('pt-BR')}</td>
+                          <td className="py-2 px-3 text-right text-gray-700">{formatCurrency(p.receitaTarifaria)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="border border-gray-200 rounded-lg p-6 mb-4">
+              <h2 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-4">Eficiência Operacional</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(() => {
+                  const totalTx = mesSummary.reduce((s, r) => s + r.totalTx, 0)
+                  const totalMED = mesSummary.reduce((s, r) => s + r.totalMED, 0)
+                  const totalTPV = mesSummary.reduce((s, r) => s + r.totalTPV, 0)
+                  const totalReceita = mesSummary.reduce((s, r) => s + r.totalReceita, 0)
+                  const takeRate = totalTPV > 0 ? (totalReceita / totalTPV) * 100 : null
+                  const ticketMedio = totalTx > 0 ? totalTPV / totalTx : null
+                  const medPorCliente = mesSummary[0]?.qtdClientes > 0 ? mesSummary[0].totalMED / mesSummary[0].qtdClientes : null
+                  return (
+                    <>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">Total Transações (3M)</p>
+                        <p className="text-xl font-bold text-gray-900">{totalTx.toLocaleString('pt-BR')}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">Total MED (3M)</p>
+                        <p className="text-xl font-bold text-gray-900">{totalMED.toLocaleString('pt-BR')}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">Take Rate Médio</p>
+                        <p className="text-xl font-bold text-gray-900">{takeRate != null ? `${takeRate.toFixed(3)}%` : '—'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">Ticket Médio</p>
+                        <p className="text-xl font-bold text-gray-900">{ticketMedio != null ? formatTPV(ticketMedio) : '—'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">MED/Cliente (últ. mês)</p>
+                        <p className="text-xl font-bold text-gray-900">{medPorCliente != null ? medPorCliente.toFixed(0) : '—'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">Alertas de TPV</p>
+                        <p className={`text-xl font-bold ${alertasAbaixo.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{alertasAbaixo.length}</p>
+                        <p className="text-xs text-gray-400">clientes abaixo do mínimo</p>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+
+          <div className="px-10 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <p className="text-xs text-gray-400">Bass Pago · RevenueOps · Relatório Operacional — COO / Operações</p>
+            <p className="text-xs text-gray-400">Gerado em {dateStr}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
