@@ -3,20 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-
-type NavItem = {
-  label: string
-  href: string
-  icon: React.ReactNode
-  exact?: boolean
-  adminOnly?: boolean
-}
-
-type NavSection = {
-  title: string
-  adminOnly?: boolean
-  items: NavItem[]
-}
+import { navigationFor } from '@/lib/modules'
 
 const I = {
   cockpit: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>,
@@ -42,66 +29,30 @@ const I = {
   auditoria: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
 }
 
-const navSections: NavSection[] = [
-  {
-    title: 'EXECUTIVO',
-    items: [
-      { label: 'Cockpit', href: '/dashboard', icon: I.cockpit, exact: true },
-    ],
-  },
-  {
-    title: 'RECEITA',
-    items: [
-      { label: 'Receita Lançada', href: '/dashboard/receita', icon: I.receita },
-      { label: 'Metas', href: '/dashboard/metas', icon: I.metas },
-      { label: 'Forecast', href: '/dashboard/forecast', icon: I.forecast },
-      { label: 'Métricas', href: '/dashboard/metricas', icon: I.metricas },
-      { label: 'Inteligência', href: '/dashboard/inteligencia-comercial', icon: I.inteligencia },
-      { label: 'Relatórios', href: '/dashboard/relatorios', icon: I.relatorios },
-    ],
-  },
-  {
-    title: 'CARTEIRA',
-    items: [
-      { label: 'Clientes', href: '/dashboard/carteira', icon: I.clientes },
-      { label: 'Ranking', href: '/dashboard/ranking', icon: I.ranking },
-      { label: 'Volumetria', href: '/dashboard/volumetria', icon: I.volumetria },
-      { label: 'Alertas', href: '/dashboard/alertas', icon: I.alertas },
-    ],
-  },
-  {
-    title: 'OPERAÇÕES',
-    items: [
-      { label: 'Incidentes', href: '/dashboard/incidentes', icon: I.incidentes },
-      { label: 'Tarefas', href: '/dashboard/tarefas', icon: I.tarefas },
-      { label: 'Métricas Op.', href: '/dashboard/metricas-op', icon: I.metricas },
-    ],
-  },
-  {
-    title: 'COMERCIAL',
-    items: [
-      { label: 'Pipeline', href: '/dashboard/pipeline', icon: I.pipeline },
-      { label: 'Leads', href: '/dashboard/leads', icon: I.leads },
-      { label: 'Follow-up', href: '/dashboard/followup', icon: I.followup },
-    ],
-  },
-  {
-    title: 'FINANCEIRO',
-    items: [
-      { label: 'Contas a Receber', href: '/dashboard/financeiro', icon: I.financeiro },
-      { label: 'Pedidos', href: '/dashboard/pedidos', icon: I.pedidos },
-    ],
-  },
-  {
-    title: 'ADMIN',
-    adminOnly: true,
-    items: [
-      { label: 'Usuários', href: '/dashboard/usuarios', icon: I.usuarios },
-      { label: 'Parâmetros', href: '/dashboard/parametros', icon: I.parametros },
-      { label: 'Auditoria', href: '/dashboard/auditoria', icon: I.auditoria, adminOnly: true },
-    ],
-  },
-]
+const ICONS: Record<string, React.ReactNode> = {
+  'cockpit': I.cockpit,
+  'receita.lancada': I.receita,
+  'receita.metas': I.metas,
+  'receita.forecast': I.forecast,
+  'receita.metricas': I.metricas,
+  'receita.inteligencia': I.inteligencia,
+  'receita.relatorios': I.relatorios,
+  'carteira.clientes': I.clientes,
+  'carteira.ranking': I.ranking,
+  'carteira.volumetria': I.volumetria,
+  'carteira.alertas': I.alertas,
+  'operacoes.incidentes': I.incidentes,
+  'operacoes.tarefas': I.tarefas,
+  'operacoes.metricas': I.metricas,
+  'comercial.pipeline': I.pipeline,
+  'comercial.leads': I.leads,
+  'comercial.followup': I.followup,
+  'financeiro.contas': I.financeiro,
+  'financeiro.pedidos': I.pedidos,
+  'admin.usuarios': I.usuarios,
+  'admin.parametros': I.parametros,
+  'admin.auditoria': I.auditoria,
+}
 
 interface SidebarProps {
   role: string
@@ -140,21 +91,19 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
       </div>
 
       <nav className="flex-1 py-3 overflow-y-auto">
-        {navSections.map((section) => {
-          if (section.adminOnly && role !== 'ADMIN') return null
+        {navigationFor(role).map((section) => {
           return (
-            <div key={section.title} className="mb-4">
-              <p className="text-gray-700 text-[9px] font-semibold tracking-widest px-4 mb-1">{section.title}</p>
+            <div key={section.key} className="mb-4">
+              <p className="text-gray-700 text-[9px] font-semibold tracking-widest px-4 mb-1">{section.label}</p>
               <div className="space-y-0.5 px-2">
                 {section.items.map((item) => {
-                  if (item.adminOnly && role !== 'ADMIN') return null
                   const isActive = item.exact
-                    ? pathname === item.href
-                    : pathname === item.href || pathname.startsWith(item.href + '/')
+                    ? pathname === item.route
+                    : pathname === item.route || pathname.startsWith(item.route + '/')
                   return (
                     <Link
-                      key={item.href}
-                      href={item.href}
+                      key={item.key}
+                      href={item.route}
                       className={cn(
                         'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors',
                         isActive
@@ -162,7 +111,7 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
                           : 'text-gray-500 hover:bg-gray-800/40 hover:text-gray-300'
                       )}
                     >
-                      {item.icon}
+                      {ICONS[item.key]}
                       {item.label}
                     </Link>
                   )
