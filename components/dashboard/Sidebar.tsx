@@ -123,16 +123,18 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
     <aside className="w-56 bg-black border-r border-gray-800/40 flex flex-col min-h-screen flex-shrink-0">
       <div className="px-4 py-4 border-b border-gray-800/40">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="4" y1="4" x2="20" y2="20" />
-              <line x1="20" y1="4" x2="4" y2="20" />
-              <circle cx="12" cy="12" r="2.5" fill="white" stroke="none" />
-            </svg>
-          </div>
+          <svg viewBox="0 0 44 26" width="36" height="22" fill="none" className="flex-shrink-0">
+            <defs>
+              <linearGradient id="bp-side" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#2563EB" />
+                <stop offset="100%" stopColor="#00E5A0" />
+              </linearGradient>
+            </defs>
+            <path d="M 4 10 Q 22 24 40 10" stroke="url(#bp-side)" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+          </svg>
           <div>
             <p className="text-white font-bold text-sm leading-none tracking-tight">Bass Pago</p>
-            <p className="text-gray-600 text-[10px] mt-0.5">RevenueOps</p>
+            <p className="text-gray-600 text-[10px] mt-0.5">RevOps</p>
           </div>
         </div>
       </div>
@@ -156,7 +158,7 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
                       className={cn(
                         'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors',
                         isActive
-                          ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                          ? 'bg-blue-600/10 text-blue-400 font-medium'
                           : 'text-gray-500 hover:bg-gray-800/40 hover:text-gray-300'
                       )}
                     >
@@ -174,7 +176,7 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
       <div className="p-3 border-t border-gray-800/40">
         <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
           <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+            style={{ background: 'linear-gradient(135deg, #2563EB 0%, #00E5A0 100%)' }}>
             <span className="text-white text-[10px] font-bold">{userName.charAt(0).toUpperCase()}</span>
           </div>
           <div className="flex-1 min-w-0">

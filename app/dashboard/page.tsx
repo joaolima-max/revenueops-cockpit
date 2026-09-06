@@ -221,6 +221,8 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      <InsightsPanel />
+
       <KpiEvolved
         kpis={kpis}
         metas={metas}

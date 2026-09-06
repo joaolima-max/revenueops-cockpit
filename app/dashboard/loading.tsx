@@ -1,0 +1,27 @@
+export default function Loading() {
+  return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-5">
+      <svg viewBox="0 0 90 52" width="140" height="81" fill="none">
+        <defs>
+          <linearGradient id="bp-load" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#2563EB" />
+            <stop offset="100%" stopColor="#00E5A0" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M 6 22 Q 45 50 84 22"
+          stroke="url(#bp-load)"
+          strokeWidth="11"
+          strokeLinecap="round"
+          fill="none"
+          style={{ animation: 'bp-pulse 1.6s ease-in-out infinite' }}
+        />
+        <style>{`@keyframes bp-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
+      </svg>
+      <div className="text-center">
+        <p className="text-white font-bold text-lg tracking-tight">Bass Pago</p>
+        <p className="text-gray-600 text-xs tracking-widest uppercase mt-1">RevOps</p>
+      </div>
+    </div>
+  )
+}
