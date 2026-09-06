@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
       qtdTransacoesEsperada: qtdTransacoesEsperada ?? null,
       qtdMedEsperada: qtdMedEsperada ?? null,
       receitaPrevistaMensal: receitaPrevistaMensal ?? null,
-      volumeMinimo: volumeMinimo ?? null,
       descontoPercent: descontoPercent ?? null,
       overpricePercent: overpricePercent ?? null,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : null,

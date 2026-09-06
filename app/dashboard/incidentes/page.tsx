@@ -9,11 +9,6 @@ export default async function IncidentesPage() {
 
   const [incidentes, clientes] = await Promise.all([
     prisma.incidente.findMany({
-      include: {
-        clientesAfetados: {
-          include: { cliente: { select: { id: true, nome: true } } },
-        },
-      },
       orderBy: { inicio: 'desc' },
       take: 50,
     }),

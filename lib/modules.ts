@@ -53,14 +53,8 @@ export const MODULES: Module[] = [
     label: 'EXECUTIVO',
     enabled: true,
     features: [
-      {
-        key: 'cockpit',
-        label: 'Cockpit',
-        route: '/dashboard',
-        api: ['/api/dashboard'],
-        enabled: true,
-        exact: true,
-      },
+      { key: 'cockpit', label: 'Cockpit', route: '/dashboard', api: ['/api/dashboard'], enabled: true, exact: true },
+      { key: 'conselho', label: 'Conselho', route: '/dashboard/conselho', enabled: true },
     ],
   },
   {
@@ -68,11 +62,8 @@ export const MODULES: Module[] = [
     label: 'RECEITA',
     enabled: true,
     features: [
-      { key: 'receita.lancada', label: 'Receita Lançada', route: '/dashboard/receita', api: ['/api/receita'], enabled: true },
+      { key: 'receita.forecast', label: 'Lançamento Diário', route: '/dashboard/forecast', api: ['/api/forecast'], enabled: true },
       { key: 'receita.metas', label: 'Metas', route: '/dashboard/metas', api: ['/api/metas'], enabled: true },
-      { key: 'receita.forecast', label: 'Forecast', route: '/dashboard/forecast', api: ['/api/forecast', '/api/forecast-geral'], enabled: true },
-      { key: 'receita.metricas', label: 'Métricas', route: '/dashboard/metricas', enabled: true },
-      { key: 'receita.inteligencia', label: 'Inteligência', route: '/dashboard/inteligencia-comercial', enabled: true },
       { key: 'receita.relatorios', label: 'Relatórios', route: '/dashboard/relatorios', api: ['/api/relatorios'], enabled: true },
     ],
   },
@@ -82,8 +73,7 @@ export const MODULES: Module[] = [
     enabled: true,
     features: [
       { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
-      { key: 'carteira.ranking', label: 'Ranking', route: '/dashboard/ranking', enabled: true },
-      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', enabled: true },
+      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
       { key: 'carteira.alertas', label: 'Alertas', route: '/dashboard/alertas', enabled: true },
     ],
   },
@@ -113,7 +103,6 @@ export const MODULES: Module[] = [
     enabled: true,
     features: [
       { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro', api: ['/api/financeiro'], enabled: true },
-      { key: 'financeiro.pedidos', label: 'Pedidos', route: '/dashboard/pedidos', api: ['/api/pedidos'], enabled: true },
     ],
   },
   {
@@ -123,7 +112,7 @@ export const MODULES: Module[] = [
     roles: ['ADMIN'],
     features: [
       { key: 'admin.usuarios', label: 'Usuários', route: '/dashboard/usuarios', api: ['/api/users'], enabled: true },
-      { key: 'admin.parametros', label: 'Parâmetros', route: '/dashboard/parametros', api: ['/api/parametros'], enabled: true },
+      { key: 'admin.parametros', label: 'Parâmetros', route: '/dashboard/parametros', api: ['/api/parametros', '/api/float-config'], enabled: true },
       { key: 'admin.auditoria', label: 'Auditoria', route: '/dashboard/auditoria', api: ['/api/auditoria'], enabled: true },
     ],
   },

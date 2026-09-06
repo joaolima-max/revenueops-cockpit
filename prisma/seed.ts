@@ -1,246 +1,72 @@
-import { PrismaClient, Role, LeadStatus, DealStage } from '@prisma/client'
+/**
+ * SEED ESTRUTURAL — cria apenas o que o sistema precisa para funcionar.
+ *
+ * Não cria dados de demonstração. Clientes, leads, deals e lançamentos entram
+ * pela operação real. Rodar este seed várias vezes é seguro: tudo é upsert.
+ */
+
+import { PrismaClient } from '@prisma/client'
+import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import bcrypt from 'bcryptjs'
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
-const prisma = new PrismaClient({ adapter })
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 1 })
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
+
+const USUARIOS = [
+  { email: 'admin@revenueops.com.br', name: 'Administrador', role: 'ADMIN' as const },
+  { email: 'operacional@revenueops.com.br', name: 'Operacional', role: 'OPERACIONAL' as const },
+  { email: 'comercial@revenueops.com.br', name: 'Comercial', role: 'COMERCIAL' as const },
+]
+
+const PARAMETROS = [
+  { chave: 'CAC', valor: '0', label: 'Custo de Aquisição de Cliente', grupo: 'COMERCIAL', tipo: 'NUMBER',
+    descricao: 'Usado no cálculo de payback da carteira.' },
+  { chave: 'LTV_MESES', valor: '24', label: 'Horizonte de LTV (meses)', grupo: 'COMERCIAL', tipo: 'NUMBER',
+    descricao: 'Quantidade de meses considerada no LTV do cliente.' },
+]
 
 async function main() {
-  console.log('Seeding database...')
+  const senha = process.env.SEED_PASSWORD || 'Revenue@2025'
+  const hash = await bcrypt.hash(senha, 10)
 
-  const adminPassword = await bcrypt.hash('Revenue@2025', 12)
-  const opPassword = await bcrypt.hash('Revenue@2025', 12)
-  const comercialPassword = await bcrypt.hash('Revenue@2025', 12)
+  for (const u of USUARIOS) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: { name: u.name, role: u.role, active: true },
+      create: { ...u, password: hash, active: true },
+    })
+  }
+  console.log(`✓ ${USUARIOS.length} usuários`)
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@revenueops.com.br' },
-    update: {},
-    create: {
-      name: 'Admin RevenueOps',
-      email: 'admin@revenueops.com.br',
-      password: adminPassword,
-      role: Role.ADMIN,
-    },
-  })
+  for (const p of PARAMETROS) {
+    await prisma.parametro.upsert({ where: { chave: p.chave }, update: {}, create: p })
+  }
+  console.log(`✓ ${PARAMETROS.length} parâmetros`)
 
-  const operacional = await prisma.user.upsert({
-    where: { email: 'operacional@revenueops.com.br' },
-    update: {},
-    create: {
-      name: 'Equipe Operacional',
-      email: 'operacional@revenueops.com.br',
-      password: opPassword,
-      role: Role.OPERACIONAL,
-    },
-  })
+  // Multiplicador do Float: sem uma vigência, o Float não é calculado.
+  // Entra zerado de propósito — o valor real é definido em Parâmetros.
+  const jaTemFloat = await prisma.floatConfig.count()
+  if (jaTemFloat === 0) {
+    const inicioDoAno = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1))
+    await prisma.floatConfig.create({
+      data: {
+        multiplicador: 0,
+        vigenciaInicio: inicioDoAno,
+        notas: 'Vigência inicial. Defina o multiplicador real em Parâmetros — com 0 o Float não rende.',
+      },
+    })
+    console.log('✓ vigência inicial do Float (multiplicador 0 — configure em Parâmetros)')
+  }
 
-  const comercial = await prisma.user.upsert({
-    where: { email: 'comercial@revenueops.com.br' },
-    update: {},
-    create: {
-      name: 'Equipe Comercial',
-      email: 'comercial@revenueops.com.br',
-      password: comercialPassword,
-      role: Role.COMERCIAL,
-    },
-  })
-
-  const leads = await Promise.all([
-    prisma.lead.upsert({
-      where: { id: 'lead-1' },
-      update: {},
-      create: {
-        id: 'lead-1',
-        name: 'Carlos Mendes',
-        email: 'carlos@empresa.com.br',
-        phone: '(11) 99999-0001',
-        company: 'Empresa Alpha Ltda',
-        position: 'CEO',
-        source: 'LinkedIn',
-        status: LeadStatus.QUALIFICADO,
-        value: 85000,
-        ownerId: comercial.id,
-      },
-    }),
-    prisma.lead.upsert({
-      where: { id: 'lead-2' },
-      update: {},
-      create: {
-        id: 'lead-2',
-        name: 'Ana Paula Lima',
-        email: 'ana@betacorp.com.br',
-        phone: '(21) 99999-0002',
-        company: 'BetaCorp S.A.',
-        position: 'CFO',
-        source: 'Indicação',
-        status: LeadStatus.PROPOSTA,
-        value: 120000,
-        ownerId: comercial.id,
-      },
-    }),
-    prisma.lead.upsert({
-      where: { id: 'lead-3' },
-      update: {},
-      create: {
-        id: 'lead-3',
-        name: 'Roberto Silva',
-        email: 'roberto@gammatech.com.br',
-        phone: '(31) 99999-0003',
-        company: 'GammaTech',
-        position: 'CTO',
-        source: 'Site',
-        status: LeadStatus.NEGOCIACAO,
-        value: 200000,
-        ownerId: admin.id,
-      },
-    }),
-    prisma.lead.upsert({
-      where: { id: 'lead-4' },
-      update: {},
-      create: {
-        id: 'lead-4',
-        name: 'Fernanda Costa',
-        email: 'fernanda@deltaind.com.br',
-        phone: '(41) 99999-0004',
-        company: 'Delta Indústrias',
-        position: 'Diretora Financeira',
-        source: 'Evento',
-        status: LeadStatus.GANHO,
-        value: 150000,
-        ownerId: operacional.id,
-      },
-    }),
-    prisma.lead.upsert({
-      where: { id: 'lead-5' },
-      update: {},
-      create: {
-        id: 'lead-5',
-        name: 'Marcos Oliveira',
-        email: 'marcos@epsilonsa.com.br',
-        phone: '(51) 99999-0005',
-        company: 'Epsilon S.A.',
-        position: 'Gerente Comercial',
-        source: 'Google Ads',
-        status: LeadStatus.NOVO,
-        value: 45000,
-        ownerId: comercial.id,
-      },
-    }),
-    prisma.lead.upsert({
-      where: { id: 'lead-6' },
-      update: {},
-      create: {
-        id: 'lead-6',
-        name: 'Juliana Rocha',
-        email: 'juliana@zetagroup.com.br',
-        phone: '(61) 99999-0006',
-        company: 'Zeta Group',
-        position: 'VP de Operações',
-        source: 'LinkedIn',
-        status: LeadStatus.PERDIDO,
-        value: 95000,
-        ownerId: comercial.id,
-      },
-    }),
-  ])
-
-  await Promise.all([
-    prisma.deal.upsert({
-      where: { id: 'deal-1' },
-      update: {},
-      create: {
-        id: 'deal-1',
-        title: 'Implementação ERP - Alpha Ltda',
-        value: 85000,
-        stage: DealStage.NEGOCIACAO,
-        probability: 70,
-        ownerId: comercial.id,
-        leadId: leads[0].id,
-        expectedAt: new Date('2025-06-30'),
-      },
-    }),
-    prisma.deal.upsert({
-      where: { id: 'deal-2' },
-      update: {},
-      create: {
-        id: 'deal-2',
-        title: 'Consultoria Financeira - BetaCorp',
-        value: 120000,
-        stage: DealStage.PROPOSTA,
-        probability: 55,
-        ownerId: comercial.id,
-        leadId: leads[1].id,
-        expectedAt: new Date('2025-07-15'),
-      },
-    }),
-    prisma.deal.upsert({
-      where: { id: 'deal-3' },
-      update: {},
-      create: {
-        id: 'deal-3',
-        title: 'Plataforma SaaS - GammaTech',
-        value: 200000,
-        stage: DealStage.FECHAMENTO,
-        probability: 90,
-        ownerId: admin.id,
-        leadId: leads[2].id,
-        expectedAt: new Date('2025-05-31'),
-      },
-    }),
-    prisma.deal.upsert({
-      where: { id: 'deal-4' },
-      update: {},
-      create: {
-        id: 'deal-4',
-        title: 'Automação Industrial - Delta',
-        value: 150000,
-        stage: DealStage.GANHO,
-        probability: 100,
-        ownerId: operacional.id,
-        leadId: leads[3].id,
-        closedAt: new Date('2025-04-20'),
-      },
-    }),
-    prisma.deal.upsert({
-      where: { id: 'deal-5' },
-      update: {},
-      create: {
-        id: 'deal-5',
-        title: 'CRM Customizado - Epsilon',
-        value: 45000,
-        stage: DealStage.QUALIFICACAO,
-        probability: 30,
-        ownerId: comercial.id,
-        leadId: leads[4].id,
-        expectedAt: new Date('2025-08-01'),
-      },
-    }),
-    prisma.deal.upsert({
-      where: { id: 'deal-6' },
-      update: {},
-      create: {
-        id: 'deal-6',
-        title: 'Suporte Técnico - GammaTech II',
-        value: 36000,
-        stage: DealStage.PROSPECCAO,
-        probability: 20,
-        ownerId: admin.id,
-        expectedAt: new Date('2025-09-01'),
-      },
-    }),
-  ])
-
-  console.log('Seed completed!')
-  console.log(`Users created: admin, operacional, comercial`)
-  console.log(`Leads created: ${leads.length}`)
-  console.log(`Deals created: 6`)
+  if (process.env.SEED_PASSWORD) {
+    console.log('\nSenha definida via SEED_PASSWORD.')
+  } else {
+    console.log(`\n⚠  Senha padrão "${senha}" para os 3 usuários. Troque antes de usar em produção,`)
+    console.log('   ou rode com SEED_PASSWORD=... npm run seed')
+  }
 }
 
 main()
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+  .catch((e) => { console.error(e); process.exit(1) })
+  .finally(async () => { await prisma.$disconnect(); await pool.end() })

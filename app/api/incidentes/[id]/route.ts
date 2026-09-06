@@ -22,11 +22,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ...(criticidade !== undefined ? { criticidade } : {}),
       ...(satisfacao !== undefined ? { satisfacao } : {}),
     },
-    include: {
-      clientesAfetados: {
-        include: { cliente: { select: { id: true, nome: true } } },
-      },
-    },
   })
 
   return NextResponse.json({ incidente })

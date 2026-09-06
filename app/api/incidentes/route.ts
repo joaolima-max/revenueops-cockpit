@@ -7,11 +7,6 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const incidentes = await prisma.incidente.findMany({
-    include: {
-      clientesAfetados: {
-        include: { cliente: { select: { id: true, nome: true } } },
-      },
-    },
     orderBy: { inicio: 'desc' },
     take: 50,
   })
@@ -38,15 +33,6 @@ export async function POST(request: NextRequest) {
       fim: fim ? new Date(fim) : null,
       downtimeMins: downtimeMins ?? null,
       criticidade: criticidade || 'MEDIA',
-      satisfacao: satisfacao ?? null,
-      clientesAfetados: clienteIds?.length ? {
-        create: clienteIds.map((cid: string) => ({ clienteId: cid })),
-      } : undefined,
-    },
-    include: {
-      clientesAfetados: {
-        include: { cliente: { select: { id: true, nome: true } } },
-      },
     },
   })
 

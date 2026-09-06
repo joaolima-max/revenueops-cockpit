@@ -34,6 +34,7 @@ enum DealStage {
 enum ModeloOperacional {
   API
   WHITE_LABEL
+  BAAS
 }
 
 enum ClienteStatus {
@@ -44,14 +45,11 @@ enum ClienteStatus {
 }
 
 enum MetaTipo {
-  RECEITA
+  RECEITA_TARIFARIA
   TPV
-  MRR
-  FLOATING
-  CLIENTES_ATIVOS
-  NOVOS_CLIENTES
-  RETENCAO
+  SALDO_EM_CONTA
   TRANSACOES
+  MEDS
 }
 
 enum Segmento {
@@ -100,12 +98,6 @@ enum IncidenteCriticidade {
   CRITICA
 }
 
-enum PedidoStatus {
-  PENDENTE
-  FATURADO
-  PAGO
-  CANCELADO
-}
 
 model User {
   id        String   @id @default(cuid())
@@ -205,7 +197,6 @@ model Cliente {
   qtdTransacoesEsperada Int?
   qtdMedEsperada        Int?
   receitaPrevistaMensal Float?
-  volumeMinimo          Float?
   descontoPercent       Float?
   overpricePercent      Float?
   notas                 String?
@@ -214,65 +205,19 @@ model Cliente {
 
   ownerId        String
   owner          User            @relation(fields: [ownerId], references: [id])
-  processamentos Processamento[]
-  forecasts      Forecast[]
   tarefas        Tarefa[]
-  pedidos        PedidoCobravel[]
-  incidentes     IncidenteCliente[]
   contasReceber  ContaReceber[]
   followUps      FollowUp[]
 }
 
-model Processamento {
-  id               String   @id @default(cuid())
-  mesRef           String
-  tpv              Float    @default(0)
-  qtdTransacoes    Int      @default(0)
-  qtdMed           Int      @default(0)
-  receitaTarifaria Float    @default(0)
-  floating         Float    @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
 
-  clienteId String
-  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 
-  @@unique([clienteId, mesRef])
-}
-
-model Forecast {
-  id               String   @id @default(cuid())
-  mesRef           String
-  tpvPrevisto      Float    @default(0)
-  qtdPrevista      Int      @default(0)
-  taxaMedia        Float    @default(0)
-  receitaPrevista  Float    @default(0)
-  tpvRealizado     Float?
-  receitaRealizada Float?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  clienteId String
-  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-
-  @@unique([clienteId, mesRef])
-}
-
-model ReceitaRealizada {
-  id                String   @id @default(cuid())
-  mesRef            String   @unique
-  receitaTarifaria  Float    @default(0)
-  floatingRealizado Float    @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-}
 
 model Meta {
   id        String   @id @default(cuid())
   tipo      MetaTipo
   valor     Float
   periodo   String
-  realizado Float?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -305,35 +250,12 @@ model Incidente {
   fim          DateTime?
   downtimeMins Int?
   criticidade  IncidenteCriticidade @default(MEDIA)
-  satisfacao   Int?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  clientesAfetados IncidenteCliente[]
 }
 
-model IncidenteCliente {
-  incidenteId String
-  clienteId   String
-  incidente   Incidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
-  cliente     Cliente   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 
-  @@id([incidenteId, clienteId])
-}
-
-model PedidoCobravel {
-  id        String       @id @default(cuid())
-  tipo      String
-  descricao String?
-  valor     Float
-  mesRef    String
-  status    PedidoStatus @default(PENDENTE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-
-  clienteId String
-  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-}
 
 enum ContaReceberStatus {
   PENDENTE
@@ -375,24 +297,6 @@ model Parametro {
   updatedAt DateTime @updatedAt
 }
 
-model ForecastGeral {
-  id                      String   @id @default(cuid())
-  mesRef                  String   @unique
-  tpvPrevisto             Float    @default(0)
-  qtdTransacoesPrevista   Int      @default(0)
-  faturamentoPrevisto     Float    @default(0)
-  margemPrevista          Float    @default(0)
-  tpvRealizado            Float?
-  qtdTransacoesRealizadas Int?
-  faturamentoRealizado    Float?
-  margemRealizada         Float?
-  notas                   String?
-  qtdMedRealizada        Int?
-  receitaTarifariaWl     Float?
-  dataLancamento         DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-}
 
 model ContaReceber {
   id          String             @id @default(cuid())
@@ -431,4 +335,43 @@ model FollowUp {
   updatedAt       DateTime     @updatedAt
   clienteId       String
   cliente         Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+/// FONTE OFICIAL dos 5 indicadores realizados. Grão: uma data.
+/// Nenhum outro modelo grava TPV, receita tarifária, saldo, transações ou MEDs.
+model LancamentoDiario {
+  id               String   @id @default(cuid())
+  data             DateTime @unique @db.Date
+  receitaTarifaria Float    @default(0)
+  tpv              Float    @default(0)
+  saldoEmConta     Float    @default(0)
+  qtdTransacoes    Int      @default(0)
+  qtdMed           Int      @default(0)
+  notas            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([data])
+}
+
+/// Multiplicador do Float, configuravel pela tela de Parametros.
+/// Versionado por vigencia para que periodos fechados nao mudem de valor
+/// quando o multiplicador for alterado.
+model FloatConfig {
+  id             String   @id @default(cuid())
+  multiplicador  Float
+  vigenciaInicio DateTime @unique @db.Date
+  notas          String?
+  createdAt      DateTime @default(now())
+}
+
+/// Volumetria minima CONTRATADA GERAL da empresa por periodo (YYYY-MM).
+/// O realizado vem de LancamentoDiario; o atingimento e derivado, nunca gravado.
+model VolumetriaMinima {
+  id        String   @id @default(cuid())
+  periodo   String   @unique
+  qtdMinima Int
+  notas     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

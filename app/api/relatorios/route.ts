@@ -1,201 +1,155 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import {
+  kpisDoPeriodo, linhasReceita, metasDoPeriodo, contagensClientes,
+  volumetriaDoPeriodo, periodoAtual, type KpisPeriodo,
+} from '@/lib/kpi'
 
+/** Lista de "YYYY-MM" entre dois períodos, inclusive. */
+function periodosEntre(inicio: string, fim: string): string[] {
+  const out: string[] = []
+  const [iy, im] = inicio.split('-').map(Number)
+  const [fy, fm] = fim.split('-').map(Number)
+  let y = iy, m = im
+  while (y < fy || (y === fy && m <= fm)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++; if (m > 12) { m = 1; y++ }
+    if (out.length > 60) break
+  }
+  return out
+}
+
+/**
+ * Dados dos seis relatórios. Todos derivam das fontes oficiais — não há
+ * número calculado de forma diferente aqui e no dashboard.
+ */
 export async function GET(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const { searchParams } = request.nextUrl
-  const dataInicio = searchParams.get('inicio') || ''
-  const dataFim = searchParams.get('fim') || ''
+  const atual = periodoAtual()
+  const fim = searchParams.get('fim') || atual
+  const inicio = searchParams.get('inicio') || (() => {
+    const [y, m] = atual.split('-').map(Number)
+    const d = new Date(Date.UTC(y, m - 12, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  })()
+
+  if (!/^\d{4}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}$/.test(fim)) {
+    return NextResponse.json({ error: 'Período inválido. Use YYYY-MM.' }, { status: 400 })
+  }
+
   const segmento = searchParams.get('segmento') || ''
   const modelo = searchParams.get('modelo') || ''
   const status = searchParams.get('status') || ''
+  const periodos = periodosEntre(inicio, fim)
 
-  // Build month range
-  const now = new Date()
-  const defaultFim = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const defaultInicio = (() => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 11, 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })()
-  const inicio = dataInicio || defaultInicio
-  const fim = dataFim || defaultFim
-
-  // Build months array between inicio and fim
-  const meses: string[] = []
-  const [iy, im] = inicio.split('-').map(Number)
-  const [fy, fm] = fim.split('-').map(Number)
-  let cy = iy, cm = im
-  while (cy < fy || (cy === fy && cm <= fm)) {
-    meses.push(`${cy}-${String(cm).padStart(2, '0')}`)
-    cm++; if (cm > 12) { cm = 1; cy++ }
+  const filtroCliente = {
+    ...(segmento ? { segmento: segmento as never } : {}),
+    ...(modelo ? { modeloOperacional: modelo as never } : {}),
+    ...(status ? { status: status as never } : {}),
   }
 
-  // Cliente filter for processamentos
-  let clienteIds: string[] | undefined
-  if (segmento || modelo || status) {
-    const clientes = await prisma.cliente.findMany({
-      where: {
-        ...(segmento ? { segmento: segmento as never } : {}),
-        ...(modelo ? { modeloOperacional: modelo as never } : {}),
-        ...(status ? { status: status as never } : {}),
-      },
-      select: { id: true },
-    })
-    clienteIds = clientes.map(c => c.id)
-  }
+  const [serie, receitaFim, metas, contagens, volumetria, clientes, contas, incidentes, leads, deals] =
+    await Promise.all([
+      Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
+      linhasReceita(fim),
+      metasDoPeriodo(fim),
+      contagensClientes(),
+      volumetriaDoPeriodo(fim),
+      prisma.cliente.findMany({
+        where: filtroCliente,
+        select: {
+          id: true, nome: true, status: true, modeloOperacional: true, segmento: true,
+          mensalidadeApi: true, sustentacaoWhiteLabel: true, setup: true,
+          dataFechamento: true, dataEncerramento: true, scoreRisco: true,
+          owner: { select: { name: true } },
+        },
+        orderBy: { nome: 'asc' },
+      }),
+      prisma.contaReceber.findMany({
+        select: { id: true, tipo: true, valor: true, status: true, dataVenc: true,
+          cliente: { select: { nome: true } } },
+        orderBy: { dataVenc: 'desc' },
+        take: 200,
+      }),
+      prisma.incidente.findMany({ orderBy: { inicio: 'desc' }, take: 100 }),
+      prisma.lead.groupBy({ by: ['status'], _count: true }),
+      prisma.deal.groupBy({ by: ['stage'], _count: true, _sum: { value: true } }),
+    ])
 
-  const procWhere = {
-    mesRef: { in: meses },
-    ...(clienteIds ? { clienteId: { in: clienteIds } } : {}),
-  }
+  const comDados = serie.filter((k: KpisPeriodo) => k.temDados)
 
-  const [
-    proc12M, tpvTotal,
-    clientesByStatus, clientesByModelo, clientesBySegmento,
-    topClientes, fg12M,
-    pedidosByTipo, metasMes,
-    receitaRealizadaRows,
-  ] = await Promise.all([
-    prisma.processamento.groupBy({
-      by: ['mesRef'], where: procWhere,
-      _sum: { tpv: true, receitaTarifaria: true, floating: true, qtdTransacoes: true, qtdMed: true },
-      orderBy: { mesRef: 'asc' },
-    }),
-    prisma.processamento.aggregate({ where: procWhere, _sum: { tpv: true, receitaTarifaria: true, floating: true } }),
-    prisma.cliente.groupBy({ by: ['status'], _count: true }),
-    prisma.cliente.groupBy({ by: ['modeloOperacional'], _count: true }),
-    prisma.cliente.groupBy({ by: ['segmento'], _count: true }),
-    prisma.processamento.groupBy({
-      by: ['clienteId'],
-      where: procWhere,
-      _sum: { receitaTarifaria: true, floating: true, tpv: true },
-      orderBy: { _sum: { receitaTarifaria: 'desc' } },
-      take: 10,
-    }),
-    prisma.forecastGeral.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
-    prisma.pedidoCobravel.groupBy({ by: ['tipo', 'status'], _sum: { valor: true }, _count: true }),
-    prisma.meta.findMany({ where: { periodo: { in: meses } } }),
-    prisma.receitaRealizada.findMany({ where: { mesRef: { in: meses } }, orderBy: { mesRef: 'asc' } }),
-  ])
+  const evolucao = serie.map((k) => ({
+    periodo: k.periodo,
+    temDados: k.temDados,
+    tpv: k.tpv,
+    receitaTarifaria: k.receitaTarifaria,
+    float: k.float,
+    qtdTransacoes: k.qtdTransacoes,
+    qtdMed: k.qtdMed,
+    takeRate: k.takeRate,
+    percentMed: k.percentMed,
+    saldoMedio: k.saldoMedio,
+  }))
 
-  const topClienteNames = await prisma.cliente.findMany({
-    where: { id: { in: topClientes.map(t => t.clienteId) } },
-    select: { id: true, nome: true, modeloOperacional: true, segmento: true, status: true },
-  })
-  const cMap = new Map(topClienteNames.map(c => [c.id, c]))
-
-  // Build lookup maps
-  const rrMap = new Map(receitaRealizadaRows.map(r => [r.mesRef, r]))
-  const fgMap = new Map(fg12M.map(f => [f.mesRef, f]))
-
-  // Merge proc12M with receitaRealizada + forecastGeral fallback for TPV
-  const mergedProc12M = proc12M.map(p => {
-    const rr = rrMap.get(p.mesRef)
-    const fg = fgMap.get(p.mesRef)
-    const procReceitaTarifaria = p._sum.receitaTarifaria || 0
-    const procFloating = p._sum.floating || 0
-    const rrReceitaTarifaria = rr?.receitaTarifaria ?? 0
-    const rrFloating = rr?.floatingRealizado ?? 0
-    const wlTarif = fg?.receitaTarifariaWl || 0
-
-    // WL tariff adds to tarifária total
-    const mergedReceitaTarifaria = Math.max(procReceitaTarifaria, rrReceitaTarifaria) + wlTarif
-    const mergedFloating = procFloating > 0 ? procFloating : rrFloating
-    // TPV: processamento se disponível, senão forecastGeral realizado
-    const procTpv = p._sum.tpv || 0
-    const tpv = procTpv > 0 ? procTpv : (fg?.tpvRealizado || 0)
-    const qtdTransacoes = (p._sum.qtdTransacoes || 0) > 0 ? (p._sum.qtdTransacoes || 0) : (fg?.qtdTransacoesRealizadas || 0)
-
-    return {
-      mes: p.mesRef,
-      tpv,
-      receitaTarifaria: mergedReceitaTarifaria,
-      floating: mergedFloating,
-      total: mergedReceitaTarifaria + mergedFloating,
-      qtdTransacoes,
-      qtdMed: (p._sum.qtdMed || 0) > 0 ? (p._sum.qtdMed || 0) : (fg?.qtdMedRealizada || 0),
-      takeRate: tpv > 0 ? (mergedReceitaTarifaria / tpv) * 100 : 0,
+  const agrupa = <T extends string>(itens: Array<Record<string, unknown>>, campo: string) => {
+    const acc: Record<string, number> = {}
+    for (const i of itens) {
+      const k = String(i[campo] ?? 'INDEFINIDO') as T
+      acc[k] = (acc[k] ?? 0) + 1
     }
-  })
-
-  const procMesSet = new Set(proc12M.map(p => p.mesRef))
-
-  // Include months only in receitaRealizada (no processamento rows)
-  for (const rr of receitaRealizadaRows) {
-    if (!procMesSet.has(rr.mesRef)) {
-      const fg = fgMap.get(rr.mesRef)
-      const tpv = fg?.tpvRealizado || 0
-      const wlTarif = fg?.receitaTarifariaWl || 0
-      const receitaTarifaria = rr.receitaTarifaria + wlTarif
-      mergedProc12M.push({
-        mes: rr.mesRef,
-        tpv,
-        receitaTarifaria,
-        floating: rr.floatingRealizado,
-        total: receitaTarifaria + rr.floatingRealizado,
-        qtdTransacoes: fg?.qtdTransacoesRealizadas || 0,
-        qtdMed: fg?.qtdMedRealizada || 0,
-        takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : 0,
-      })
-    }
+    return acc
   }
-
-  // Include months only in forecastGeral (no processamento, no receitaRealizada)
-  for (const fg of fg12M) {
-    if (!procMesSet.has(fg.mesRef) && !rrMap.has(fg.mesRef)) {
-      const tpv = fg.tpvRealizado || 0
-      const receitaTarifaria = fg.receitaTarifariaWl || 0
-      mergedProc12M.push({
-        mes: fg.mesRef,
-        tpv,
-        receitaTarifaria,
-        floating: 0,
-        total: receitaTarifaria,
-        qtdTransacoes: fg.qtdTransacoesRealizadas || 0,
-        qtdMed: fg.qtdMedRealizada || 0,
-        takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : 0,
-      })
-    }
-  }
-
-  mergedProc12M.sort((a, b) => a.mes.localeCompare(b.mes))
-
-  // Recalculate totals from merged data
-  const mergedReceitaTarifariaTotal = mergedProc12M.reduce((s, r) => s + r.receitaTarifaria, 0)
-  const mergedFloatingTotal = mergedProc12M.reduce((s, r) => s + r.floating, 0)
-  const mergedTpvTotal = mergedProc12M.reduce((s, r) => s + r.tpv, 0)
-  const qtdTransacoesTotal = mergedProc12M.reduce((s, r) => s + r.qtdTransacoes, 0)
-  const receitaTotal = mergedReceitaTarifariaTotal + mergedFloatingTotal
-  const takeRateMedio = mergedTpvTotal > 0
-    ? (mergedReceitaTarifariaTotal / mergedTpvTotal) * 100 : 0
-
-  const fgComReal = fg12M.filter(f => f.faturamentoRealizado != null && f.faturamentoPrevisto > 0)
-  const precisaoForecast = fgComReal.length > 0
-    ? fgComReal.reduce((a, f) => a + (f.faturamentoRealizado! / f.faturamentoPrevisto) * 100, 0) / fgComReal.length : 0
-  const margemOpMedia = fgComReal.length > 0
-    ? fgComReal.reduce((a, f) => a + (f.margemRealizada ?? f.margemPrevista), 0) / fgComReal.length : null
 
   return NextResponse.json({
-    periodo: { inicio, fim, meses },
-    summary: {
-      receitaTotal,
-      tpvTotal: mergedTpvTotal,
-      receitaTarifaria: mergedReceitaTarifariaTotal,
-      floating: mergedFloatingTotal,
-      takeRateMedio, precisaoForecast, margemOpMedia,
-      qtdTransacoesTotal,
+    periodo: { inicio, fim, periodos },
+    semDados: comDados.length === 0,
+
+    // Relatório Institucional / Conselho
+    consolidado: {
+      tpv: comDados.reduce((a, k) => a + (k.tpv ?? 0), 0),
+      receitaTarifaria: comDados.reduce((a, k) => a + (k.receitaTarifaria ?? 0), 0),
+      float: comDados.reduce((a, k) => a + (k.float ?? 0), 0),
+      qtdTransacoes: comDados.reduce((a, k) => a + (k.qtdTransacoes ?? 0), 0),
+      qtdMed: comDados.reduce((a, k) => a + (k.qtdMed ?? 0), 0),
+      mesesComLancamento: comDados.length,
+      mesesNoPeriodo: periodos.length,
     },
-    proc12M: mergedProc12M,
-    clientesByStatus, clientesByModelo, clientesBySegmento,
-    topClientes: topClientes.map(t => ({
-      ...t, ...cMap.get(t.clienteId),
-      receita: (t._sum.receitaTarifaria || 0) + (t._sum.floating || 0),
-    })),
-    fg12M: fg12M.map(f => ({ ...f })),
-    pedidosByTipo,
-    metasMes,
+    evolucao,
+    linhasReceita: receitaFim,
+    contagens,
+
+    // Relatório de Metas
+    metas,
+
+    // Relatório Financeiro
+    financeiro: {
+      contas,
+      porStatus: agrupa(contas as unknown as Array<Record<string, unknown>>, 'status'),
+      totalEmAberto: contas.filter((c) => c.status !== 'PAGO').reduce((a, c) => a + c.valor, 0),
+      totalPago: contas.filter((c) => c.status === 'PAGO').reduce((a, c) => a + c.valor, 0),
+    },
+
+    // Relatório Comercial
+    comercial: {
+      leads: Object.fromEntries(leads.map((l) => [l.status, l._count])),
+      deals: deals.map((d) => ({ stage: d.stage, count: d._count, valor: d._sum.value ?? 0 })),
+      clientes,
+      porStatus: agrupa(clientes as unknown as Array<Record<string, unknown>>, 'status'),
+      porModelo: agrupa(clientes as unknown as Array<Record<string, unknown>>, 'modeloOperacional'),
+      porSegmento: agrupa(clientes as unknown as Array<Record<string, unknown>>, 'segmento'),
+    },
+
+    // Relatório Operacional
+    operacional: {
+      incidentes,
+      abertos: incidentes.filter((i) => !i.fim).length,
+      downtimeTotal: incidentes.reduce((a, i) => a + (i.downtimeMins ?? 0), 0),
+      porCriticidade: agrupa(incidentes as unknown as Array<Record<string, unknown>>, 'criticidade'),
+      volumetria,
+    },
   })
 }

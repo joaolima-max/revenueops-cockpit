@@ -10,11 +10,7 @@ import {
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
-interface Proc { id: string; mesRef: string; tpv: number; qtdTransacoes: number; qtdMed: number; receitaTarifaria: number; floating: number }
-interface ForecastItem { id: string; mesRef: string; tpvPrevisto: number; receitaPrevista: number; tpvRealizado: number | null; receitaRealizada: number | null }
 interface TarefaItem { id: string; titulo: string; status: string; prioridade: string; dueDate: string | null; responsavel: { id: string; name: string }; criadoPor: { id: string; name: string } }
-interface PedidoItem { id: string; tipo: string; descricao: string | null; valor: number; mesRef: string; status: string }
-interface IncidenteItem { incidenteId: string; incidente: { id: string; titulo: string; criticidade: string; inicio: string; fim: string | null; downtimeMins: number | null } }
 interface ContaItem { id: string; descricao: string; tipo: string; valor: number; dataVenc: string; status: string; dataPago: string | null }
 interface FollowUpItem { id: string; titulo: string; descricao: string | null; tipo: string; proximoContato: string | null; ultimoContato: string | null; notas: string | null }
 
@@ -24,36 +20,30 @@ interface Cliente {
   dataFechamento: string | null; dataEncerramento: string | null
   mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null; setup: number | null
   tpvEsperado: number | null; qtdTransacoesEsperada: number | null; qtdMedEsperada: number | null
-  receitaPrevistaMensal: number | null; volumeMinimo: number | null
+  receitaPrevistaMensal: number | null
   descontoPercent: number | null; overpricePercent: number | null; notas: string | null
   owner: { id: string; name: string }
-  processamentos: Proc[]; forecasts: ForecastItem[]
-  tarefas: TarefaItem[]; pedidos: PedidoItem[]
-  incidentes: IncidenteItem[]; contasReceber: ContaItem[]; followUps: FollowUpItem[]
+  tarefas: TarefaItem[]
+  contasReceber: ContaItem[]; followUps: FollowUpItem[]
 }
 
 interface User { id: string; name: string; role: string }
-type Tab = 'visao-geral' | 'financeiro' | 'forecast' | 'relacionamento' | 'inteligencia'
+type Tab = 'visao-geral' | 'financeiro' | 'relacionamento'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'visao-geral', label: 'Visão Geral' },
   { id: 'financeiro', label: 'Financeiro' },
-  { id: 'forecast', label: 'Forecast' },
   { id: 'relacionamento', label: 'Relacionamento' },
-  { id: 'inteligencia', label: 'Inteligência' },
 ]
 const SEGMENTOS = ['IGAMING', 'ECOMMERCE', 'SAAS', 'ERP', 'TELECOM', 'CRIPTOMOEDAS', 'VAREJO', 'OUTROS']
 const OPERACOES = ['CASH_IN', 'CASH_OUT', 'BAAS', 'WHITE_LABEL']
 const SCORES = ['BAIXO', 'MEDIO', 'ALTO', 'CRITICO']
 const PRIORIDADE_COLORS: Record<string, string> = { CRITICA: 'text-red-400', ALTA: 'text-amber-400', MEDIA: 'text-blue-400', BAIXA: 'text-gray-500' }
 const STATUS_TAREFA_LABELS: Record<string, string> = { PENDENTE: 'Pendente', EM_ANDAMENTO: 'Em andamento', CONCLUIDA: 'Concluída', CANCELADA: 'Cancelada' }
-const CRITICIDADE_COLORS: Record<string, string> = { BAIXA: 'text-gray-400', MEDIA: 'text-amber-400', ALTA: 'text-orange-400', CRITICA: 'text-red-400' }
-const PEDIDO_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-amber-400', PAGO: 'text-emerald-400', CANCELADO: 'text-gray-500' }
 const CONTA_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-amber-400', FATURADO: 'text-blue-400', PAGO: 'text-emerald-400', INADIMPLENTE: 'text-red-400' }
 
-const emptyProc = { mesRef: '', tpv: '', qtdTransacoes: '', qtdMed: '', receitaTarifaria: '', floating: '' }
 
 function toEditForm(c: Cliente) {
   return {
@@ -67,7 +57,6 @@ function toEditForm(c: Cliente) {
     qtdTransacoesEsperada: c.qtdTransacoesEsperada != null ? String(c.qtdTransacoesEsperada) : '',
     qtdMedEsperada: c.qtdMedEsperada != null ? String(c.qtdMedEsperada) : '',
     receitaPrevistaMensal: c.receitaPrevistaMensal != null ? String(c.receitaPrevistaMensal) : '',
-    volumeMinimo: c.volumeMinimo != null ? String(c.volumeMinimo) : '',
     descontoPercent: c.descontoPercent != null ? String(c.descontoPercent) : '',
     overpricePercent: c.overpricePercent != null ? String(c.overpricePercent) : '',
     dataFechamento: c.dataFechamento ? c.dataFechamento.slice(0, 10) : '',
@@ -80,63 +69,46 @@ function toEditForm(c: Cliente) {
 
 export default function ClienteDetailClient({
   cliente: initial, users, role, currentUserId,
-  ltv, cac, ltvMeses, rankingPosition, totalClientes, healthScore, mesAtual,
+  ltv, cac, ltvMeses, healthScore,
 }: {
   cliente: Cliente; users: User[]; role: string; currentUserId: string
   ltv: number; cac: number; ltvMeses: number
-  rankingPosition: number | null; totalClientes: number; healthScore: number; mesAtual: string
+  healthScore: number
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
   const [cliente, setCliente] = useState(initial)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [showProcModal, setShowProcModal] = useState(false)
   const [showTarefaModal, setShowTarefaModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [statusEdit, setStatusEdit] = useState(cliente.status)
   const [editForm, setEditForm] = useState(toEditForm(initial))
-  const [procForm, setProcForm] = useState(emptyProc)
   const [tarefaForm, setTarefaForm] = useState({ titulo: '', prioridade: 'MEDIA', dueDate: '', responsavelId: currentUserId })
 
-  const lastProc = cliente.processamentos[0]
-  const takeRate = lastProc?.tpv > 0 ? (lastProc.receitaTarifaria / lastProc.tpv) * 100 : null
-  const med = lastProc?.qtdTransacoes > 0 ? (lastProc.qtdMed / lastProc.qtdTransacoes) * 100 : null
   const mrr = (cliente.mensalidadeApi || 0) + (cliente.sustentacaoWhiteLabel || 0)
 
   const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
   const lbl = 'block text-xs text-gray-500 mb-1'
   const ef = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setEditForm(p => ({ ...p, [f]: e.target.value }))
-  const pf = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) => setProcForm(p => ({ ...p, [f]: e.target.value }))
 
   const healthLabel = healthScore >= 80 ? 'Saudável' : healthScore >= 60 ? 'Estável' : healthScore >= 40 ? 'Atenção' : 'Risco'
   const healthColor = healthScore >= 80 ? '#10b981' : healthScore >= 60 ? '#f59e0b' : healthScore >= 40 ? '#f97316' : '#ef4444'
   const healthTextColor = healthScore >= 80 ? 'text-emerald-400' : healthScore >= 60 ? 'text-amber-400' : healthScore >= 40 ? 'text-orange-400' : 'text-red-400'
 
-  // Insights derivados
+  // Insights derivados do que pertence ao cliente. TPV é indicador da empresa,
+  // não do cliente, e por isso não aparece aqui.
   const insights: string[] = []
-  const procs = cliente.processamentos
-  if (procs.length >= 2 && procs[1].tpv > 0) {
-    const g = ((procs[0].tpv - procs[1].tpv) / procs[1].tpv) * 100
-    if (Math.abs(g) > 0.5) insights.push(`TPV ${g >= 0 ? 'cresceu' : 'caiu'} ${Math.abs(g).toFixed(1)}% vs mês anterior`)
-  }
   if (cliente.dataFechamento) {
     const months = Math.floor((Date.now() - new Date(cliente.dataFechamento).getTime()) / (30 * 24 * 60 * 60 * 1000))
     if (months > 0) insights.push(`Cliente ativo há ${months} meses`)
   }
-  const totalReceita = procs.reduce((s, p) => s + p.receitaTarifaria + p.floating, 0)
-  if (totalReceita > 0) insights.push(`Receita total histórica: ${formatCurrency(totalReceita)}`)
-  const fwReal = cliente.forecasts.filter(f => f.receitaRealizada && f.receitaPrevista > 0)
-  if (fwReal.length > 0) {
-    const prec = fwReal.reduce((s, f) => s + (f.receitaRealizada! / f.receitaPrevista) * 100, 0) / fwReal.length
-    insights.push(`Precisão média de forecast: ${formatPercent(prec, 1)}`)
-  }
+  if (mrr > 0) insights.push(`MRR contratado: ${formatCurrency(mrr)}`)
   const inadimplentes = cliente.contasReceber.filter(c => c.status === 'INADIMPLENTE')
   if (inadimplentes.length > 0) insights.push(`⚠ Inadimplência: ${formatCurrency(inadimplentes.reduce((s, c) => s + c.valor, 0))}`)
   const openContas = cliente.contasReceber.filter(c => c.status === 'PENDENTE' || c.status === 'FATURADO')
   if (openContas.length > 0) insights.push(`${openContas.length} cobrança(s) em aberto: ${formatCurrency(openContas.reduce((s, c) => s + c.valor, 0))}`)
-  if (cliente.tpvEsperado && lastProc) insights.push(`Atingimento TPV esperado: ${((lastProc.tpv / cliente.tpvEsperado) * 100).toFixed(0)}%`)
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -163,7 +135,7 @@ export default function ClienteDetailClient({
         mensalidadeApi: n(editForm.mensalidadeApi), sustentacaoWhiteLabel: n(editForm.sustentacaoWhiteLabel),
         setup: n(editForm.setup), tpvEsperado: n(editForm.tpvEsperado),
         qtdTransacoesEsperada: ni(editForm.qtdTransacoesEsperada), qtdMedEsperada: ni(editForm.qtdMedEsperada),
-        receitaPrevistaMensal: n(editForm.receitaPrevistaMensal), volumeMinimo: n(editForm.volumeMinimo),
+        receitaPrevistaMensal: n(editForm.receitaPrevistaMensal),
         descontoPercent: n(editForm.descontoPercent), overpricePercent: n(editForm.overpricePercent),
         dataFechamento: editForm.dataFechamento || null, notas: editForm.notas || null, ownerId: editForm.ownerId,
       }),
@@ -185,27 +157,6 @@ export default function ClienteDetailClient({
     else setDeleting(false)
   }
 
-  async function handleAddProc(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
-    const res = await fetch(`/api/clientes/${cliente.id}/processamentos`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mesRef: procForm.mesRef, tpv: parseFloat(procForm.tpv) || 0,
-        qtdTransacoes: parseInt(procForm.qtdTransacoes) || 0, qtdMed: parseInt(procForm.qtdMed) || 0,
-        receitaTarifaria: parseFloat(procForm.receitaTarifaria) || 0, floating: parseFloat(procForm.floating) || 0,
-      }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const exists = cliente.processamentos.findIndex(p => p.mesRef === data.processamento.mesRef)
-      const updated = exists >= 0
-        ? cliente.processamentos.map((p, i) => i === exists ? data.processamento : p)
-        : [data.processamento, ...cliente.processamentos].sort((a, b) => b.mesRef.localeCompare(a.mesRef))
-      setCliente(prev => ({ ...prev, processamentos: updated }))
-      setShowProcModal(false); setProcForm(emptyProc)
-    }
-    setSaving(false)
-  }
 
   async function handleAddTarefa(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
@@ -249,8 +200,6 @@ export default function ClienteDetailClient({
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
               <button onClick={() => setShowTarefaModal(true)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg border border-gray-700 transition-colors">+ Tarefa</button>
-              <button onClick={() => { setProcForm({ ...emptyProc, mesRef: mesAtual }); setShowProcModal(true) }}
-                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg border border-gray-700 transition-colors">+ Processamento</button>
               <select value={statusEdit} onChange={e => handleStatusChange(e.target.value)}
                 className="bg-gray-900 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500">
                 <option value="PROSPECCAO">Prospecção</option>
@@ -290,17 +239,16 @@ export default function ClienteDetailClient({
           <>
             <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
               {[
-                { label: 'TPV', value: lastProc ? formatTPV(lastProc.tpv) : '—', color: 'text-sky-400' },
-                { label: 'Receita Tarifária', value: lastProc ? formatCurrency(lastProc.receitaTarifaria) : '—', color: 'text-indigo-400' },
-                { label: 'Take Rate', value: takeRate !== null ? formatPercent(takeRate, 3) : '—', color: 'text-amber-400' },
-                { label: 'MED', value: med !== null ? formatPercent(med, 2) : '—', color: 'text-violet-400' },
-                { label: 'MRR', value: mrr > 0 ? formatCurrency(mrr) : '—', color: 'text-emerald-400' },
-                { label: 'Floating', value: lastProc?.floating > 0 ? formatCurrency(lastProc.floating) : '—', color: 'text-teal-400' },
+                { label: 'MRR contratado', value: mrr > 0 ? formatCurrency(mrr) : '—', color: 'text-emerald-400' },
+                { label: 'Mensalidade API', value: cliente.mensalidadeApi ? formatCurrency(cliente.mensalidadeApi) : '—', color: 'text-sky-400' },
+                { label: 'Sustentação WL', value: cliente.sustentacaoWhiteLabel ? formatCurrency(cliente.sustentacaoWhiteLabel) : '—', color: 'text-indigo-400' },
+                { label: 'Setup', value: cliente.setup ? formatCurrency(cliente.setup) : '—', color: 'text-amber-400' },
+                { label: 'TPV esperado', value: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : '—', color: 'text-gray-400' },
+                { label: 'Receita prevista', value: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : '—', color: 'text-gray-400' },
               ].map(k => (
                 <div key={k.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1.5">{k.label}</p>
                   <p className={`text-lg font-bold leading-none ${k.color}`}>{k.value}</p>
-                  {k.label === 'TPV' && lastProc && <p className="text-[10px] text-gray-700 mt-1">{formatMesRef(lastProc.mesRef)}</p>}
                 </div>
               ))}
             </div>
@@ -347,12 +295,6 @@ export default function ClienteDetailClient({
                   <div>
                     <p className={`text-lg font-bold ${healthTextColor}`}>{healthLabel}</p>
                     <p className="text-xs text-gray-600 mt-0.5">Score de saúde</p>
-                    {rankingPosition && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        Ranking <span className="text-white font-semibold">#{rankingPosition}</span>
-                        <span className="text-gray-700"> / {totalClientes}</span>
-                      </p>
-                    )}
                   </div>
                 </div>
                 <div className="space-y-1.5 border-t border-gray-800 pt-3">
@@ -403,85 +345,7 @@ export default function ClienteDetailClient({
         {/* ── FINANCEIRO ──────────────────────────────────────────────────── */}
         {tab === 'financeiro' && (
           <>
-            {/* Processamentos */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Processamentos</h3>
-                <button onClick={() => { setProcForm({ ...emptyProc, mesRef: mesAtual }); setShowProcModal(true) }}
-                  className="text-xs px-3 py-1.5 text-white rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-                  + Lançar
-                </button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-800">
-                      {['Mês', 'TPV', 'Transações', 'MED', 'Tarifária', 'Floating', 'Take Rate'].map(h => (
-                        <th key={h} className="text-xs font-medium text-gray-600 pb-2 text-right first:text-left">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cliente.processamentos.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center text-gray-700 py-8 text-xs">Nenhum processamento registrado</td></tr>
-                    ) : cliente.processamentos.map((p, i) => {
-                      const tr = p.tpv > 0 ? (p.receitaTarifaria / p.tpv) * 100 : 0
-                      const prevTpv = cliente.processamentos[i + 1]?.tpv
-                      const tpvDelta = prevTpv && prevTpv > 0 ? ((p.tpv - prevTpv) / prevTpv) * 100 : null
-                      return (
-                        <tr key={p.id} className="border-b border-gray-800/50">
-                          <td className="py-2.5 text-gray-300 font-medium">{formatMesRef(p.mesRef)}</td>
-                          <td className="py-2.5 text-right">
-                            <span className="text-sky-400">{formatTPV(p.tpv)}</span>
-                            {tpvDelta !== null && (
-                              <span className={`text-[10px] ml-1.5 ${tpvDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                {tpvDelta >= 0 ? '▲' : '▼'}{Math.abs(tpvDelta).toFixed(0)}%
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 text-right text-gray-400">{p.qtdTransacoes.toLocaleString('pt-BR')}</td>
-                          <td className="py-2.5 text-right text-gray-400">{p.qtdMed.toLocaleString('pt-BR')}</td>
-                          <td className="py-2.5 text-right text-indigo-400">{formatCurrency(p.receitaTarifaria)}</td>
-                          <td className="py-2.5 text-right text-emerald-400">{formatCurrency(p.floating)}</td>
-                          <td className="py-2.5 text-right text-amber-400">{formatPercent(tr, 3)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            {/* Pedidos */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Pedidos Cobráveis</h3>
-              {cliente.pedidos.length === 0 ? (
-                <p className="text-xs text-gray-700">Nenhum pedido registrado</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-800">
-                        {['Mês', 'Tipo', 'Descrição', 'Valor', 'Status'].map(h => (
-                          <th key={h} className="text-xs font-medium text-gray-600 pb-2 text-right first:text-left">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cliente.pedidos.map(p => (
-                        <tr key={p.id} className="border-b border-gray-800/50">
-                          <td className="py-2.5 text-gray-300">{formatMesRef(p.mesRef)}</td>
-                          <td className="py-2.5 text-right text-gray-400 text-xs">{p.tipo}</td>
-                          <td className="py-2.5 text-right text-gray-500 text-xs">{p.descricao || '—'}</td>
-                          <td className="py-2.5 text-right text-emerald-400">{formatCurrency(p.valor)}</td>
-                          <td className={`py-2.5 text-right text-xs font-medium ${PEDIDO_STATUS_COLORS[p.status] || 'text-gray-500'}`}>{p.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
 
             {/* Contas a Receber */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -517,43 +381,6 @@ export default function ClienteDetailClient({
         )}
 
         {/* ── FORECAST ────────────────────────────────────────────────────── */}
-        {tab === 'forecast' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4">Forecast do Cliente</h3>
-            {cliente.forecasts.length === 0 ? (
-              <p className="text-xs text-gray-700">Nenhum forecast registrado para este cliente</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-800">
-                      {['Mês', 'TPV Previsto', 'Receita Prevista', 'TPV Realizado', 'Receita Realizada', 'Precisão'].map(h => (
-                        <th key={h} className="text-xs font-medium text-gray-600 pb-2 text-right first:text-left">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cliente.forecasts.map(fc => {
-                      const prec = fc.receitaRealizada && fc.receitaPrevista > 0 ? (fc.receitaRealizada / fc.receitaPrevista) * 100 : null
-                      return (
-                        <tr key={fc.id} className="border-b border-gray-800/50">
-                          <td className="py-2.5 text-gray-300 font-medium">{formatMesRef(fc.mesRef)}</td>
-                          <td className="py-2.5 text-right text-sky-400">{formatTPV(fc.tpvPrevisto)}</td>
-                          <td className="py-2.5 text-right text-violet-400">{formatCurrency(fc.receitaPrevista)}</td>
-                          <td className="py-2.5 text-right text-sky-300">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
-                          <td className="py-2.5 text-right text-emerald-300">{fc.receitaRealizada != null ? formatCurrency(fc.receitaRealizada) : <span className="text-gray-700">—</span>}</td>
-                          <td className={`py-2.5 text-right font-medium ${prec === null ? 'text-gray-700' : prec >= 90 ? 'text-emerald-400' : prec >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
-                            {prec !== null ? formatPercent(prec, 1) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── RELACIONAMENTO ──────────────────────────────────────────────── */}
         {tab === 'relacionamento' && (
@@ -619,116 +446,10 @@ export default function ClienteDetailClient({
               )}
             </div>
 
-            {/* Incidentes */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Incidentes</h3>
-              {cliente.incidentes.length === 0 ? (
-                <p className="text-xs text-gray-700">Nenhum incidente registrado</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {cliente.incidentes.map(ic => (
-                    <div key={ic.incidenteId} className="border border-gray-800 rounded-lg p-3 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm text-white">{ic.incidente.titulo}</p>
-                        <p className={`text-xs mt-0.5 ${CRITICIDADE_COLORS[ic.incidente.criticidade] || 'text-gray-500'}`}>
-                          {ic.incidente.criticidade}
-                          {ic.incidente.downtimeMins ? ` · ${ic.incidente.downtimeMins} min downtime` : ''}
-                        </p>
-                      </div>
-                      <div className="text-right text-xs flex-shrink-0">
-                        <p className="text-gray-600">{formatDate(ic.incidente.inicio)}</p>
-                        <p className={ic.incidente.fim ? 'text-emerald-600' : 'text-red-500'}>
-                          {ic.incidente.fim ? 'Resolvido' : 'Em aberto'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </>
         )}
 
         {/* ── INTELIGÊNCIA ────────────────────────────────────────────────── */}
-        {tab === 'inteligencia' && (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">LTV Projetado</p>
-                <p className="text-2xl font-bold text-emerald-400">{ltv > 0 ? formatCurrency(ltv) : '—'}</p>
-                <p className="text-xs text-gray-600 mt-1.5">Projeção de {ltvMeses} meses</p>
-                <p className="text-xs text-gray-700 mt-0.5">MRR + receita tarifária média × tempo</p>
-              </div>
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">CAC</p>
-                <p className="text-2xl font-bold text-violet-400">{cac > 0 ? formatCurrency(cac) : '—'}</p>
-                <p className="text-xs text-gray-600 mt-1.5">Custo de aquisição</p>
-                <p className="text-xs text-gray-700 mt-0.5">Configurado em Parâmetros</p>
-              </div>
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">LTV / CAC</p>
-                {ltv > 0 && cac > 0 ? (
-                  <>
-                    <p className={`text-2xl font-bold ${(ltv / cac) >= 3 ? 'text-emerald-400' : (ltv / cac) >= 1.5 ? 'text-amber-400' : 'text-red-400'}`}>
-                      {(ltv / cac).toFixed(1)}x
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1.5">
-                      {(ltv / cac) >= 3 ? 'Excelente' : (ltv / cac) >= 1.5 ? 'Adequado' : 'Abaixo do ideal'}
-                    </p>
-                    <p className="text-xs text-gray-700 mt-0.5">Referência: ≥ 3x</p>
-                  </>
-                ) : (
-                  <p className="text-2xl font-bold text-gray-600">—</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-3">Ranking por TPV</p>
-                {rankingPosition ? (
-                  <>
-                    <div className="flex items-end gap-2">
-                      <p className="text-4xl font-bold text-white">#{rankingPosition}</p>
-                      <p className="text-gray-600 text-sm mb-1">de {totalClientes} clientes ativos</p>
-                    </div>
-                    <p className="text-xs text-gray-700 mt-2">Referência: {lastProc ? formatMesRef(lastProc.mesRef) : '—'}</p>
-                  </>
-                ) : (
-                  <p className="text-gray-600 text-sm">Sem dados de processamento</p>
-                )}
-              </div>
-
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-3">Health Score</p>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex-1 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-2.5 rounded-full" style={{ width: `${healthScore}%`, background: healthColor }} />
-                  </div>
-                  <span className={`text-xl font-bold ${healthTextColor} w-10 text-right`}>{healthScore}</span>
-                </div>
-                <p className={`text-sm font-medium ${healthTextColor}`}>{healthLabel}</p>
-                <p className="text-xs text-gray-700 mt-1">Baseado em status, TPV, incidentes e inadimplência</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Insights</h3>
-              {insights.length === 0 ? (
-                <p className="text-xs text-gray-700">Dados insuficientes para gerar insights</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {insights.map((ins, i) => (
-                    <div key={i} className="flex items-start gap-2 bg-gray-800/50 rounded-lg p-3">
-                      <span className="text-emerald-500 text-xs mt-0.5 flex-shrink-0">→</span>
-                      <p className="text-xs text-gray-400">{ins}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
 
       </div>
 
@@ -785,7 +506,6 @@ export default function ClienteDetailClient({
                   <div><label className={lbl}>Setup (R$)</label><input type="number" step="0.01" value={editForm.setup} onChange={ef('setup')} className={inp} /></div>
                   <div><label className={lbl}>Receita Prevista/Mês (R$)</label><input type="number" step="0.01" value={editForm.receitaPrevistaMensal} onChange={ef('receitaPrevistaMensal')} className={inp} /></div>
                   <div><label className={lbl}>TPV Esperado (R$)</label><input type="number" step="0.01" value={editForm.tpvEsperado} onChange={ef('tpvEsperado')} className={inp} /></div>
-                  <div><label className={lbl}>Volume Mínimo (R$)</label><input type="number" step="0.01" value={editForm.volumeMinimo} onChange={ef('volumeMinimo')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. Transações/Mês</label><input type="number" value={editForm.qtdTransacoesEsperada} onChange={ef('qtdTransacoesEsperada')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. MED/Mês</label><input type="number" value={editForm.qtdMedEsperada} onChange={ef('qtdMedEsperada')} className={inp} /></div>
                   <div><label className={lbl}>Desconto (%)</label><input type="number" step="0.01" min="0" max="100" value={editForm.descontoPercent} onChange={ef('descontoPercent')} className={inp} /></div>
@@ -807,32 +527,6 @@ export default function ClienteDetailClient({
       )}
 
       {/* ── MODAL: Lançar Processamento ──────────────────────────────────── */}
-      {showProcModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowProcModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Lançar Processamento</h2>
-              <button onClick={() => setShowProcModal(false)} className="text-gray-600 hover:text-white">✕</button>
-            </div>
-            <form onSubmit={handleAddProc} className="p-5 space-y-4">
-              <div><label className={lbl}>Mês de Referência *</label><input required value={procForm.mesRef} onChange={pf('mesRef')} placeholder="2025-06" pattern="\d{4}-\d{2}" className={inp} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className={lbl}>TPV (R$)</label><input type="number" step="0.01" value={procForm.tpv} onChange={pf('tpv')} className={inp} /></div>
-                <div><label className={lbl}>Receita Tarifária (R$)</label><input type="number" step="0.01" value={procForm.receitaTarifaria} onChange={pf('receitaTarifaria')} className={inp} /></div>
-                <div><label className={lbl}>Floating (R$)</label><input type="number" step="0.01" value={procForm.floating} onChange={pf('floating')} className={inp} /></div>
-                <div><label className={lbl}>Qtd. Transações</label><input type="number" value={procForm.qtdTransacoes} onChange={pf('qtdTransacoes')} className={inp} /></div>
-                <div><label className={lbl}>Qtd. MED</label><input type="number" value={procForm.qtdMed} onChange={pf('qtdMed')} className={inp} /></div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setShowProcModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-                  {saving ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ── MODAL: Nova Tarefa ───────────────────────────────────────────── */}
       {showTarefaModal && (

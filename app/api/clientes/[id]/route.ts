@@ -12,8 +12,6 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     where: { id },
     include: {
       owner: { select: { name: true } },
-      processamentos: { orderBy: { mesRef: 'desc' }, take: 12 },
-      forecasts: { orderBy: { mesRef: 'desc' }, take: 12 },
     },
   })
 
@@ -53,7 +51,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       qtdTransacoesEsperada: qtdTransacoesEsperada ?? undefined,
       qtdMedEsperada: qtdMedEsperada ?? undefined,
       receitaPrevistaMensal: receitaPrevistaMensal ?? undefined,
-      volumeMinimo: volumeMinimo ?? undefined,
       descontoPercent: descontoPercent ?? undefined,
       overpricePercent: overpricePercent ?? undefined,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : undefined,
