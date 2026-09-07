@@ -140,6 +140,7 @@ export default function Sidebar({ role, userName, userEmail }: SidebarProps) {
           </svg>
           Sair
         </button>
+        <p className="px-2.5 pt-2 text-gray-700 text-[9px] tracking-wide">Bass Pago RevOps · v0.1.0</p>
       </div>
     </aside>
   )
