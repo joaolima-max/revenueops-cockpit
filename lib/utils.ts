@@ -75,6 +75,7 @@ export const CLIENTE_STATUS_LABELS: Record<string, string> = {
 }
 
 export const META_TIPO_LABELS: Record<string, string> = {
+  RECEITA_TARIFARIA: 'Receita Tarifária', SALDO_EM_CONTA: 'Saldo em Conta', MEDS: 'MEDs',
   RECEITA: 'Receita', TPV: 'TPV', MRR: 'MRR', FLOATING: 'Floating',
   CLIENTES_ATIVOS: 'Clientes Ativos', NOVOS_CLIENTES: 'Novos Clientes',
   RETENCAO: 'Retenção (%)', TRANSACOES: 'Transações',

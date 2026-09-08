@@ -5,7 +5,7 @@ import { formatCurrency, formatPercent, getCurrentMonth, META_TIPO_LABELS } from
 
 interface Meta { id: string; tipo: string; valor: number; periodo: string; realizado: number | null }
 
-const TIPOS = ['RECEITA', 'TPV', 'MRR', 'FLOATING', 'CLIENTES_ATIVOS', 'TRANSACOES']
+const TIPOS = ['RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS']
 const emptyForm = { tipo: 'RECEITA', valor: '', periodo: getCurrentMonth(), realizado: '' }
 
 function formatVal(tipo: string, val: number) {

@@ -50,6 +50,13 @@ enum MetaTipo {
   SALDO_EM_CONTA
   TRANSACOES
   MEDS
+
+  // Legado: metas criadas antes da revisao da taxonomia ainda usam estes
+  // valores em Production. Mantidos para o client conseguir le-las; nao sao
+  // oferecidos na criacao de novas metas.
+  RECEITA
+  MRR
+  CLIENTES_ATIVOS
 }
 
 enum Segmento {
