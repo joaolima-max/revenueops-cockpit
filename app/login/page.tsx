@@ -99,25 +99,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-800">
-            <p className="text-xs text-gray-600 text-center mb-2">Credenciais de demo:</p>
-            <div className="space-y-1">
-              {[
-                { label: 'Admin', email: 'admin@revenueops.com.br' },
-                { label: 'Operacional', email: 'operacional@revenueops.com.br' },
-                { label: 'Comercial', email: 'comercial@revenueops.com.br' },
-              ].map((cred) => (
-                <button
-                  key={cred.email}
-                  type="button"
-                  onClick={() => { setEmail(cred.email); setPassword('Revenue@2025') }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-800/50 hover:text-gray-400 rounded-md transition-colors"
-                >
-                  <span className="font-medium text-gray-500">{cred.label}:</span> {cred.email}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="mt-6 pt-6 border-t border-gray-800 text-[10px] text-gray-700 text-center tracking-wide">
+            Acesso restrito · Bass Pago RevOps
+          </p>
         </div>
       </div>
     </div>
