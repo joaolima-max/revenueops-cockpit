@@ -8,6 +8,12 @@ import {
   volumetriaDoPeriodo, periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
+import PageHeader from '@/components/dashboard/PageHeader'
+import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
+import StatTile, { MetaBar } from '@/components/ui/StatTile'
+import Panel, { PanelHeader } from '@/components/ui/Panel'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import EmptyState, { NoData } from '@/components/ui/EmptyState'
 
 const ROTULO_META: Record<string, string> = {
   RECEITA_TARIFARIA: 'Receita Tarifária',
@@ -17,10 +23,10 @@ const ROTULO_META: Record<string, string> = {
   MEDS: 'MEDs',
 }
 
-/** Valor ausente é mostrado como ausente. Nunca substituído por outra fonte. */
-function Valor({ v, fmt, cor }: { v: number | null; fmt: (n: number) => string; cor?: string }) {
-  if (v === null) return <span className="text-gray-700 text-sm font-normal">sem dados</span>
-  return <span style={cor ? { color: cor } : undefined}>{fmt(v)}</span>
+const VOLUMETRIA: Record<string, { label: string; tone: BadgeTone }> = {
+  ATINGIDO: { label: 'Atingido', tone: 'pos' },
+  NAO_ATINGIDO: { label: 'Não atingido', tone: 'neg' },
+  EM_ACOMPANHAMENTO: { label: 'Em acompanhamento', tone: 'warn' },
 }
 
 export default async function DashboardPage() {
@@ -37,23 +43,29 @@ export default async function DashboardPage() {
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
   ])
 
+  /** Sparkline dos últimos 12 meses — derivado da série já carregada. */
+  const spark = (pick: (k: KpisPeriodo) => number | null) =>
+    serie.map((k) => pick(k) ?? 0)
+
   const cards = [
-    { label: 'TPV', v: kpis.tpv, fmt: formatTPV, cor: '#2F6BFF',
-      sub: kpis.qtdTransacoes !== null ? `${kpis.qtdTransacoes.toLocaleString('pt-BR')} transações` : '—' },
-    { label: 'Receita Tarifária', v: kpis.receitaTarifaria, fmt: formatCurrency, cor: '#6B8CFF',
-      sub: 'Lançamento diário' },
-    { label: 'Float', v: kpis.float, fmt: formatCurrency, cor: '#1747C7',
-      sub: 'Saldo que dorme × multiplicador' },
-    { label: 'Take Rate', v: kpis.takeRate, fmt: (n: number) => formatPercent(n, 3), cor: '#E9ECF1',
-      sub: 'Receita ÷ TPV' },
-    { label: 'Saldo Médio', v: kpis.saldoMedio, fmt: formatCurrency, cor: '#A7ACB4',
-      sub: 'Média do período' },
-    { label: '% de MEDs', v: kpis.percentMed, fmt: (n: number) => formatPercent(n, 2), cor: '#A7ACB4',
-      sub: kpis.qtdMed !== null ? `${kpis.qtdMed.toLocaleString('pt-BR')} MEDs` : '—' },
-    { label: 'MRR', v: clientes.mrr, fmt: formatCurrency, cor: '#A7ACB4',
-      sub: `${clientes.contasAtivas} contas ativas` },
-    { label: 'Faturamento', v: receita ? receita.total : null, fmt: formatCurrency, cor: '#FFFFFF',
-      sub: 'Soma das 5 linhas' },
+    { label: 'TPV', v: kpis.tpv, fmt: formatTPV, primary: true,
+      note: kpis.qtdTransacoes !== null ? `${kpis.qtdTransacoes.toLocaleString('pt-BR')} transações` : undefined,
+      spark: spark((k) => k.tpv) },
+    { label: 'Receita Tarifária', v: kpis.receitaTarifaria, fmt: formatCurrency,
+      note: 'Lançamento diário', spark: spark((k) => k.receitaTarifaria) },
+    { label: 'Float', v: kpis.float, fmt: formatCurrency,
+      note: 'Saldo que dorme × multiplicador', spark: spark((k) => k.float) },
+    { label: 'Take Rate', v: kpis.takeRate, fmt: (n: number) => formatPercent(n, 3),
+      note: 'Receita ÷ TPV', spark: spark((k) => k.takeRate) },
+    { label: 'Saldo Médio', v: kpis.saldoMedio, fmt: formatCurrency,
+      note: 'Média do período', spark: spark((k) => k.saldoMedio) },
+    { label: '% de MEDs', v: kpis.percentMed, fmt: (n: number) => formatPercent(n, 2),
+      note: kpis.qtdMed !== null ? `${kpis.qtdMed.toLocaleString('pt-BR')} MEDs` : undefined,
+      spark: spark((k) => k.percentMed) },
+    { label: 'MRR', v: clientes.mrr, fmt: formatCurrency,
+      note: `${clientes.contasAtivas} contas ativas` },
+    { label: 'Faturamento', v: receita ? receita.total : null, fmt: formatCurrency,
+      note: 'Soma das 5 linhas' },
   ]
 
   const chartData = periodos.map((p, i) => {
@@ -73,121 +85,115 @@ export default async function DashboardPage() {
     }
   })
 
+  const hoje = new Date().toLocaleDateString('pt-BR', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  })
+
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
-      <div>
-        <h1 className="text-lg font-bold text-white">Cockpit Executivo</h1>
-        <p className="text-gray-600 text-sm mt-0.5">
-          Olá, {session?.name.split(' ')[0]} · {new Date().toLocaleDateString('pt-BR', {
-            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-          })}
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Cockpit Executivo"
+        sub={<>Olá, {session?.name.split(' ')[0]} · <span className="capitalize">{hoje}</span></>}
+      />
 
       {!kpis.temDados && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-          <p className="text-white font-medium">Nenhum lançamento no mês corrente</p>
-          <p className="text-gray-600 text-sm mt-1 mb-4">
-            Os indicadores abaixo vêm do lançamento diário. Sem dados registrados, não há o que calcular.
-          </p>
-          <Link
-            href="/dashboard/forecast"
-            className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
-          >
-            Ir para o Lançamento Diário
-          </Link>
-        </div>
+        <Panel padded={false}>
+          <EmptyState
+            title="Nenhum lançamento no mês corrente"
+            description="Os indicadores abaixo vêm do lançamento diário. Sem dados registrados, não há o que calcular."
+            action={
+              <Link
+                href="/dashboard/forecast"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent hover:bg-accent-dark text-white text-[0.875rem] font-medium transition-colors duration-[180ms]"
+              >
+                Ir para o Lançamento Diário
+              </Link>
+            }
+          />
+        </Panel>
       )}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <HairlineGrid cols={4}>
         {cards.map((c) => (
-          <div key={c.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
-            <p className="text-xs text-gray-600 mb-1.5">{c.label}</p>
-            <p className="text-xl font-bold leading-none mb-1.5 tabular-nums">
-              <Valor v={c.v} fmt={c.fmt} cor={c.cor} />
-            </p>
-            <p className="text-[10px] text-gray-700">{c.sub}</p>
-          </div>
+          <StatTile
+            key={c.label}
+            label={c.label}
+            value={c.v}
+            format={c.fmt}
+            note={c.note}
+            primary={c.primary}
+            spark={c.spark}
+          />
         ))}
-      </div>
+      </HairlineGrid>
 
       {receita && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Linhas de Receita</h3>
-          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+        <section className="space-y-4">
+          <PanelHeader title="Linhas de Receita" sub="Cada linha tem origem única. A soma é o faturamento do período." />
+          <HairlineGrid cols={5}>
             {([
               ['Tarifário', receita.tarifario], ['Float', receita.float],
               ['Sustentação', receita.sustentacao], ['Setup', receita.setup],
               ['Serviços', receita.servicos],
             ] as const).map(([label, valor]) => (
-              <div key={label}>
-                <p className="text-xs text-gray-600 mb-1">{label}</p>
-                <p className="text-lg font-bold text-white tabular-nums">{formatCurrency(valor)}</p>
-                <p className="text-[10px] text-gray-700 mt-0.5 tabular-nums">
+              <HairlineCell key={label} className="gap-2">
+                <p className="t-label text-subtle">{label}</p>
+                <p className="t-figure text-fg">{formatCurrency(valor)}</p>
+                <p className="t-sm text-subtle tabular-nums">
                   {receita.total > 0 ? `${((valor / receita.total) * 100).toFixed(1)}% do faturamento` : '—'}
                 </p>
-              </div>
+              </HairlineCell>
             ))}
-          </div>
-        </div>
+          </HairlineGrid>
+        </section>
       )}
 
       {metas.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Meta × Realizado</h3>
-          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
-            {metas.map((m) => {
-              const pct = m.atingimento
-              const cor = pct === null ? '#333942' : pct >= 100 ? '#07CF22' : pct >= 70 ? '#E0A62B' : '#FF7A80'
-              return (
-                <div key={m.tipo}>
-                  <p className="text-xs text-gray-600 mb-1">{ROTULO_META[m.tipo] ?? m.tipo}</p>
-                  <p className="text-base font-bold text-white tabular-nums">
-                    {m.realizado === null ? <span className="text-gray-700 text-sm font-normal">sem dados</span>
-                      : m.realizado.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                  </p>
-                  <p className="text-[10px] text-gray-700 tabular-nums">
-                    meta {m.meta.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                  </p>
-                  <div className="mt-1.5 h-1 bg-gray-800 rounded-full">
-                    <div className="h-1 rounded-full transition-all"
-                      style={{ width: `${Math.min(pct ?? 0, 100)}%`, background: cor }} />
-                  </div>
-                  <p className="text-[10px] mt-1 tabular-nums" style={{ color: cor }}>
-                    {pct === null ? '—' : `${pct.toFixed(0)}%`}
+        <section className="space-y-4">
+          <PanelHeader title="Meta × Realizado" sub={`Período ${periodo}`} />
+          <HairlineGrid cols={5}>
+            {metas.map((m) => (
+              <HairlineCell key={m.tipo} className="gap-3">
+                <p className="t-label text-subtle">{ROTULO_META[m.tipo] ?? m.tipo}</p>
+                <p className="t-figure text-fg">
+                  {m.realizado === null
+                    ? <NoData />
+                    : m.realizado.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="t-sm text-subtle tabular-nums">
+                  meta {m.meta.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                </p>
+                <div className="mt-auto pt-2 space-y-2">
+                  <MetaBar pct={m.atingimento} />
+                  <p className="t-mono text-muted">
+                    {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}%`}
                   </p>
                 </div>
-              )
-            })}
-          </div>
-        </div>
+              </HairlineCell>
+            ))}
+          </HairlineGrid>
+        </section>
       )}
 
       {volumetria && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Volumetria Mínima Contratada</h3>
-              <p className="text-xs text-gray-600 mt-0.5 tabular-nums">
-                Mínimo {volumetria.qtdMinima.toLocaleString('pt-BR')} transações ·
-                {' '}Realizado {volumetria.realizado?.toLocaleString('pt-BR') ?? '—'}
-              </p>
-            </div>
-            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
-              volumetria.status === 'ATINGIDO' ? 'bg-emerald-500/10 text-emerald-400'
-                : volumetria.status === 'NAO_ATINGIDO' ? 'bg-red-500/10 text-red-400'
-                : volumetria.status === 'EM_ACOMPANHAMENTO' ? 'bg-amber-400/10 text-amber-300'
-                : 'bg-gray-800 text-gray-500'
-            }`}>
-              {volumetria.status === 'ATINGIDO' ? 'Atingido'
-                : volumetria.status === 'NAO_ATINGIDO' ? 'Não atingido'
-                : volumetria.status === 'EM_ACOMPANHAMENTO' ? 'Em acompanhamento' : 'Sem dados'}
-            </span>
+        <Panel className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="t-h2 text-fg">Volumetria Mínima Contratada</h2>
+            <p className="t-sm text-muted mt-1 tabular-nums">
+              Mínimo {volumetria.qtdMinima.toLocaleString('pt-BR')} transações ·{' '}
+              Realizado {volumetria.realizado?.toLocaleString('pt-BR') ?? 'sem dados'}
+            </p>
           </div>
-        </div>
+          <Badge tone={VOLUMETRIA[volumetria.status]?.tone ?? 'neutral'}>
+            {VOLUMETRIA[volumetria.status]?.label ?? 'Sem dados'}
+          </Badge>
+        </Panel>
       )}
 
-      <DashboardCharts chartData={chartData} mrrEvolution={periodos.map((p) => ({ mes: p, mrr: clientes.mrr }))} />
+      <DashboardCharts
+        chartData={chartData}
+        mrrEvolution={periodos.map((p) => ({ mes: p, mrr: clientes.mrr }))}
+      />
     </div>
   )
 }

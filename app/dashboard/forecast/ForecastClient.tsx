@@ -98,11 +98,11 @@ export default function ForecastClient() {
 
   const currentMonthFc = forecasts.find(fc => fc.mesRef === getCurrentMonth())
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
+  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
   const lbl = 'block text-xs text-gray-500 mb-1'
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-lg font-bold text-white">Forecast da Carteira</h1>
@@ -110,7 +110,7 @@ export default function ForecastClient() {
         </div>
         <button onClick={openNew}
           className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+          style={{ background: '#2F6BFF' }}>
           + Novo Forecast
         </button>
       </div>
@@ -134,7 +134,7 @@ export default function ForecastClient() {
 
       <div className="flex gap-3 mb-5">
         <input type="month" value={mesFilter} onChange={e => setMesFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
         {mesFilter && (
           <button onClick={() => setMesFilter('')} className="text-gray-600 hover:text-gray-400 text-sm px-3">Limpar</button>
         )}
@@ -240,7 +240,7 @@ export default function ForecastClient() {
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

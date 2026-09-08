@@ -19,7 +19,7 @@ export default async function VolumetriaPage() {
   const registros = todos.filter((v): v is VolumetriaPeriodo => v !== null).reverse()
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       <div>
         <h1 className="text-lg font-bold text-white">Volumetria Mínima Contratada</h1>
         <p className="text-gray-600 text-sm mt-0.5">

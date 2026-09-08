@@ -61,7 +61,7 @@ const REPORTS = [
 
 export default function RelatoriosPage() {
   return (
-    <div className="p-6">
+    <div className="space-y-8">
       <div className="mb-8">
         <h1 className="text-xl font-bold text-white">Relatórios Executivos</h1>
         <p className="text-gray-500 text-sm mt-1">Cada relatório é preparado para um público específico · Exportáveis em PDF · Prontos para impressão A4</p>

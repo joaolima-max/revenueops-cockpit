@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import BrandMark from '@/components/ui/BrandMark'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -39,52 +40,44 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black">
+    <div className="min-h-screen flex items-center justify-center bg-ink px-4 py-10">
       <div className="w-full max-w-md px-4">
-        <div className="bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-8">
+        <div className="bg-surface border border-line rounded-3xl shadow-[var(--bp-shadow-overlay)] p-8 sm:p-10">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center mb-5">
-              <svg viewBox="0 0 90 52" width="120" height="70" fill="none">
-                <defs>
-                  <linearGradient id="bp-login" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#2563EB" />
-                    <stop offset="100%" stopColor="#00E5A0" />
-                  </linearGradient>
-                </defs>
-                <path d="M 6 22 Q 45 50 84 22" stroke="url(#bp-login)" strokeWidth="11" strokeLinecap="round" fill="none" />
-              </svg>
+            <div className="inline-flex items-center justify-center mb-6 text-fg">
+              <BrandMark size={44} />
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Bass Pago</h1>
-            <p className="text-gray-500 mt-1 text-xs tracking-widest uppercase">RevOps</p>
+            <h1 className="t-h1 text-fg">Bass Pago</h1>
+            <p className="t-label text-subtle mt-2">RevOps</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-neg/10 border border-neg/25 text-neg px-4 py-3 rounded-lg t-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1.5">Email</label>
+              <label className="block t-label text-subtle mb-2">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm text-white placeholder-gray-600 transition-colors"
+                className="w-full px-4 py-3 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:outline-none focus:border-accent"
                 placeholder="seu@email.com.br"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1.5">Senha</label>
+              <label className="block t-label text-subtle mb-2">Senha</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm text-white placeholder-gray-600 transition-colors"
+                className="w-full px-4 py-3 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:outline-none focus:border-accent"
                 placeholder="••••••••"
               />
             </div>
@@ -92,14 +85,13 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 px-4 rounded-lg font-semibold text-sm text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              style={{ background: loading ? '#374151' : 'linear-gradient(135deg, #2563EB 0%, #00E5A0 100%)' }}
+              className="w-full py-3 px-4 rounded-lg font-medium text-[0.875rem] text-white bg-accent hover:bg-accent-dark disabled:opacity-40 disabled:pointer-events-none transition-colors duration-[180ms]"
             >
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
 
-          <p className="mt-6 pt-6 border-t border-gray-800 text-[10px] text-gray-700 text-center tracking-wide">
+          <p className="mt-8 pt-6 border-t border-line t-label text-subtle text-center">
             Acesso restrito · Bass Pago RevOps
           </p>
         </div>

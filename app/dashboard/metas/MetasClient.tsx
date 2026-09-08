@@ -77,7 +77,7 @@ export default function MetasClient() {
   const tiposFaltando = TIPOS.filter(t => !tiposComMeta.has(t))
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-lg font-bold text-white">Metas</h1>
@@ -86,7 +86,7 @@ export default function MetasClient() {
         <div className="flex items-center gap-3">
           <input type="month" value={periodo} onChange={e => { setPeriodo(e.target.value) }}
             className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
-          <button onClick={() => setShowModal(true)} className="px-4 py-2 text-sm font-medium text-white rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+          <button onClick={() => setShowModal(true)} className="px-4 py-2 text-sm font-medium text-white rounded-lg" style={{ background: '#2F6BFF' }}>
             + Definir Meta
           </button>
         </div>

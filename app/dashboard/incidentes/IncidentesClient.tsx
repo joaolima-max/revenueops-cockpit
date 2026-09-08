@@ -65,7 +65,7 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
   const abertos = incidentes.filter(i => !i.fim).length
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-white">Incidentes Operacionais</h1>
@@ -75,7 +75,7 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
           <button
             onClick={() => setModal(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-            style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+            style={{ background: '#2F6BFF' }}
           >
             + Novo Incidente
           </button>
@@ -141,34 +141,34 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
             <div className="space-y-3">
               <input value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
                 placeholder="Título do incidente *"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
               <textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
                 placeholder="Descrição" rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent resize-none" />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Início *</label>
                   <input type="datetime-local" value={form.inicio} onChange={e => setForm(p => ({ ...p, inicio: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Fim</label>
                   <input type="datetime-local" value={form.fim} onChange={e => setForm(p => ({ ...p, fim: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Criticidade</label>
                   <select value={form.criticidade} onChange={e => setForm(p => ({ ...p, criticidade: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent">
                     {CRITICIDADES.map(c => <option key={c} value={c}>{INCIDENTE_CRITICIDADE_LABELS[c]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Downtime (min)</label>
                   <input type="number" value={form.downtimeMins} onChange={e => setForm(p => ({ ...p, downtimeMins: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
                 </div>
               </div>
             </div>
@@ -179,7 +179,7 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
               </button>
               <button onClick={handleCreate} disabled={saving || !form.titulo || !form.inicio}
                 className="flex-1 py-2 px-4 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                style={{ background: '#2F6BFF' }}>
                 {saving ? 'Salvando...' : 'Registrar'}
               </button>
             </div>

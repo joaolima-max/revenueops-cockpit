@@ -2,7 +2,13 @@
 
 import { useState, useMemo, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatTPV, formatPercent } from '@/lib/utils'
+import { formatCurrency, formatTPV, formatPercent, cn } from '@/lib/utils'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import HairlineGrid from '@/components/ui/HairlineGrid'
+import StatTile from '@/components/ui/StatTile'
+import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
 
 export interface LancamentoDTO {
   data: string
@@ -142,61 +148,57 @@ export default function CalendarioLancamentos({
     { label: 'Take Rate', valor: kpis.takeRate, fmt: (v: number) => formatPercent(v, 3) },
   ]
 
+
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-lg font-bold text-white">Lançamento Diário</h1>
-          <p className="text-gray-600 text-sm mt-0.5">
-            Registro do realizado. O Float é calculado automaticamente a partir do saldo em conta.
-          </p>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, -1)}`)}
-            className="px-2.5 py-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md text-sm transition-colors"
-            aria-label="Mês anterior"
-          >←</button>
-          <span className="text-white text-sm font-medium px-3 tabular-nums">
-            {MESES[mes - 1]} {ano}
-          </span>
-          <button
-            onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, 1)}`)}
-            className="px-2.5 py-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md text-sm transition-colors"
-            aria-label="Próximo mês"
-          >→</button>
-        </div>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Lançamento Diário"
+        sub="Registro do realizado. O Float é calculado automaticamente a partir do saldo em conta."
+        actions={
+          <div className="flex items-center gap-1 rounded-lg border border-line p-1">
+            <button
+              onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, -1)}`)}
+              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-white/[0.06] transition-colors duration-[180ms]"
+              aria-label="Mês anterior"
+            >←</button>
+            <span className="t-label text-fg px-3 tabular-nums whitespace-nowrap">
+              {MESES[mes - 1]} {ano}
+            </span>
+            <button
+              onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, 1)}`)}
+              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-white/[0.06] transition-colors duration-[180ms]"
+              aria-label="Próximo mês"
+            >→</button>
+          </div>
+        }
+      />
 
       {kpis.temDados ? (
-        <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
-          {resumo.map((r) => (
-            <div key={r.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
-              <p className="text-xs text-gray-600 mb-1">{r.label}</p>
-              <p className="text-lg font-bold text-white tabular-nums">
-                {r.valor === null ? <span className="text-gray-700 text-sm font-normal">sem dados</span> : r.fmt(r.valor)}
-              </p>
-            </div>
+        <HairlineGrid cols={6}>
+          {resumo.map((r, i) => (
+            <StatTile key={r.label} label={r.label} value={r.valor} format={r.fmt} primary={i === 0} />
           ))}
-        </div>
+        </HairlineGrid>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-          <p className="text-white font-medium">Nenhum lançamento em {MESES[mes - 1]} de {ano}</p>
-          <p className="text-gray-600 text-sm mt-1">
-            {podeEditar
-              ? 'Clique em um dia do calendário para registrar os indicadores do dia.'
-              : 'Seu perfil não tem permissão para lançar dados.'}
-          </p>
-        </div>
+        <Panel padded={false}>
+          <EmptyState
+            title={`Nenhum lançamento em ${MESES[mes - 1]} de ${ano}`}
+            description={
+              podeEditar
+                ? 'Selecione um dia do calendário para registrar os indicadores.'
+                : 'Seu perfil não tem permissão para lançar dados.'
+            }
+          />
+        </Panel>
       )}
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <div className="grid grid-cols-7 gap-1.5 mb-2">
+      <Panel>
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2 mb-3">
           {DIAS_SEMANA.map((d, i) => (
-            <div key={i} className="text-center text-[10px] font-semibold text-gray-700 tracking-widest py-1">{d}</div>
+            <div key={i} className="text-center t-label text-subtle/70 py-1">{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
           {celulas.map((iso, i) => {
             if (!iso) return <div key={`v${i}`} />
             const l = porData.get(iso)
@@ -207,22 +209,28 @@ export default function CalendarioLancamentos({
                 key={iso}
                 onClick={() => abrir(iso)}
                 disabled={futuro || !podeEditar}
-                className={[
-                  'aspect-square rounded-lg border p-2 text-left transition-colors flex flex-col justify-between',
+                title={l ? `${formatTPV(l.tpv)} · ${l.qtdTransacoes.toLocaleString('pt-BR')} transações` : undefined}
+                className={cn(
+                  'aspect-square rounded-xl border p-1.5 sm:p-2.5 text-left flex flex-col justify-between',
+                  'transition-[background-color,border-color] duration-[180ms] ease-bp',
                   futuro
-                    ? 'border-gray-800/40 bg-transparent cursor-not-allowed opacity-30'
+                    ? 'border-line/50 bg-transparent opacity-30 cursor-not-allowed'
                     : l
-                      ? 'border-blue-600/30 bg-blue-600/10 hover:border-blue-500/60'
-                      : 'border-gray-800 bg-gray-950/40 hover:border-gray-700',
-                  hoje ? 'ring-1 ring-blue-500/40' : '',
-                  !podeEditar && !futuro ? 'cursor-default' : '',
-                ].join(' ')}
+                      // Dia lançado: banho do accent institucional.
+                      ? 'border-accent/30 bg-[var(--bp-accent-wash)] hover:border-accent/60 hover:bg-accent/15'
+                      : 'border-line bg-white/[0.02] hover:bg-surface-2 hover:border-line-2',
+                  hoje && 'ring-1 ring-accent/50 ring-offset-0',
+                  !podeEditar && !futuro && 'cursor-default'
+                )}
               >
-                <span className={`text-xs tabular-nums ${l ? 'text-blue-300 font-semibold' : 'text-gray-600'}`}>
+                <span className={cn(
+                  'text-[0.75rem] tabular-nums leading-none',
+                  l ? 'text-accent-soft font-semibold' : 'text-subtle'
+                )}>
                   {Number(iso.slice(8))}
                 </span>
                 {l && (
-                  <span className="text-[9px] text-gray-500 leading-tight truncate">
+                  <span className="hidden sm:block text-[0.625rem] text-muted leading-tight truncate tabular-nums">
                     {formatTPV(l.tpv)}
                   </span>
                 )}
@@ -230,34 +238,42 @@ export default function CalendarioLancamentos({
             )
           })}
         </div>
-      </div>
+      </Panel>
 
       {selecionada && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelecionada(null)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <form onSubmit={salvar} className="p-5 space-y-4">
-              <div>
-                <h2 className="text-white font-semibold">
+        <div
+          className="fixed inset-0 z-50 bg-ink/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSelecionada(null)}
+        >
+          <div
+            className="bg-surface border border-line-2 rounded-3xl w-full max-w-md shadow-[var(--bp-shadow-overlay)] max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form onSubmit={salvar} className="p-6 space-y-5">
+              <div className="pb-4 border-b border-line">
+                <h2 className="t-h2 text-fg capitalize">
                   {new Date(selecionada + 'T00:00:00Z').toLocaleDateString('pt-BR', {
                     day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC',
                   })}
                 </h2>
-                <p className="text-gray-600 text-xs mt-0.5">
-                  {porData.has(selecionada) ? 'Editando lançamento existente' : 'Novo lançamento'}
+                <p className="t-label text-subtle mt-1.5">
+                  {porData.has(selecionada) ? 'Editando lançamento' : 'Novo lançamento'}
                 </p>
               </div>
 
               {erro && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2 rounded-lg text-xs">{erro}</div>
+                <div className="bg-neg/10 border border-neg/25 text-neg px-3.5 py-2.5 rounded-lg t-sm">{erro}</div>
               )}
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {CAMPOS.map((c) => (
                   <div key={c.nome}>
-                    <label className="block text-xs text-gray-500 mb-1">{c.label}</label>
+                    <label className="block t-label text-subtle mb-1.5">{c.label}</label>
                     <div className="relative">
                       {c.prefixo && (
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm">{c.prefixo}</span>
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 t-sm text-subtle pointer-events-none">
+                          {c.prefixo}
+                        </span>
                       )}
                       <input
                         type="number"
@@ -265,50 +281,41 @@ export default function CalendarioLancamentos({
                         min="0"
                         value={form[c.nome] ?? ''}
                         onChange={(e) => setForm({ ...form, [c.nome]: e.target.value })}
-                        className={`w-full ${c.prefixo ? 'pl-9' : 'pl-3'} pr-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500`}
+                        className={cn(
+                          'w-full pr-3.5 py-2.5 bg-surface-2 border border-line rounded-lg t-body text-fg tabular-nums',
+                          'transition-colors duration-[180ms] focus:border-accent focus:outline-none',
+                          c.prefixo ? 'pl-10' : 'pl-3.5'
+                        )}
                         placeholder="0"
                       />
                     </div>
                   </div>
                 ))}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Observações</label>
+                  <label className="block t-label text-subtle mb-1.5">Observações</label>
                   <input
                     type="text"
                     value={notas}
                     onChange={(e) => setNotas(e.target.value)}
                     maxLength={500}
-                    className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3.5 py-2.5 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:border-accent focus:outline-none"
                     placeholder="Opcional"
                   />
                 </div>
               </div>
 
               <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={salvando}
-                  className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
-                >
-                  {salvando ? 'Salvando...' : 'Salvar'}
-                </button>
+                <Button type="submit" variant="primary" disabled={salvando} className="flex-1">
+                  {salvando ? 'Salvando…' : 'Salvar'}
+                </Button>
                 {podeExcluir && porData.has(selecionada) && (
-                  <button
-                    type="button"
-                    onClick={excluir}
-                    disabled={salvando}
-                    className="px-4 py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm disabled:opacity-50 transition-colors"
-                  >
+                  <Button type="button" variant="danger" onClick={excluir} disabled={salvando}>
                     Excluir
-                  </button>
+                  </Button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setSelecionada(null)}
-                  className="px-4 py-2 rounded-lg border border-gray-700 text-gray-400 hover:bg-gray-800 text-sm transition-colors"
-                >
+                <Button type="button" variant="ghost" onClick={() => setSelecionada(null)}>
                   Cancelar
-                </button>
+                </Button>
               </div>
             </form>
           </div>

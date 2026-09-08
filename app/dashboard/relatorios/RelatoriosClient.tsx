@@ -85,7 +85,7 @@ export default function RelatoriosClient() {
   }
 
   if (loading && !data) return (
-    <div className="min-h-screen bg-gray-950 p-6 flex items-center justify-center">
+    <div className="min-h-[60vh] flex items-center justify-center">
       <p className="text-gray-600">Carregando relatório...</p>
     </div>
   )
@@ -96,7 +96,7 @@ export default function RelatoriosClient() {
   const fgChart = data?.fg12M.map(f => ({ ...f, mes: fmtMes(f.mesRef) })) || []
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-6 print:bg-white print:text-black">
+    <div className="space-y-8 print:bg-white print:text-black">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -122,31 +122,31 @@ export default function RelatoriosClient() {
           <div>
             <label className="block text-xs text-gray-600 mb-1">De</label>
             <input type="month" value={inicio} onChange={e => setInicio(e.target.value)}
-              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Até</label>
             <input type="month" value={fim} onChange={e => setFim(e.target.value)}
-              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Segmento</label>
             <select value={segmento} onChange={e => setSegmento(e.target.value)}
-              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
               {SEGMENTOS.map(s => <option key={s} value={s}>{s ? SEGMENTO_LABELS[s] : 'Todos os segmentos'}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Modelo</label>
             <select value={modelo} onChange={e => setModelo(e.target.value)}
-              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
               {MODELOS.map(m => <option key={m} value={m}>{m ? MODELO_OPERACIONAL_LABELS[m] : 'Todos os modelos'}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Status</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
-              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+              className="bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
               {STATUSES.map(s => <option key={s} value={s}>{s ? CLIENTE_STATUS_LABELS[s] : 'Todos os status'}</option>)}
             </select>
           </div>

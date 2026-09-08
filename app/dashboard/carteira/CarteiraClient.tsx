@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import Button from '@/components/ui/Button'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import {
   formatCurrency, formatTPV,
   CLIENTE_STATUS_LABELS, CLIENTE_STATUS_COLORS,
@@ -198,8 +203,8 @@ export default function CarteiraClient({ role }: { role: string }) {
   const mrr = clientes.filter(c => c.status === 'ATIVO').reduce((s, c) => s + (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0), 0)
   const ativos = clientes.filter(c => c.status === 'ATIVO').length
 
-  const input = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const input = 'w-full bg-surface-2 border border-line text-fg t-body rounded-lg px-3.5 py-2.5 transition-colors duration-[180ms] focus:outline-none focus:border-accent'
+  const lbl = 'block t-label text-subtle mb-1.5'
 
   const allOperacoes = [...OPERACOES, ...customOperacoes]
   const allSegmentos = [...SEGMENTOS, ...customSegmentos]
@@ -209,95 +214,94 @@ export default function CarteiraClient({ role }: { role: string }) {
     ? (customSegmentos.includes(customSegValue) ? CRIAR_SEGMENTO_SENTINEL + customSegValue : '')
     : (form.segmento || '')
 
+  const SCORE_TONE: Record<string, BadgeTone> = {
+    BAIXO: 'pos', MEDIO: 'warn', ALTO: 'neg', CRITICO: 'neg',
+  }
+  const STATUS_TONE: Record<string, BadgeTone> = {
+    ATIVO: 'pos', PROSPECCAO: 'accent', INATIVO: 'neutral', ENCERRADO: 'neutral',
+  }
+  const filtro = 'bg-surface-2 border border-line text-muted rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent'
+
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-lg font-bold text-white">Carteira de Clientes</h1>
-          <p className="text-gray-600 text-sm mt-0.5">{ativos} ativos · MRR {formatCurrency(mrr)}</p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Carteira de Clientes"
+        sub={`${ativos} ativos · MRR ${formatCurrency(mrr)}`}
+        actions={<Button variant="primary" onClick={() => setShowModal(true)}>Novo cliente</Button>}
+      />
+
+      {/* Filtros numa barra única, em vez de quatro campos soltos. */}
+      <Panel className="flex gap-3 flex-wrap items-center" padded={false}>
+        <div className="flex gap-3 flex-wrap w-full p-3">
+          <input
+            type="text" placeholder="Buscar cliente…" value={search}
+            onChange={e => setSearch(e.target.value)}
+            className={`${filtro} text-fg flex-1 min-w-[12rem]`}
+          />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={filtro}>
+            <option value="">Todos os status</option>
+            <option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option>
+            <option value="PROSPECCAO">Prospecção</option><option value="ENCERRADO">Encerrado</option>
+          </select>
+          <select value={modeloFilter} onChange={e => setModeloFilter(e.target.value)} className={filtro}>
+            <option value="">Todos os modelos</option>
+            <option value="API">API</option><option value="WHITE_LABEL">White Label</option>
+          </select>
+          <select value={segFilter} onChange={e => setSegFilter(e.target.value)} className={filtro}>
+            <option value="">Todos os segmentos</option>
+            {SEGMENTOS.map(s => <option key={s} value={s}>{SEGMENTO_LABELS[s]}</option>)}
+          </select>
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-          + Novo Cliente
-        </button>
-      </div>
+      </Panel>
 
-      <div className="flex gap-3 mb-5 flex-wrap">
-        <input type="text" placeholder="Buscar cliente..." value={search} onChange={e => setSearch(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-white placeholder-gray-700 rounded-lg px-3 py-2 text-sm flex-1 min-w-48 focus:outline-none focus:border-emerald-500" />
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
-          <option value="">Todos os status</option>
-          <option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option>
-          <option value="PROSPECCAO">Prospecção</option><option value="ENCERRADO">Encerrado</option>
-        </select>
-        <select value={modeloFilter} onChange={e => setModeloFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
-          <option value="">Todos os modelos</option>
-          <option value="API">API</option><option value="WHITE_LABEL">White Label</option>
-        </select>
-        <select value={segFilter} onChange={e => setSegFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
-          <option value="">Todos os segmentos</option>
-          {SEGMENTOS.map(s => <option key={s} value={s}>{SEGMENTO_LABELS[s]}</option>)}
-        </select>
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-800">
-              {['Cliente', 'Segmento', 'Modelo', 'Score', 'Status', 'TPV Esperado', 'Receita Prevista', 'Responsável'].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 ${['Cliente', 'Segmento', 'Modelo', 'Score', 'Status', 'Responsável'].includes(h) ? 'text-left px-4' : 'text-right px-4'} ${h === 'Cliente' ? 'pl-5' : ''}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
+      <TableShell>
+        <Table>
+          <THead>
+            <HeadRow>
+              <Th className="pl-5">Cliente</Th>
+              <Th>Segmento</Th>
+              <Th>Modelo</Th>
+              <Th>Score</Th>
+              <Th>Status</Th>
+              <Th align="right">TPV Esperado</Th>
+              <Th align="right">Receita Prevista</Th>
+              <Th>Responsável</Th>
+            </HeadRow>
+          </THead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="text-center text-gray-700 py-16 text-sm">Carregando...</td></tr>
+              <EmptyRow colSpan={8}>Carregando…</EmptyRow>
             ) : clientes.length === 0 ? (
-              <tr><td colSpan={8} className="text-center text-gray-700 py-16 text-sm">Nenhum cliente encontrado</td></tr>
+              <EmptyRow colSpan={8}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
             ) : clientes.map(c => (
-              <tr key={c.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
-                <td className="pl-5 pr-4 py-3.5">
-                  <Link href={`/dashboard/carteira/${c.id}`}>
-                    <p className="text-sm font-medium text-white hover:text-emerald-400 transition-colors">{c.nome}</p>
-                    {c.cnpj && <p className="text-xs text-gray-700">{c.cnpj}</p>}
+              <Row key={c.id}>
+                <Td className="pl-5">
+                  <Link href={`/dashboard/carteira/${c.id}`} className="group block">
+                    <span className="block t-body font-medium text-fg group-hover:text-accent-soft transition-colors duration-[180ms]">{c.nome}</span>
+                    {c.cnpj && <span className="block t-mono text-subtle mt-1">{c.cnpj}</span>}
                   </Link>
-                </td>
-                <td className="px-4 py-3.5">
-                  {c.segmento ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[c.segmento] ?? 'bg-gray-500/10 text-gray-400'}`}>
-                      {getSegmentLabel(c.segmento, c.notas)}
-                    </span>
-                  ) : <span className="text-gray-700 text-xs">—</span>}
-                </td>
-                <td className="px-4 py-3.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MODELO_OPERACIONAL_COLORS[c.modeloOperacional]}`}>
-                    {MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}
-                  </span>
-                </td>
-                <td className="px-4 py-3.5">
-                  {c.scoreRisco ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_RISCO_COLORS[c.scoreRisco]}`}>
-                      {SCORE_RISCO_LABELS[c.scoreRisco]}
-                    </span>
-                  ) : <span className="text-gray-700 text-xs">—</span>}
-                </td>
-                <td className="px-4 py-3.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CLIENTE_STATUS_COLORS[c.status]}`}>
-                    {CLIENTE_STATUS_LABELS[c.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-3.5 text-right text-sm text-gray-400">{c.tpvEsperado ? formatTPV(c.tpvEsperado) : '—'}</td>
-                <td className="px-4 py-3.5 text-right text-sm text-gray-400">{c.receitaPrevistaMensal ? formatCurrency(c.receitaPrevistaMensal) : '—'}</td>
-                <td className="px-4 py-3.5 text-sm text-gray-600">{c.owner.name}</td>
-              </tr>
+                </Td>
+                {/* Segmento e modelo são categorias, não status: tom neutro. */}
+                <Td>
+                  {c.segmento
+                    ? <Badge>{getSegmentLabel(c.segmento, c.notas)}</Badge>
+                    : <span className="text-subtle">—</span>}
+                </Td>
+                <Td><Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge></Td>
+                <Td>
+                  {c.scoreRisco
+                    ? <Badge tone={SCORE_TONE[c.scoreRisco] ?? 'neutral'}>{SCORE_RISCO_LABELS[c.scoreRisco]}</Badge>
+                    : <span className="text-subtle">—</span>}
+                </Td>
+                <Td><Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{CLIENTE_STATUS_LABELS[c.status]}</Badge></Td>
+                <Td align="right" numeric className="text-fg">{c.tpvEsperado ? formatTPV(c.tpvEsperado) : <span className="text-subtle">—</span>}</Td>
+                <Td align="right" numeric className="text-fg">{c.receitaPrevistaMensal ? formatCurrency(c.receitaPrevistaMensal) : <span className="text-subtle">—</span>}</Td>
+                <Td className="text-subtle">{c.owner.name}</Td>
+              </Row>
             ))}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableShell>
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && resetModal()}>
@@ -338,14 +342,14 @@ export default function CarteiraClient({ role }: { role: string }) {
                         onChange={e => setNewSegInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSeg())}
                         placeholder="Nome do segmento..."
-                        className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                        className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
                       />
                       <button
                         type="button"
                         onClick={handleAddCustomSeg}
                         disabled={!newSegInput.trim()}
                         className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
-                        style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                        style={{ background: '#2F6BFF' }}
                       >
                         OK
                       </button>
@@ -372,7 +376,7 @@ export default function CarteiraClient({ role }: { role: string }) {
                   <button
                     type="button"
                     onClick={() => setShowNewOp(v => !v)}
-                    className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
+                    className="text-xs text-accent hover:text-accent-soft flex items-center gap-1"
                   >
                     <span className="text-base leading-none">+</span> Personalizada
                   </button>
@@ -387,12 +391,12 @@ export default function CarteiraClient({ role }: { role: string }) {
                         onClick={() => toggleOperacao(op)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                           checked
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                            ? 'bg-accent/15 border-accent/40 text-accent-soft'
                             : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
                         }`}
                       >
                         <span className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
-                          checked ? 'bg-emerald-500 border-emerald-500' : 'border-gray-600'
+                          checked ? 'bg-accent border-accent' : 'border-gray-600'
                         }`}>
                           {checked && (
                             <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 10 10">
@@ -412,14 +416,14 @@ export default function CarteiraClient({ role }: { role: string }) {
                       onChange={e => setNewOpInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomOp())}
                       placeholder="Nome da operação..."
-                      className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                      className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
                     />
                     <button
                       type="button"
                       onClick={handleAddCustomOp}
                       disabled={!newOpInput.trim()}
                       className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                      style={{ background: '#2F6BFF' }}
                     >
                       OK
                     </button>
@@ -449,7 +453,7 @@ export default function CarteiraClient({ role }: { role: string }) {
                 <button type="button" onClick={resetModal} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

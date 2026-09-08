@@ -101,7 +101,7 @@ export default function PerfilPage() {
 
   if (loadingProfile) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <p className="text-gray-500 text-sm">Carregando...</p>
       </div>
     )
@@ -109,7 +109,7 @@ export default function PerfilPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <p className="text-red-400 text-sm">Não foi possível carregar o perfil.</p>
       </div>
     )
@@ -118,7 +118,7 @@ export default function PerfilPage() {
   const initial = user.name.charAt(0).toUpperCase()
 
   return (
-    <div className="min-h-screen bg-gray-950 p-8">
+    <div className="space-y-8">
       <div className="max-w-lg mx-auto space-y-6">
         {/* Header */}
         <div>
@@ -130,7 +130,7 @@ export default function PerfilPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex items-center gap-4">
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 text-white text-2xl font-bold"
-            style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+            style={{ background: '#2F6BFF' }}
           >
             {initial}
           </div>
@@ -156,7 +156,7 @@ export default function PerfilPage() {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                 placeholder="Seu nome completo"
               />
             </div>
@@ -190,7 +190,7 @@ export default function PerfilPage() {
               type="submit"
               disabled={savingProfile}
               className="w-full py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+              style={{ background: '#2F6BFF' }}
             >
               {savingProfile ? 'Salvando...' : 'Salvar Alterações'}
             </button>
@@ -210,7 +210,7 @@ export default function PerfilPage() {
                 required
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                 placeholder="••••••••"
               />
             </div>
@@ -221,7 +221,7 @@ export default function PerfilPage() {
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                 placeholder="••••••••"
               />
             </div>
@@ -232,7 +232,7 @@ export default function PerfilPage() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                 placeholder="••••••••"
               />
             </div>
@@ -247,7 +247,7 @@ export default function PerfilPage() {
               type="submit"
               disabled={savingPassword}
               className="w-full py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+              style={{ background: '#2F6BFF' }}
             >
               {savingPassword ? 'Alterando...' : 'Alterar Senha'}
             </button>

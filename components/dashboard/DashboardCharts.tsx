@@ -6,7 +6,13 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ComposedChart, Line, Legend,
 } from 'recharts'
-import { formatCurrency, formatTPV, formatPercent, formatMesRef } from '@/lib/utils'
+import { formatCurrency, formatTPV, formatMesRef } from '@/lib/utils'
+import {
+  SERIES, axisProps, gridProps, tooltipProps, legendProps, BAR, LINE, hasSeries,
+} from '@/lib/chart-theme'
+import { cn } from '@/lib/utils'
+import EmptyState from '@/components/ui/EmptyState'
+import Button from '@/components/ui/Button'
 
 interface ChartPoint {
   mes: string
@@ -24,20 +30,14 @@ interface ChartPoint {
 
 interface MRRPoint { mes: string; mrr: number }
 
-const tip = {
-  contentStyle: { backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '8px', fontSize: 12 },
-  labelStyle: { color: '#6b7280', marginBottom: 4 },
-  itemStyle: { color: '#e5e7eb' },
-}
-
 const CHART_DEFS = [
-  { id: 'receita', title: 'Receita Mensal', sub: 'Tarifária + Floating (R$)' },
-  { id: 'mrr', title: 'Evolução MRR', sub: 'Receita Recorrente Mensal (R$)' },
-  { id: 'fat_forecast', title: 'Forecast — Faturamento Previsto vs Realizado', sub: 'Previsão geral da carteira vs realizado (R$)' },
-  { id: 'tpv_forecast', title: 'Forecast — TPV Previsto vs Realizado', sub: 'TPV previsto vs TPV realizado (ForecastGeral) (R$)' },
-  { id: 'tpv', title: 'TPV Mensal', sub: 'Volume Total de Pagamentos (R$)' },
-  { id: 'takerate', title: 'Take Rate Mensal', sub: 'Receita Tarifária ÷ TPV (%)' },
-  { id: 'margem', title: 'Margem Bruta / Operacional', sub: 'Previsto vs Realizado (%)' },
+  { id: 'receita', title: 'Receita Mensal', sub: 'Tarifária + Float (R$)' },
+  { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal (R$)' },
+  { id: 'fat_forecast', title: 'Faturamento — previsto vs realizado', sub: 'Previsão da carteira contra o realizado (R$)' },
+  { id: 'tpv_forecast', title: 'TPV — previsto vs realizado', sub: 'Volume previsto contra o volume liquidado (R$)' },
+  { id: 'tpv', title: 'TPV Mensal', sub: 'Volume total de pagamentos (R$)' },
+  { id: 'takerate', title: 'Take Rate Mensal', sub: 'Receita tarifária ÷ TPV (%)' },
+  { id: 'margem', title: 'Margem Operacional', sub: 'Previsto vs realizado (%)' },
 ]
 
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
@@ -58,21 +58,36 @@ function loadOrder(): string[] {
 function ChartCard({ title, sub, children, dragging, onDragStart, onDragOver, onDrop, reordering }:
   { title: string; sub: string; children: React.ReactNode; dragging: boolean; reordering: boolean; onDragStart: () => void; onDragOver: (e: React.DragEvent) => void; onDrop: () => void }) {
   return (
-    <div
+    <section
       draggable={reordering}
       onDragStart={reordering ? onDragStart : undefined}
       onDragOver={reordering ? e => { e.preventDefault(); onDragOver(e) } : undefined}
       onDrop={reordering ? onDrop : undefined}
-      className={`bg-gray-900 border rounded-xl p-5 transition-all ${dragging ? 'border-emerald-500/50 opacity-50' : 'border-gray-800'} ${reordering ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={cn(
+        'bg-surface border rounded-2xl p-5 sm:p-6 transition-[border-color,box-shadow,opacity] duration-[380ms] ease-bp',
+        dragging ? 'border-accent opacity-50' : 'border-line hover:border-line-2',
+        reordering && 'cursor-grab active:cursor-grabbing'
+      )}
     >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-semibold text-white">{title}</p>
-          <p className="text-xs text-gray-600 mb-4 mt-0.5">{sub}</p>
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <div className="min-w-0">
+          <h3 className="t-h2 text-fg">{title}</h3>
+          <p className="t-sm text-subtle mt-1">{sub}</p>
         </div>
-        {reordering && <span className="text-gray-700 text-lg leading-none select-none mt-0.5">⠿</span>}
+        {reordering && (
+          <span className="text-subtle text-lg leading-none select-none flex-none" aria-hidden>⠿</span>
+        )}
       </div>
       {children}
+    </section>
+  )
+}
+
+/** Série sem nenhum dado não desenha eixos vazios — declara a ausência. */
+function NoSeries({ what }: { what: string }) {
+  return (
+    <div className="h-[190px] flex items-center justify-center">
+      <EmptyState compact title="Sem série para o período" description={what} />
     </div>
   )
 }
@@ -100,110 +115,119 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
   const data = chartData.map(d => ({ ...d, mes: formatMesRef(d.mes) }))
   const mrr = mrrEvolution.map(d => ({ ...d, mes: formatMesRef(d.mes) }))
 
+  const brl = (v: number) => `${(v / 1_000_000).toFixed(1)}M`
+  const brlK = (v: number) => `R$${(v / 1000).toFixed(0)}K`
+
   const charts: Record<string, React.ReactNode> = {
-    receita: (
+    receita: hasSeries(data, 'receitaTarifaria', 'floating') ? (
       <ResponsiveContainer width="100%" height={190}>
         <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(1)}M`} />
-          <Tooltip {...tip} formatter={(v) => [formatCurrency(Number(v))]} />
-          <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
-          <Bar dataKey="receitaTarifaria" name="Tarifária" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={32} />
-          <Bar dataKey="floating" name="Floating" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={32} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={brl} />
+          <Tooltip {...tooltipProps} formatter={(v) => [formatCurrency(Number(v))]} />
+          <Legend {...legendProps} />
+          <Bar dataKey="receitaTarifaria" name="Tarifária" fill={SERIES.primary} {...BAR} />
+          <Bar dataKey="floating" name="Float" fill={SERIES.secondary} {...BAR} />
         </BarChart>
       </ResponsiveContainer>
-    ),
-    mrr: (
+    ) : <NoSeries what="Nenhum lançamento diário registrado nos últimos 12 meses." />,
+
+    mrr: hasSeries(mrr, 'mrr') ? (
       <ResponsiveContainer width="100%" height={190}>
         <AreaChart data={mrr} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="mrrG" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-              <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+              <stop offset="0%" stopColor={SERIES.primary} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={SERIES.primary} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v / 1000).toFixed(0)}K`} />
-          <Tooltip {...tip} formatter={(v) => [formatCurrency(Number(v)), 'MRR']} />
-          <Area type="monotone" dataKey="mrr" stroke="#6366f1" fill="url(#mrrG)" strokeWidth={2} dot={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={brlK} />
+          <Tooltip {...tooltipProps} formatter={(v) => [formatCurrency(Number(v)), 'MRR']} />
+          <Area type="monotone" dataKey="mrr" stroke={SERIES.primary} fill="url(#mrrG)" {...LINE} />
         </AreaChart>
       </ResponsiveContainer>
-    ),
-    fat_forecast: (
+    ) : <NoSeries what="Nenhum cliente ativo com mensalidade contratada." />,
+
+    fat_forecast: hasSeries(data, 'faturamentoPrevisto', 'faturamentoRealizado') ? (
       <ResponsiveContainer width="100%" height={190}>
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(1)}M`} />
-          <Tooltip {...tip} formatter={(v) => [Number(v) ? formatCurrency(Number(v)) : '—']} />
-          <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
-          <Bar dataKey="faturamentoPrevisto" name="Fat. Previsto" fill="#7c3aed" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
-          <Line type="monotone" dataKey="faturamentoRealizado" name="Fat. Realizado" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3, strokeWidth: 0 }} connectNulls={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={brl} />
+          <Tooltip {...tooltipProps} formatter={(v) => [Number(v) ? formatCurrency(Number(v)) : 'sem dados']} />
+          <Legend {...legendProps} />
+          <Bar dataKey="faturamentoPrevisto" name="Previsto" fill={SERIES.support} {...BAR} />
+          <Line type="monotone" dataKey="faturamentoRealizado" name="Realizado" stroke={SERIES.primary} connectNulls={false} {...LINE} />
         </ComposedChart>
       </ResponsiveContainer>
-    ),
-    tpv_forecast: (
+    ) : <NoSeries what="Não há faturamento previsto cadastrado para comparar." />,
+
+    tpv_forecast: hasSeries(data, 'tpvPrevisto', 'tpvRealizado') ? (
       <ResponsiveContainer width="100%" height={190}>
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(0)}M`} />
-          <Tooltip {...tip} formatter={(v) => [Number(v) ? formatTPV(Number(v)) : '—']} />
-          <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
-          <Bar dataKey="tpvPrevisto" name="TPV Previsto" fill="#0369a1" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
-          <Line type="monotone" dataKey="tpvRealizado" name="TPV Realizado" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: '#0ea5e9', r: 3, strokeWidth: 0 }} connectNulls={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={brl} />
+          <Tooltip {...tooltipProps} formatter={(v) => [Number(v) ? formatTPV(Number(v)) : 'sem dados']} />
+          <Legend {...legendProps} />
+          <Bar dataKey="tpvPrevisto" name="Previsto" fill={SERIES.support} {...BAR} />
+          <Line type="monotone" dataKey="tpvRealizado" name="Realizado" stroke={SERIES.primary} connectNulls={false} {...LINE} />
         </ComposedChart>
       </ResponsiveContainer>
-    ),
-    tpv: (
+    ) : <NoSeries what="Não há TPV previsto cadastrado para comparar." />,
+
+    tpv: hasSeries(data, 'tpv') ? (
       <ResponsiveContainer width="100%" height={190}>
         <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="tpvG" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.25} />
-              <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+              <stop offset="0%" stopColor={SERIES.primary} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={SERIES.primary} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1_000_000).toFixed(0)}M`} />
-          <Tooltip {...tip} formatter={(v) => [formatTPV(Number(v)), 'TPV']} />
-          <Area type="monotone" dataKey="tpv" stroke="#0ea5e9" fill="url(#tpvG)" strokeWidth={2} dot={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={(v) => `${(v / 1_000_000).toFixed(0)}M`} />
+          <Tooltip {...tooltipProps} formatter={(v) => [formatTPV(Number(v)), 'TPV']} />
+          <Area type="monotone" dataKey="tpv" stroke={SERIES.primary} fill="url(#tpvG)" {...LINE} />
         </AreaChart>
       </ResponsiveContainer>
-    ),
-    takerate: (
+    ) : <NoSeries what="Nenhum TPV lançado no período." />,
+
+    takerate: hasSeries(data, 'takeRate') ? (
       <ResponsiveContainer width="100%" height={160}>
         <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="trG" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
-              <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+              <stop offset="0%" stopColor={SERIES.secondary} stopOpacity={0.20} />
+              <stop offset="100%" stopColor={SERIES.secondary} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v.toFixed(2)}%`} />
-          <Tooltip {...tip} formatter={(v) => [`${Number(v).toFixed(3)}%`, 'Take Rate']} />
-          <Area type="monotone" dataKey="takeRate" stroke="#f59e0b" fill="url(#trG)" strokeWidth={2} dot={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={(v) => `${v.toFixed(2)}%`} />
+          <Tooltip {...tooltipProps} formatter={(v) => [`${Number(v).toFixed(3)}%`, 'Take Rate']} />
+          <Area type="monotone" dataKey="takeRate" stroke={SERIES.secondary} fill="url(#trG)" {...LINE} />
         </AreaChart>
       </ResponsiveContainer>
-    ),
-    margem: (
+    ) : <NoSeries what="Take rate depende de TPV e receita lançados." />,
+
+    margem: hasSeries(data, 'margemPrevista', 'margemRealizada') ? (
       <ResponsiveContainer width="100%" height={190}>
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="mes" tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: '#4b5563', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v.toFixed(1)}%`} />
-          <Tooltip {...tip} formatter={(v) => [v !== null && v !== undefined ? `${Number(v).toFixed(2)}%` : '—']} />
-          <Legend wrapperStyle={{ color: '#6b7280', fontSize: 11, paddingTop: 8 }} />
-          <Bar dataKey="margemPrevista" name="Margem Prevista" fill="#7c3aed" radius={[3, 3, 0, 0]} maxBarSize={28} opacity={0.7} />
-          <Line type="monotone" dataKey="margemRealizada" name="Margem Realizada" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3, strokeWidth: 0 }} connectNulls={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="mes" {...axisProps} />
+          <YAxis {...axisProps} tickFormatter={(v) => `${v.toFixed(1)}%`} />
+          <Tooltip {...tooltipProps} formatter={(v) => [v != null ? `${Number(v).toFixed(2)}%` : 'sem dados']} />
+          <Legend {...legendProps} />
+          <Bar dataKey="margemPrevista" name="Prevista" fill={SERIES.support} {...BAR} />
+          <Line type="monotone" dataKey="margemRealizada" name="Realizada" stroke={SERIES.primary} connectNulls={false} {...LINE} />
         </ComposedChart>
       </ResponsiveContainer>
-    ),
+    ) : <NoSeries what="Margem não é apurada a partir do lançamento diário." />,
   }
 
   const pairsOrder = order.reduce<string[][]>((rows, id, i) => {
@@ -213,16 +237,19 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
   }, [])
 
   return (
-    <div>
-      <div className="flex justify-end mb-3">
-        <button onClick={() => setReordering(r => !r)}
-          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${reordering ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10' : 'border-gray-700 text-gray-600 hover:text-gray-400'}`}>
-          {reordering ? '✓ Concluir' : '⠿ Reordenar gráficos'}
-        </button>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant={reordering ? 'primary' : 'subtle'}
+          onClick={() => setReordering(r => !r)}
+        >
+          {reordering ? 'Concluir' : 'Reordenar gráficos'}
+        </Button>
       </div>
-      <div className="space-y-5">
+      <div className="space-y-4">
         {pairsOrder.map((pair, ri) => (
-          <div key={ri} className={`grid gap-5 ${pair.length === 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
+          <div key={ri} className={cn('grid gap-4', pair.length === 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1')}>
             {pair.map(id => {
               const def = CHART_DEFS.find(c => c.id === id)!
               return (

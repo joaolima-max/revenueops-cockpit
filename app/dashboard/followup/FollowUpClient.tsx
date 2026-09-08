@@ -105,7 +105,7 @@ function CarteiraGeralBadge() {
   return (
     <span
       className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold text-white"
-      style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+      style={{ background: '#2F6BFF' }}
     >
       🗂 Carteira Geral
     </span>
@@ -154,7 +154,7 @@ function MultiClientSelect({ clientes, selected, onChange }: MultiClientSelectPr
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-left flex items-center justify-between focus:outline-none focus:border-emerald-500"
+        className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-left flex items-center justify-between focus:outline-none focus:border-accent"
       >
         <span className={selected.length === 0 ? 'text-gray-500' : 'text-white'}>{label}</span>
         <svg className={`w-4 h-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -389,13 +389,13 @@ export default function FollowUpClient({ clientes }: Props) {
     return { label, Recorrentes: recorrentes, Frequência: frequencia }
   })
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
+  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
   const lbl = 'block text-xs text-gray-500 mb-1'
 
   const todayNum = new Date().getDay()
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -404,7 +404,7 @@ export default function FollowUpClient({ clientes }: Props) {
         </div>
         <button onClick={openNew}
           className="px-4 py-2 text-white text-sm font-medium rounded-lg"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+          style={{ background: '#2F6BFF' }}>
           + Novo Evento
         </button>
       </div>
@@ -450,7 +450,7 @@ export default function FollowUpClient({ clientes }: Props) {
               ›
             </button>
             {weekOffset !== 0 && (
-              <button onClick={() => setWeekOffset(0)} className="text-xs text-emerald-500 hover:text-emerald-400">
+              <button onClick={() => setWeekOffset(0)} className="text-xs text-accent hover:text-accent-soft">
                 Hoje
               </button>
             )}
@@ -482,7 +482,7 @@ export default function FollowUpClient({ clientes }: Props) {
                           <p className="leading-snug">
                             <span
                               className="text-xs font-semibold text-white px-1.5 py-0.5 rounded-full"
-                              style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                              style={{ background: '#2F6BFF' }}
                             >
                               🗂 Carteira
                             </span>
@@ -598,7 +598,7 @@ export default function FollowUpClient({ clientes }: Props) {
                           onClick={() => registrarContato(fu.id, fu.frequenciaDias!)}
                           disabled={registrandoId === fu.id}
                           className="text-xs px-3 py-1.5 rounded-lg font-medium text-white disabled:opacity-50"
-                          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                          style={{ background: '#2F6BFF' }}>
                           {registrandoId === fu.id ? 'Registrando...' : 'Registrar Contato'}
                         </button>
                         <button onClick={() => openEdit(fu)}
@@ -653,7 +653,7 @@ export default function FollowUpClient({ clientes }: Props) {
                         className="h-1.5 rounded-full transition-all duration-300"
                         style={{
                           width: `${Math.round((freqSaveProgress.done / freqSaveProgress.total) * 100)}%`,
-                          background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)',
+                          background: '#2F6BFF',
                         }}
                       />
                     </div>
@@ -666,7 +666,7 @@ export default function FollowUpClient({ clientes }: Props) {
                   type="submit"
                   disabled={savingFreq || freqSelectedClientes.length === 0}
                   className="ml-auto px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {savingFreq
                     ? `Salvando ${freqSaveProgress?.done ?? 0}/${freqSaveProgress?.total ?? freqSelectedClientes.length}...`
                     : freqSelectedClientes.length > 1
@@ -682,7 +682,7 @@ export default function FollowUpClient({ clientes }: Props) {
       {/* LIST TAB */}
       {tab === 'lista' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm">
             <thead>
               <tr className="border-b border-gray-800">
                 {['Cliente', 'Título', 'Tipo', 'Quando', 'Horário', 'Recorrente', 'Ações'].map(h => (
@@ -735,7 +735,7 @@ export default function FollowUpClient({ clientes }: Props) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -768,7 +768,7 @@ export default function FollowUpClient({ clientes }: Props) {
                           ? 'text-white'
                           : 'text-gray-500 hover:text-gray-300'
                       }`}
-                      style={eventoScope === 'carteira' ? { background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' } : {}}
+                      style={eventoScope === 'carteira' ? { background: '#2F6BFF' } : {}}
                     >
                       Toda a Carteira
                     </button>
@@ -886,7 +886,7 @@ export default function FollowUpClient({ clientes }: Props) {
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

@@ -88,7 +88,7 @@ export default function ClienteDetailClient({
 
   const mrr = (cliente.mensalidadeApi || 0) + (cliente.sustentacaoWhiteLabel || 0)
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
+  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
   const lbl = 'block text-xs text-gray-500 mb-1'
   const ef = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setEditForm(p => ({ ...p, [f]: e.target.value }))
@@ -182,7 +182,7 @@ export default function ClienteDetailClient({
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="space-y-8">
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur border-b border-gray-800/40">
         <div className="px-6 pt-5 pb-0">
@@ -201,7 +201,7 @@ export default function ClienteDetailClient({
             <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
               <button onClick={() => setShowTarefaModal(true)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg border border-gray-700 transition-colors">+ Tarefa</button>
               <select value={statusEdit} onChange={e => handleStatusChange(e.target.value)}
-                className="bg-gray-900 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500">
+                className="bg-gray-900 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-accent">
                 <option value="PROSPECCAO">Prospecção</option>
                 <option value="ATIVO">Ativo</option>
                 <option value="INATIVO">Inativo</option>
@@ -308,7 +308,7 @@ export default function ClienteDetailClient({
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-white">Tarefas Abertas</h3>
-                  <button onClick={() => setShowTarefaModal(true)} className="text-xs text-emerald-500 hover:text-emerald-400">+ Nova</button>
+                  <button onClick={() => setShowTarefaModal(true)} className="text-xs text-accent hover:text-accent-soft">+ Nova</button>
                 </div>
                 {cliente.tarefas.filter(t => t.status !== 'CONCLUIDA' && t.status !== 'CANCELADA').length === 0 ? (
                   <p className="text-xs text-gray-700">Nenhuma tarefa pendente</p>
@@ -416,7 +416,7 @@ export default function ClienteDetailClient({
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-white">Tarefas</h3>
-                <button onClick={() => setShowTarefaModal(true)} className="text-xs px-3 py-1.5 text-white rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>+ Nova</button>
+                <button onClick={() => setShowTarefaModal(true)} className="text-xs px-3 py-1.5 text-white rounded-lg" style={{ background: '#2F6BFF' }}>+ Nova</button>
               </div>
               {cliente.tarefas.length === 0 ? (
                 <p className="text-xs text-gray-700">Nenhuma tarefa registrada</p>
@@ -516,7 +516,7 @@ export default function ClienteDetailClient({
 
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
@@ -555,7 +555,7 @@ export default function ClienteDetailClient({
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowTarefaModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Criar Tarefa'}
                 </button>
               </div>

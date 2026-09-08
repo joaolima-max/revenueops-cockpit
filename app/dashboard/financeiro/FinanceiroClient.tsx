@@ -136,11 +136,11 @@ export default function FinanceiroClient({ clientes }: Props) {
     byDay[day].push(c)
   })
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
+  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
   const lbl = 'block text-xs text-gray-500 mb-1'
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -149,7 +149,7 @@ export default function FinanceiroClient({ clientes }: Props) {
         </div>
         <button onClick={openNew}
           className="px-4 py-2 text-white text-sm font-medium rounded-lg"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+          style={{ background: '#2F6BFF' }}>
           + Novo Lançamento
         </button>
       </div>
@@ -194,9 +194,9 @@ export default function FinanceiroClient({ clientes }: Props) {
       {tab === 'lista' && (
         <div className="flex gap-3 flex-wrap">
           <input type="month" value={filterMes} onChange={e => setFilterMes(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500" />
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent" />
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500">
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent">
             <option value="">Todos os status</option>
             {Object.keys(STATUS_LABELS).map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
           </select>
@@ -210,7 +210,7 @@ export default function FinanceiroClient({ clientes }: Props) {
       {/* Lista Tab */}
       {tab === 'lista' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm">
             <thead>
               <tr className="border-b border-gray-800">
                 {['Cliente', 'Descrição', 'Tipo', 'Vencimento', 'Valor', 'Status', 'Ações'].map(h => (
@@ -268,7 +268,7 @@ export default function FinanceiroClient({ clientes }: Props) {
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -403,7 +403,7 @@ export default function FinanceiroClient({ clientes }: Props) {
                   className="flex-1 py-2 rounded-lg text-sm text-gray-400 border border-gray-700 hover:bg-gray-800">Cancelar</button>
                 <button type="submit" disabled={saving}
                   className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

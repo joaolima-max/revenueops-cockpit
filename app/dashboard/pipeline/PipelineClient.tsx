@@ -73,7 +73,7 @@ export default function PipelineClient({ deals: initial, leads, userId, role }: 
   const totalPonderado = deals.reduce((s, d) => s + d.value * (d.probability / 100), 0)
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
+    <div className="space-y-8">
       <div className="mb-6">
         <h1 className="text-lg font-bold text-white">Pipeline</h1>
         <p className="text-gray-600 text-sm mt-0.5">
@@ -129,19 +129,19 @@ export default function PipelineClient({ deals: initial, leads, userId, role }: 
                     <input autoFocus value={form.title}
                       onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
                       placeholder="Título *"
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
                     <input type="number" value={form.value}
                       onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
                       placeholder="Valor R$ *"
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
                     <div className="grid grid-cols-2 gap-1.5">
                       <input type="number" min="0" max="100" value={form.probability}
                         onChange={e => setForm(p => ({ ...p, probability: e.target.value }))}
                         placeholder="% prob."
-                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
                       <select value={form.leadId}
                         onChange={e => setForm(p => ({ ...p, leadId: e.target.value }))}
-                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent">
                         <option value="">Lead opt.</option>
                         {leads.map(l => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
                       </select>
@@ -153,7 +153,7 @@ export default function PipelineClient({ deals: initial, leads, userId, role }: 
                       </button>
                       <button onClick={() => handleCreate(stage)} disabled={saving || !form.title || !form.value}
                         className="flex-1 py-1.5 text-xs font-medium text-white rounded disabled:opacity-50"
-                        style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                        style={{ background: '#2F6BFF' }}>
                         {saving ? '...' : 'Criar'}
                       </button>
                     </div>

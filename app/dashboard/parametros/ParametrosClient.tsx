@@ -45,7 +45,7 @@ export default function ParametrosClient({ parametros: initial, isAdmin }: { par
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-lg font-bold text-white">Parâmetros do Sistema</h1>
         <p className="text-gray-600 text-sm mt-0.5">Critérios de risco, thresholds de alertas e parâmetros operacionais</p>
@@ -63,7 +63,7 @@ export default function ParametrosClient({ parametros: initial, isAdmin }: { par
           <div className="px-5 py-3 border-b border-gray-800 flex items-center gap-2">
             <h3 className="text-sm font-semibold text-white">{GRUPO_LABELS[grupo] || grupo}</h3>
           </div>
-          <table className="w-full">
+          <div className="overflow-x-auto"><table className="w-full min-w-[40rem]">
             <thead>
               <tr className="border-b border-gray-800">
                 {['Parâmetro', 'Descrição', 'Valor', 'Ação'].map(h => (
@@ -116,7 +116,7 @@ export default function ParametrosClient({ parametros: initial, isAdmin }: { par
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       ))}
     </div>

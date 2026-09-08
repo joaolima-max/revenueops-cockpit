@@ -1,26 +1,143 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   BASS PAGO REVOPS — CAMADA DE TOKENS
+   Derivada do design system do site institucional (basspago-site).
+   O Cockpit é o modo escuro da marca: usa os mesmos tokens on-dark
+   (--d-line, --d-muted, --d-subtle) e o mesmo accent (#2F6BFF).
+   Nenhuma cor nova é inventada aqui.
+   ========================================================================== */
+
+@theme {
+  /* superfícies */
+  --color-ink: #050608;
+  --color-surface: #0b0d10;
+  --color-surface-2: #12151a;
+
+  /* fios e texto on-dark */
+  --color-line: rgba(255, 255, 255, 0.10);
+  --color-line-2: rgba(255, 255, 255, 0.16);
+  --color-fg: #ffffff;
+  --color-muted: rgba(255, 255, 255, 0.56);
+  --color-subtle: rgba(255, 255, 255, 0.36);
+
+  /* signal — accent único da marca */
+  --color-accent: #2f6bff;
+  --color-accent-soft: #6b8cff;
+  --color-accent-dark: #1747c7;
+
+  /* semântica — só para status de dado, nunca decorativo */
+  --color-pos: #07cf22;
+  --color-warn: #e0a62b;
+  --color-neg: #ff7a80;
+
+  --font-sans: var(--font-onest), system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --ease-bp: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* largura do conteúdo — --shell do site institucional */
+  --bp-shell: 88rem;
+  --bp-accent-wash: rgba(47, 107, 255, 0.09);
+  --bp-t-fast: 180ms;
+  --bp-t-med: 380ms;
+  --bp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --bp-shadow-hover: 0 1.5rem 3rem -1.5rem rgba(5, 6, 8, 0.55);
+  --bp-shadow-overlay: 0 3rem 6rem -2rem rgba(5, 6, 8, 0.6);
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ink);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+}
+
+/* Títulos herdam o tracking negativo do site (-.028em) */
+h1, h2, h3, h4 {
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+
+/* Todo número é tabular por padrão dentro de dados */
+table, .tnum { font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------------------
+   ESCALA TIPOGRÁFICA — fixa em px. Não replicamos o html{font-size:vw}
+   fluido do site: em UI densa de dados isso quebra tabelas.
+   -------------------------------------------------------------------------- */
+@layer components {
+  .t-hero {
+    font-size: 3rem; font-weight: 600; line-height: 1;
+    letter-spacing: -0.035em; font-variant-numeric: tabular-nums;
+  }
+  .t-figure {
+    font-size: 1.75rem; font-weight: 600; line-height: 1;
+    letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+  }
+  .t-h1 { font-size: 1.5rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.028em; }
+  .t-h2 { font-size: 1.0625rem; font-weight: 600; line-height: 1.28; letter-spacing: -0.015em; }
+  .t-body { font-size: 0.9375rem; line-height: 1.6; letter-spacing: -0.005em; }
+  .t-sm { font-size: 0.8125rem; line-height: 1.5; letter-spacing: -0.005em; }
+  .t-label {
+    font-size: 0.6875rem; font-weight: 500; line-height: 1.3;
+    text-transform: uppercase; letter-spacing: 0.14em;
+  }
+  .t-mono {
+    font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500;
+    letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
+  }
+
+  /* Régua que cresce no hover — .pillar__bar do site.
+     Única microinteração decorativa permitida. */
+  .bp-rule {
+    height: 2px; width: 1.75rem; background: var(--color-line);
+    transition: width var(--bp-t-med) var(--bp-ease), background-color var(--bp-t-med) ease;
+  }
+  .group:hover .bp-rule { width: 3.5rem; background: var(--color-accent); }
+}
+
+/* --------------------------------------------------------------------------
+   FOCO — não existia no app. Navegação por teclado agora é visível.
+   -------------------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Scrollbar discreta, coerente com os fios */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12); border-radius: 9999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: content-box; }
+
+/* Campos de formulário herdam a marca sem precisar de classe */
+input, select, textarea, button { font-family: inherit; letter-spacing: inherit; }
+input::placeholder, textarea::placeholder { color: var(--color-subtle); }
+input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.45); cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

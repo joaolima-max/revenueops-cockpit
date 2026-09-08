@@ -50,7 +50,7 @@ export default function FormVolumetria() {
             value={periodo}
             onChange={(e) => setPeriodo(e.target.value)}
             required
-            className="px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
           />
         </div>
         <div className="flex-1 min-w-[180px]">
@@ -63,13 +63,13 @@ export default function FormVolumetria() {
             onChange={(e) => setQtdMinima(e.target.value)}
             required
             placeholder="Ex.: 1.500.000"
-            className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white tabular-nums focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
           />
         </div>
         <button
           type="submit"
           disabled={salvando}
-          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+          className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white text-sm font-medium disabled:opacity-50 transition-colors"
         >
           {salvando ? 'Salvando...' : 'Salvar'}
         </button>

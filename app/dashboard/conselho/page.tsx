@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { formatCurrency, formatTPV, formatPercent, formatMesRef } from '@/lib/utils'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel, { PanelHeader } from '@/components/ui/Panel'
+import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
+import EmptyState, { NoData } from '@/components/ui/EmptyState'
 import {
   kpisDoPeriodo, linhasReceita, contagensClientes,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
-
-function Ausente() {
-  return <span className="text-gray-700 text-base font-normal">sem dados</span>
-}
 
 export default async function ConselhoPage() {
   const periodo = periodoAtual()
@@ -45,74 +45,78 @@ export default async function ConselhoPage() {
   ] as const) : []
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
-      <div>
-        <h1 className="text-lg font-bold text-white">Conselho Administrativo</h1>
-        <p className="text-gray-600 text-sm mt-0.5">
-          Indicadores consolidados · {formatMesRef(periodo)}
-        </p>
-      </div>
+    <div className="space-y-10">
+      <PageHeader
+        title="Conselho Administrativo"
+        sub={<>Indicadores consolidados · <span className="capitalize">{formatMesRef(periodo)}</span></>}
+      />
 
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-        {mensais.map((m) => (
-          <div key={m.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
-            <p className="text-xs text-gray-600 mb-1.5">{m.label}</p>
-            <p className="text-2xl font-bold text-white leading-none tabular-nums">
-              {m.v === null ? <Ausente /> : m.fmt(m.v)}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <p className="text-xs text-gray-600 mb-2 tracking-widest uppercase">TPV at History</p>
-        <p className="text-5xl font-bold text-white leading-none tabular-nums">
-          {temHistorico ? formatTPV(histTpv) : <Ausente />}
+      {/* Número herói: faixa da superfície, sem cara de card. */}
+      <section className="bg-surface border border-line rounded-3xl px-6 py-10 sm:px-10 sm:py-14">
+        <p className="t-label text-subtle">TPV acumulado</p>
+        <p className="t-hero text-fg mt-4">
+          {temHistorico ? formatTPV(histTpv) : <NoData />}
         </p>
-        <p className="text-xs text-gray-700 mt-2">
-          {temHistorico ? `Acumulado de ${comDados.length} ${comDados.length === 1 ? 'mês' : 'meses'} com lançamento` : 'Nenhum período lançado'}
-        </p>
-      </div>
+        <div className="flex items-center gap-3 mt-6">
+          <span className="bp-rule" aria-hidden />
+          <p className="t-sm text-subtle">
+            {temHistorico
+              ? `Acumulado de ${comDados.length} ${comDados.length === 1 ? 'mês' : 'meses'} com lançamento`
+              : 'Nenhum período lançado'}
+          </p>
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <HairlineGrid cols={2}>
         {[
-          { label: 'Faturamento at History', v: temHistorico ? histFat : null, fmt: formatCurrency },
-          { label: 'Number of Transactions at History', v: temHistorico ? histTx : null, fmt: (n: number) => n.toLocaleString('pt-BR') },
+          { label: 'Faturamento acumulado', v: temHistorico ? histFat : null, fmt: formatCurrency },
+          { label: 'Transações acumuladas', v: temHistorico ? histTx : null, fmt: (n: number) => n.toLocaleString('pt-BR') },
         ].map((h) => (
-          <div key={h.label} className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <p className="text-xs text-gray-600 mb-2 tracking-widest uppercase">{h.label}</p>
-            <p className="text-4xl font-bold text-white leading-none tabular-nums">
-              {h.v === null ? <Ausente /> : h.fmt(h.v)}
-            </p>
-          </div>
+          <HairlineCell key={h.label} className="gap-4 py-8 sm:py-10 sm:px-8">
+            <p className="t-label text-subtle">{h.label}</p>
+            <p className="t-hero text-fg">{h.v === null ? <NoData /> : h.fmt(h.v)}</p>
+          </HairlineCell>
         ))}
-      </div>
+      </HairlineGrid>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h3 className="text-sm font-semibold text-white mb-1">Linhas de Receita</h3>
-        <p className="text-xs text-gray-600 mb-4">A soma corresponde ao faturamento do período.</p>
+      <section className="space-y-4">
+        <PanelHeader title="Indicadores do mês" sub={`Período ${periodo}`} />
+        <HairlineGrid cols={3}>
+          {mensais.map((m) => (
+            <HairlineCell key={m.label} className="gap-3">
+              <p className="t-label text-subtle">{m.label}</p>
+              <p className="t-figure text-fg">{m.v === null ? <NoData /> : m.fmt(m.v)}</p>
+            </HairlineCell>
+          ))}
+        </HairlineGrid>
+      </section>
+
+      <section className="space-y-4">
+        <PanelHeader title="Linhas de Receita" sub="A soma corresponde ao faturamento do período." />
         {!receita ? (
-          <p className="text-gray-700 text-sm py-6 text-center">Sem dados no período.</p>
+          <Panel padded={false}>
+            <EmptyState title="Sem dados no período" description="Nenhuma linha de receita apurada para este mês." />
+          </Panel>
         ) : (
           <>
-            <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+            <HairlineGrid cols={5}>
               {linhas.map(([label, valor]) => (
-                <div key={label}>
-                  <p className="text-xs text-gray-600 mb-1">{label}</p>
-                  <p className="text-lg font-bold text-white tabular-nums">{formatCurrency(valor)}</p>
-                  <p className="text-[10px] text-gray-700 mt-0.5 tabular-nums">
+                <HairlineCell key={label} className="gap-2">
+                  <p className="t-label text-subtle">{label}</p>
+                  <p className="t-figure text-fg">{formatCurrency(valor)}</p>
+                  <p className="t-mono text-muted">
                     {receita.total > 0 ? `${((valor / receita.total) * 100).toFixed(1)}%` : '—'}
                   </p>
-                </div>
+                </HairlineCell>
               ))}
-            </div>
-            <div className="mt-5 pt-4 border-t border-gray-800 flex justify-between items-baseline">
-              <span className="text-xs text-gray-600">Faturamento total</span>
-              <span className="text-xl font-bold text-white tabular-nums">{formatCurrency(receita.total)}</span>
-            </div>
+            </HairlineGrid>
+            <Panel className="flex items-baseline justify-between gap-4 flex-wrap">
+              <span className="t-label text-subtle">Faturamento total</span>
+              <span className="t-figure text-fg">{formatCurrency(receita.total)}</span>
+            </Panel>
           </>
         )}
-      </div>
+      </section>
     </div>
   )
 }

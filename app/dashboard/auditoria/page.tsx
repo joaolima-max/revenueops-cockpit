@@ -18,7 +18,7 @@ export default async function AuditoriaPage() {
   const entidades = [...new Set(logs.map(l => l.entidade))]
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       <div>
         <h1 className="text-lg font-bold text-white">Auditoria</h1>
         <p className="text-gray-600 text-sm mt-0.5">Registro de ações no sistema — últimos 200 eventos</p>
@@ -39,7 +39,7 @@ export default async function AuditoriaPage() {
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm">
           <thead>
             <tr className="border-b border-gray-800">
               {['Data/Hora', 'Usuário', 'Ação', 'Entidade', 'ID', 'Detalhes'].map(h => (
@@ -72,7 +72,7 @@ export default async function AuditoriaPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   )

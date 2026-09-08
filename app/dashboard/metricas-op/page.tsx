@@ -20,7 +20,7 @@ export default async function MetricasOpPage() {
 
   if (incidentes.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-950 p-6">
+      <div className="space-y-8">
         <h1 className="text-lg font-bold text-white">Métricas Operacionais</h1>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center mt-5">
           <p className="text-white font-medium">Nenhum incidente registrado</p>
@@ -66,7 +66,7 @@ export default async function MetricasOpPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       <div>
         <h1 className="text-lg font-bold text-white">Métricas Operacionais</h1>
         <p className="text-gray-600 text-sm mt-0.5">Indicadores derivados dos incidentes registrados.</p>

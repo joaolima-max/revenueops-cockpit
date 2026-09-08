@@ -2,7 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatDate, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/utils'
+import { formatCurrency, formatDate, LEAD_STATUS_LABELS, cn } from '@/lib/utils'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import Button from '@/components/ui/Button'
+import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 
 interface Lead {
   id: string; name: string; email: string | null; phone: string | null
@@ -12,9 +16,14 @@ interface Lead {
 
 const STATUSES = ['', 'NOVO', 'QUALIFICADO', 'PROPOSTA', 'NEGOCIACAO', 'GANHO', 'PERDIDO']
 
-const STATUS_DOT: Record<string, string> = {
-  NOVO: 'bg-sky-400', QUALIFICADO: 'bg-violet-400', PROPOSTA: 'bg-amber-400',
-  NEGOCIACAO: 'bg-orange-400', GANHO: 'bg-emerald-400', PERDIDO: 'bg-red-400',
+/** O funil progride em intensidade do accent — só o desfecho usa semântica. */
+const FUNNEL_DOT: Record<string, string> = {
+  NOVO: 'bg-accent/30', QUALIFICADO: 'bg-accent/50', PROPOSTA: 'bg-accent/70',
+  NEGOCIACAO: 'bg-accent', GANHO: 'bg-pos', PERDIDO: 'bg-neg',
+}
+const FUNNEL_TEXT: Record<string, string> = {
+  NOVO: 'text-subtle', QUALIFICADO: 'text-muted', PROPOSTA: 'text-accent-soft',
+  NEGOCIACAO: 'text-accent-soft', GANHO: 'text-pos', PERDIDO: 'text-neg',
 }
 
 export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead[]; role: string; userId?: string }) {
@@ -50,74 +59,82 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
     } finally { setLoading(false) }
   }
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const inp = 'w-full bg-surface-2 border border-line text-fg t-body rounded-lg px-3.5 py-2.5 transition-colors duration-[180ms] focus:outline-none focus:border-accent'
+  const lbl = 'block t-label text-subtle mb-1.5'
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-lg font-bold text-white">Leads</h1>
-          <p className="text-gray-600 text-sm mt-0.5">
-            {filtered.length} leads · {ganhos} ganhos · Potencial {formatCurrency(potencial)}
-          </p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Leads"
+        sub={`${filtered.length} leads · ${ganhos} ganhos · Potencial ${formatCurrency(potencial)}`}
+        actions={<Button variant="primary" onClick={() => setShowModal(true)}>Novo lead</Button>}
+      />
+
+      <Panel padded={false}>
+        <div className="flex gap-3 flex-wrap p-3">
+          <input
+            type="text" placeholder="Buscar leads…" value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-[12rem] bg-surface-2 border border-line text-fg rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+          />
+          <select
+            value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            className="bg-surface-2 border border-line text-muted rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+          >
+            {STATUSES.map(s => <option key={s} value={s}>{s ? LEAD_STATUS_LABELS[s] : 'Todos os status'}</option>)}
+          </select>
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="px-4 py-2 text-white text-sm font-medium rounded-lg"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
-          + Novo Lead
-        </button>
-      </div>
+      </Panel>
 
-      <div className="flex gap-3 mb-5 flex-wrap">
-        <input type="text" placeholder="Buscar leads..." value={search} onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-48 bg-gray-900 border border-gray-800 text-white placeholder-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
-          {STATUSES.map(s => <option key={s} value={s}>{s ? LEAD_STATUS_LABELS[s] : 'Todos os status'}</option>)}
-        </select>
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-800">
-              {['Nome', 'Empresa', 'Origem', 'Status', 'Valor Potencial', 'Responsável', 'Criado'].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 px-4 ${h === 'Nome' ? 'pl-5' : ''} ${h === 'Valor Potencial' ? 'text-right' : 'text-left'}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
+      <TableShell>
+        <Table>
+          <THead>
+            <HeadRow>
+              <Th className="pl-5">Nome</Th>
+              <Th>Empresa</Th>
+              <Th>Origem</Th>
+              <Th>Status</Th>
+              <Th align="right">Valor Potencial</Th>
+              <Th>Responsável</Th>
+              <Th>Criado</Th>
+            </HeadRow>
+          </THead>
           <tbody>
             {filtered.map(lead => (
-              <tr key={lead.id} onClick={() => router.push(`/dashboard/leads/${lead.id}`)}
-                className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors">
-                <td className="pl-5 pr-4 py-3.5">
-                  <p className="text-sm font-medium text-white">{lead.name}</p>
-                  {lead.email && <p className="text-xs text-gray-700">{lead.email}</p>}
-                </td>
-                <td className="px-4 py-3.5 text-sm text-gray-400">{lead.company || <span className="text-gray-700">—</span>}</td>
-                <td className="px-4 py-3.5 text-xs text-gray-600">{lead.source || <span className="text-gray-700">—</span>}</td>
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[lead.status]}`} />
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LEAD_STATUS_COLORS[lead.status]}`}>
-                      {LEAD_STATUS_LABELS[lead.status]}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3.5 text-right text-sm text-gray-400">
-                  {lead.value ? <span className="text-emerald-400 font-medium">{formatCurrency(lead.value)}</span> : <span className="text-gray-700">—</span>}
-                </td>
-                <td className="px-4 py-3.5 text-sm text-gray-600">{lead.owner.name}</td>
-                <td className="px-4 py-3.5 text-sm text-gray-700">{formatDate(lead.createdAt)}</td>
-              </tr>
+              <Row
+                key={lead.id}
+                onClick={() => router.push(`/dashboard/leads/${lead.id}`)}
+                className="cursor-pointer"
+              >
+                <Td className="pl-5">
+                  <span className="block t-body font-medium text-fg">{lead.name}</span>
+                  {lead.email && <span className="block t-mono text-subtle mt-1">{lead.email}</span>}
+                </Td>
+                <Td>{lead.company || <span className="text-subtle">—</span>}</Td>
+                <Td className="text-subtle">{lead.source || '—'}</Td>
+                {/* Funil lido por intensidade do accent, não por arco-íris de matizes. */}
+                <Td>
+                  <span className={cn(
+                    'inline-flex items-center gap-2 t-label whitespace-nowrap',
+                    FUNNEL_TEXT[lead.status] ?? 'text-muted'
+                  )}>
+                    <span aria-hidden className={cn('w-[5px] h-[5px] rotate-45 rounded-[1px]', FUNNEL_DOT[lead.status] ?? 'bg-subtle')} />
+                    {LEAD_STATUS_LABELS[lead.status]}
+                  </span>
+                </Td>
+                <Td align="right" numeric className="text-fg font-medium">
+                  {lead.value ? formatCurrency(lead.value) : <span className="text-subtle font-normal">—</span>}
+                </Td>
+                <Td className="text-subtle">{lead.owner.name}</Td>
+                <Td className="text-subtle tabular-nums">{formatDate(lead.createdAt)}</Td>
+              </Row>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-700 text-sm">Nenhum lead encontrado</td></tr>
+              <EmptyRow colSpan={7}>Nenhum lead encontrado com esses filtros.</EmptyRow>
             )}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableShell>
 
       {showModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
@@ -141,7 +158,7 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-700 text-gray-500 hover:text-white text-sm rounded-lg">Cancelar</button>
                 <button type="submit" disabled={loading}
                   className="flex-1 px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                  style={{ background: '#2F6BFF' }}>
                   {loading ? 'Salvando...' : 'Criar Lead'}
                 </button>
               </div>

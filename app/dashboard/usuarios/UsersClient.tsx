@@ -220,14 +220,14 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
         <button
           onClick={() => setShowModal(true)}
           className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+          style={{ background: '#2F6BFF' }}
         >
           + Novo Usuário
         </button>
       </div>
 
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto"><table className="w-full min-w-[44rem]">
           <thead className="border-b border-gray-800">
             <tr>
               <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Nome</th>
@@ -245,7 +245,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   <div className="flex items-center gap-3">
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                      style={{ background: '#2F6BFF' }}
                     >
                       <span className="text-white text-xs font-bold">
                         {user.name.charAt(0).toUpperCase()}
@@ -261,7 +261,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       <select
                         value={editForm.role}
                         onChange={(e) => setEditForm({ role: e.target.value })}
-                        className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent"
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -319,7 +319,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                     <button
                       onClick={() => handleToggleActive(user)}
                       title={user.active ? 'Desativar usuário' : 'Ativar usuário'}
-                      className={`text-xs transition-colors ${user.active ? 'text-gray-500 hover:text-red-400' : 'text-gray-500 hover:text-emerald-400'}`}
+                      className={`text-xs transition-colors ${user.active ? 'text-gray-500 hover:text-red-400' : 'text-gray-500 hover:text-accent-soft'}`}
                     >
                       {user.active ? (
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -336,7 +336,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Create User Modal */}
@@ -354,7 +354,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                   placeholder="Nome completo"
                 />
               </div>
@@ -365,7 +365,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   required
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                   placeholder="email@exemplo.com"
                 />
               </div>
@@ -374,7 +374,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 <select
                   value={form.role}
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -390,7 +390,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   placeholder="Revenue@2025"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-gray-600"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
                 />
               </div>
               <div className="flex gap-3 pt-2">
@@ -405,7 +405,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   type="submit"
                   disabled={loading}
                   className="flex-1 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+                  style={{ background: '#2F6BFF' }}
                 >
                   {loading ? 'Criando...' : 'Criar Usuário'}
                 </button>
@@ -530,7 +530,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   onClick={handleSavePermissions}
                   disabled={permLoading}
                   className="px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)' }}
+                  style={{ background: '#2F6BFF' }}
                 >
                   {permLoading ? 'Salvando...' : 'Salvar Permissões'}
                 </button>

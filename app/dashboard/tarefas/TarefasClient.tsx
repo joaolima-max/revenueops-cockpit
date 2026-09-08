@@ -88,7 +88,7 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: P
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6 space-y-5">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-white">Tarefas</h1>
@@ -97,7 +97,7 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: P
         <button
           onClick={() => setModal(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all"
-          style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}
+          style={{ background: '#2F6BFF' }}
         >
           + Nova Tarefa
         </button>
@@ -118,12 +118,12 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: P
 
       <div className="flex gap-3">
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500">
+          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent">
           <option value="">Todos os status</option>
           {STATUS_LIST.map(s => <option key={s} value={s}>{TAREFA_STATUS_LABELS[s]}</option>)}
         </select>
         <select value={filterPrio} onChange={e => setFilterPrio(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500">
+          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent">
           <option value="">Todas as prioridades</option>
           {PRIORIDADES.map(p => <option key={p} value={p}>{TAREFA_PRIORIDADE_LABELS[p]}</option>)}
         </select>
@@ -183,35 +183,35 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: P
             <div className="space-y-3">
               <input value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
                 placeholder="Título da tarefa *"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
               <textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
                 placeholder="Descrição (opcional)" rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none" />
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent resize-none" />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Prioridade</label>
                   <select value={form.prioridade} onChange={e => setForm(p => ({ ...p, prioridade: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent">
                     {PRIORIDADES.map(p => <option key={p} value={p}>{TAREFA_PRIORIDADE_LABELS[p]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Prazo</label>
                   <input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
                 </div>
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Responsável *</label>
                 <select value={form.responsavelId} onChange={e => setForm(p => ({ ...p, responsavelId: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent">
                   {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Cliente (opcional)</label>
                 <select value={form.clienteId} onChange={e => setForm(p => ({ ...p, clienteId: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent">
                   <option value="">Nenhum</option>
                   {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
@@ -224,7 +224,7 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: P
               </button>
               <button onClick={handleCreate} disabled={saving || !form.titulo}
                 className="flex-1 py-2 px-4 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)' }}>
+                style={{ background: '#2F6BFF' }}>
                 {saving ? 'Salvando...' : 'Criar Tarefa'}
               </button>
             </div>
