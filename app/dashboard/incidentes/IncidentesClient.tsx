@@ -11,27 +11,21 @@ interface Incidente {
   fim?: string | null
   downtimeMins?: number | null
   criticidade: string
-  satisfacao?: number | null
-  clientesAfetados: { clienteId: string; cliente: { id: string; nome: string } }[]
 }
-
-interface Cliente { id: string; nome: string }
 
 interface Props {
   initial: Incidente[]
-  clientes: Cliente[]
   canEdit: boolean
 }
 
 const CRITICIDADES = ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA']
 
-export default function IncidentesClient({ initial, clientes, canEdit }: Props) {
+export default function IncidentesClient({ initial, canEdit }: Props) {
   const [incidentes, setIncidentes] = useState(initial)
   const [modal, setModal] = useState(false)
   const [form, setForm] = useState({
     titulo: '', descricao: '', inicio: '', fim: '',
-    downtimeMins: '', criticidade: 'MEDIA', satisfacao: '',
-    clienteIds: [] as string[],
+    downtimeMins: '', criticidade: 'MEDIA',
   })
   const [saving, setSaving] = useState(false)
 
@@ -44,14 +38,13 @@ export default function IncidentesClient({ initial, clientes, canEdit }: Props) 
       body: JSON.stringify({
         ...form,
         downtimeMins: form.downtimeMins ? Number(form.downtimeMins) : null,
-        satisfacao: form.satisfacao ? Number(form.satisfacao) : null,
       }),
     })
     if (res.ok) {
       const { incidente } = await res.json()
       setIncidentes(p => [incidente, ...p])
       setModal(false)
-      setForm({ titulo: '', descricao: '', inicio: '', fim: '', downtimeMins: '', criticidade: 'MEDIA', satisfacao: '', clienteIds: [] })
+      setForm({ titulo: '', descricao: '', inicio: '', fim: '', downtimeMins: '', criticidade: 'MEDIA' })
     }
     setSaving(false)
   }
@@ -67,13 +60,6 @@ export default function IncidentesClient({ initial, clientes, canEdit }: Props) 
       const { incidente } = await res.json()
       setIncidentes(p => p.map(i => i.id === id ? { ...i, ...incidente } : i))
     }
-  }
-
-  function toggleCliente(id: string) {
-    setForm(p => ({
-      ...p,
-      clienteIds: p.clienteIds.includes(id) ? p.clienteIds.filter(c => c !== id) : [...p.clienteIds, id],
-    }))
   }
 
   const abertos = incidentes.filter(i => !i.fim).length
@@ -129,20 +115,7 @@ export default function IncidentesClient({ initial, clientes, canEdit }: Props) 
                     {inc.fim && <span>Fim: {formatDate(inc.fim)}</span>}
                     {duration && <span>Duração: {duration} min</span>}
                     {inc.downtimeMins && <span>Downtime: {inc.downtimeMins} min</span>}
-                    {inc.satisfacao != null && <span>Satisfação: {inc.satisfacao}/10</span>}
-                    {inc.clientesAfetados.length > 0 && (
-                      <span>{inc.clientesAfetados.length} cliente{inc.clientesAfetados.length !== 1 ? 's' : ''} afetado{inc.clientesAfetados.length !== 1 ? 's' : ''}</span>
-                    )}
                   </div>
-                  {inc.clientesAfetados.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {inc.clientesAfetados.map(ca => (
-                        <span key={ca.clienteId} className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
-                          {ca.cliente.nome}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
                 {canEdit && isAberto && (
                   <button
@@ -196,23 +169,6 @@ export default function IncidentesClient({ initial, clientes, canEdit }: Props) 
                   <label className="text-xs text-gray-500 mb-1 block">Downtime (min)</label>
                   <input type="number" value={form.downtimeMins} onChange={e => setForm(p => ({ ...p, downtimeMins: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Satisfação (0-10)</label>
-                  <input type="number" min="0" max="10" value={form.satisfacao} onChange={e => setForm(p => ({ ...p, satisfacao: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-2 block">Clientes Afetados</label>
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {clientes.map(c => (
-                    <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-800 px-2 py-1 rounded">
-                      <input type="checkbox" checked={form.clienteIds.includes(c.id)} onChange={() => toggleCliente(c.id)}
-                        className="accent-emerald-500" />
-                      <span className="text-sm text-gray-300">{c.nome}</span>
-                    </label>
-                  ))}
                 </div>
               </div>
             </div>
