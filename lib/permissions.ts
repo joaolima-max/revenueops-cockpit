@@ -21,7 +21,6 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_incidentes',label: 'Gerenciar Incidentes',     group: 'Operacional' },
   { key: 'view_tarefas',     label: 'Ver Tarefas',              group: 'Operacional' },
   { key: 'manage_tarefas',   label: 'Gerenciar Tarefas',        group: 'Operacional' },
-  { key: 'view_ranking',     label: 'Ver Ranking',              group: 'Operacional' },
   { key: 'view_metricas_op', label: 'Ver Métricas Operacionais',group: 'Operacional' },
   { key: 'view_volumetria',  label: 'Ver Volumetria',           group: 'Operacional' },
   // CRM
@@ -42,7 +41,7 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
     'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
-    'view_ranking', 'view_metricas_op', 'view_volumetria', 'view_alertas',
+    'view_metricas_op', 'view_volumetria', 'view_alertas',
     'view_followup',
   ],
   COMERCIAL: [

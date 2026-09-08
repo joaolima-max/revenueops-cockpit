@@ -449,7 +449,6 @@ export default function ClienteDetailClient({
           </>
         )}
 
-        {/* ── INTELIGÊNCIA ────────────────────────────────────────────────── */}
 
       </div>
 
