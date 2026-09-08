@@ -14,7 +14,23 @@ export async function GET(request: NextRequest) {
   if (!/^\d{4}-\d{2}$/.test(periodo)) {
     return NextResponse.json({ error: 'Período inválido. Use YYYY-MM.' }, { status: 400 })
   }
-  return NextResponse.json({ periodo, metas: await metasDoPeriodo(periodo) })
+  // metasDoPeriodo devolve o alvo e o realizado derivado, mas nao o id nem o
+  // periodo — e o client precisa deles para editar e excluir. Une as duas fontes
+  // sem alterar metasDoPeriodo, que e compartilhada com dashboard e relatorios.
+  const [registros, calculadas] = await Promise.all([
+    prisma.meta.findMany({ where: { periodo }, orderBy: { tipo: 'asc' } }),
+    metasDoPeriodo(periodo),
+  ])
+  const derivado = new Map(calculadas.map((m) => [m.tipo, m]))
+  const metas = registros.map((r) => ({
+    id: r.id,
+    tipo: r.tipo,
+    valor: r.valor,
+    periodo: r.periodo,
+    realizado: derivado.get(r.tipo)?.realizado ?? null,
+    atingimento: derivado.get(r.tipo)?.atingimento ?? null,
+  }))
+  return NextResponse.json({ periodo, metas })
 }
 
 /** Define ou atualiza a meta de um indicador. Só o alvo — o realizado é derivado. */
