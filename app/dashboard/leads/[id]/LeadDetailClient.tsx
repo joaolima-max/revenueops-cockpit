@@ -75,20 +75,20 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
   return (
     <div className="p-8 max-w-4xl">
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600">
+        <button onClick={() => router.back()} className="text-subtle hover:text-muted">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">{lead.name}</h1>
-          <p className="text-gray-500 text-sm">{lead.company || 'Sem empresa'}</p>
+          <h1 className="t-h1 text-fg">{lead.name}</h1>
+          <p className="text-subtle text-sm">{lead.company || 'Sem empresa'}</p>
         </div>
         <div className="flex gap-2">
           {!editing && (
             <button
               onClick={() => setEditing(true)}
-              className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+              className="px-4 py-2 border border-line text-muted rounded-lg text-sm hover:bg-surface-2"
             >
               Editar
             </button>
@@ -96,7 +96,7 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
           {role === 'ADMIN' && (
             <button
               onClick={handleDelete}
-              className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-100"
+              className="px-4 py-2 bg-neg/10 text-neg border border-neg/25 rounded-lg text-sm hover:bg-neg/10"
             >
               Excluir
             </button>
@@ -106,11 +106,11 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">Informações do Lead</h2>
+          <div className="bg-surface rounded-xl border border-line p-6">
+            <h2 className="t-label text-subtle mb-4">Informações do Lead</h2>
             {editing ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
                     { label: 'Nome *', key: 'name', type: 'text' },
                     { label: 'Email', key: 'email', type: 'email' },
@@ -121,21 +121,21 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
                     { label: 'Valor', key: 'value', type: 'number' },
                   ].map(({ label, key, type }) => (
                     <div key={key}>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                      <label className="bp-field-label">{label}</label>
                       <input
                         type={type}
                         value={form[key as keyof typeof form]}
                         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="bp-field w-full text-sm"
                       />
                     </div>
                   ))}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                    <label className="bp-field-label">Status</label>
                     <select
                       value={form.status}
                       onChange={(e) => setForm({ ...form, status: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="bp-field w-full text-sm"
                     >
                       {STATUSES.map((s) => (
                         <option key={s} value={s}>{LEAD_STATUS_LABELS[s]}</option>
@@ -144,32 +144,32 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                  <label className="bp-field-label">Notas</label>
                   <textarea
                     rows={3}
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="bp-field w-full text-sm"
                   />
                 </div>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setEditing(false)}
-                    className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+                    className="px-4 py-2 border border-line text-muted rounded-lg text-sm hover:bg-surface-2"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="bp-btn-primary px-4 py-2 rounded-lg text-sm"
                   >
                     {saving ? 'Salvando...' : 'Salvar'}
                   </button>
                 </div>
               </div>
             ) : (
-              <dl className="grid grid-cols-2 gap-4">
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
                   { label: 'Email', value: lead.email },
                   { label: 'Telefone', value: lead.phone },
@@ -181,14 +181,14 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
                   { label: 'Atualizado', value: formatDate(lead.updatedAt) },
                 ].map(({ label, value }) => (
                   <div key={label}>
-                    <dt className="text-xs text-gray-400">{label}</dt>
-                    <dd className="text-sm text-gray-900 mt-0.5">{value || '-'}</dd>
+                    <dt className="text-xs text-subtle">{label}</dt>
+                    <dd className="text-sm text-fg mt-0.5">{value || '-'}</dd>
                   </div>
                 ))}
                 {lead.notes && (
                   <div className="col-span-2">
-                    <dt className="text-xs text-gray-400">Notas</dt>
-                    <dd className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap">{lead.notes}</dd>
+                    <dt className="text-xs text-subtle">Notas</dt>
+                    <dd className="text-sm text-fg mt-0.5 whitespace-pre-wrap">{lead.notes}</dd>
                   </div>
                 )}
               </dl>
@@ -196,13 +196,13 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
           </div>
 
           {lead.deals.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-sm font-semibold text-gray-700 mb-4">Negócios Vinculados</h2>
+            <div className="bg-surface rounded-xl border border-line p-6">
+              <h2 className="t-label text-subtle mb-4">Negócios Vinculados</h2>
               <div className="space-y-2">
                 {lead.deals.map((deal) => (
-                  <div key={deal.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-900">{deal.title}</p>
-                    <span className="text-sm font-semibold text-gray-700">{formatCurrency(deal.value)}</span>
+                  <div key={deal.id} className="flex items-center justify-between p-3 bg-surface-2 rounded-lg">
+                    <p className="text-sm font-medium text-fg">{deal.title}</p>
+                    <span className="text-sm font-semibold text-muted">{formatCurrency(deal.value)}</span>
                   </div>
                 ))}
               </div>
@@ -211,23 +211,23 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
         </div>
 
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Status</h2>
+          <div className="bg-surface rounded-xl border border-line p-6">
+            <h2 className="t-label text-subtle mb-3">Status</h2>
             <span className={`inline-flex text-sm px-3 py-1 rounded-full font-medium ${LEAD_STATUS_COLORS[lead.status]}`}>
               {LEAD_STATUS_LABELS[lead.status]}
             </span>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Responsável</h2>
+          <div className="bg-surface rounded-xl border border-line p-6">
+            <h2 className="t-label text-subtle mb-3">Responsável</h2>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                <span className="text-indigo-700 text-xs font-bold">
+              <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                <span className="text-accent-soft text-xs font-bold">
                   {lead.owner.name.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{lead.owner.name}</p>
-                <p className="text-xs text-gray-400">{lead.owner.email}</p>
+                <p className="text-sm font-medium text-fg">{lead.owner.name}</p>
+                <p className="text-xs text-subtle">{lead.owner.email}</p>
               </div>
             </div>
           </div>

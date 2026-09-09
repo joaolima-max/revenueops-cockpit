@@ -2,7 +2,8 @@
 
 import { useState, useMemo, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatTPV, formatPercent, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { figuraMoeda, figuraQuantidade, figuraPercentual, moedaCompacta } from '@/lib/format-financeiro'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import HairlineGrid from '@/components/ui/HairlineGrid'
@@ -140,12 +141,12 @@ export default function CalendarioLancamentos({
   }
 
   const resumo = [
-    { label: 'TPV', valor: kpis.tpv, fmt: formatTPV },
-    { label: 'Receita Tarifária', valor: kpis.receitaTarifaria, fmt: formatCurrency },
-    { label: 'Float (derivado)', valor: kpis.float, fmt: formatCurrency },
-    { label: 'Saldo Médio', valor: kpis.saldoMedio, fmt: formatCurrency },
-    { label: 'Transações', valor: kpis.qtdTransacoes, fmt: (v: number) => v.toLocaleString('pt-BR') },
-    { label: 'Take Rate', valor: kpis.takeRate, fmt: (v: number) => formatPercent(v, 3) },
+    { label: 'TPV', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv) },
+    { label: 'Receita Tarifária', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria) },
+    { label: 'Float (derivado)', fig: kpis.float === null ? null : figuraMoeda(kpis.float) },
+    { label: 'Saldo Médio', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio) },
+    { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes) },
+    { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3) },
   ]
 
 
@@ -158,7 +159,7 @@ export default function CalendarioLancamentos({
           <div className="flex items-center gap-1 rounded-lg border border-line p-1">
             <button
               onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, -1)}`)}
-              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-white/[0.06] transition-colors duration-[180ms]"
+              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-[var(--bp-hover)] transition-colors duration-[180ms]"
               aria-label="Mês anterior"
             >←</button>
             <span className="t-label text-fg px-3 tabular-nums whitespace-nowrap">
@@ -166,7 +167,7 @@ export default function CalendarioLancamentos({
             </span>
             <button
               onClick={() => router.push(`/dashboard/forecast?periodo=${deslocaPeriodo(periodo, 1)}`)}
-              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-white/[0.06] transition-colors duration-[180ms]"
+              className="w-8 h-8 grid place-items-center rounded-md text-muted hover:text-fg hover:bg-[var(--bp-hover)] transition-colors duration-[180ms]"
               aria-label="Próximo mês"
             >→</button>
           </div>
@@ -176,7 +177,7 @@ export default function CalendarioLancamentos({
       {kpis.temDados ? (
         <HairlineGrid cols={6}>
           {resumo.map((r, i) => (
-            <StatTile key={r.label} label={r.label} value={r.valor} format={r.fmt} primary={i === 0} />
+            <StatTile key={r.label} label={r.label} figura={r.fig} primary={i === 0} size="sm" />
           ))}
         </HairlineGrid>
       ) : (
@@ -209,7 +210,7 @@ export default function CalendarioLancamentos({
                 key={iso}
                 onClick={() => abrir(iso)}
                 disabled={futuro || !podeEditar}
-                title={l ? `${formatTPV(l.tpv)} · ${l.qtdTransacoes.toLocaleString('pt-BR')} transações` : undefined}
+                title={l ? `${figuraMoeda(l.tpv).completo} · ${figuraQuantidade(l.qtdTransacoes).completo} transações` : undefined}
                 className={cn(
                   'aspect-square rounded-xl border p-1.5 sm:p-2.5 text-left flex flex-col justify-between',
                   'transition-[background-color,border-color] duration-[180ms] ease-bp',
@@ -218,7 +219,7 @@ export default function CalendarioLancamentos({
                     : l
                       // Dia lançado: banho do accent institucional.
                       ? 'border-accent/30 bg-[var(--bp-accent-wash)] hover:border-accent/60 hover:bg-accent/15'
-                      : 'border-line bg-white/[0.02] hover:bg-surface-2 hover:border-line-2',
+                      : 'border-line bg-[var(--bp-hover)] hover:bg-surface-2 hover:border-line-2',
                   hoje && 'ring-1 ring-accent/50 ring-offset-0',
                   !podeEditar && !futuro && 'cursor-default'
                 )}
@@ -231,7 +232,7 @@ export default function CalendarioLancamentos({
                 </span>
                 {l && (
                   <span className="hidden sm:block text-[0.625rem] text-muted leading-tight truncate tabular-nums">
-                    {formatTPV(l.tpv)}
+                    {moedaCompacta(l.tpv)}
                   </span>
                 )}
               </button>
@@ -268,7 +269,7 @@ export default function CalendarioLancamentos({
               <div className="space-y-4">
                 {CAMPOS.map((c) => (
                   <div key={c.nome}>
-                    <label className="block t-label text-subtle mb-1.5">{c.label}</label>
+                    <label className="bp-field-label">{c.label}</label>
                     <div className="relative">
                       {c.prefixo && (
                         <span className="absolute left-3.5 top-1/2 -translate-y-1/2 t-sm text-subtle pointer-events-none">
@@ -282,9 +283,9 @@ export default function CalendarioLancamentos({
                         value={form[c.nome] ?? ''}
                         onChange={(e) => setForm({ ...form, [c.nome]: e.target.value })}
                         className={cn(
-                          'w-full pr-3.5 py-2.5 bg-surface-2 border border-line rounded-lg t-body text-fg tabular-nums',
-                          'transition-colors duration-[180ms] focus:border-accent focus:outline-none',
-                          c.prefixo ? 'pl-10' : 'pl-3.5'
+                          'bp-field w-full t-body tabular-nums',
+                          // o prefixo (R$) ocupa a esquerda: o campo recua
+                          c.prefixo && 'pl-10'
                         )}
                         placeholder="0"
                       />
@@ -292,13 +293,13 @@ export default function CalendarioLancamentos({
                   </div>
                 ))}
                 <div>
-                  <label className="block t-label text-subtle mb-1.5">Observações</label>
+                  <label className="bp-field-label">Observações</label>
                   <input
                     type="text"
                     value={notas}
                     onChange={(e) => setNotas(e.target.value)}
                     maxLength={500}
-                    className="w-full px-3.5 py-2.5 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:border-accent focus:outline-none"
+                    className="bp-field w-full t-body"
                     placeholder="Opcional"
                   />
                 </div>

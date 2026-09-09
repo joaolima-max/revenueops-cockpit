@@ -59,8 +59,8 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
     } finally { setLoading(false) }
   }
 
-  const inp = 'w-full bg-surface-2 border border-line text-fg t-body rounded-lg px-3.5 py-2.5 transition-colors duration-[180ms] focus:outline-none focus:border-accent'
-  const lbl = 'block t-label text-subtle mb-1.5'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
 
   return (
     <div className="space-y-8">
@@ -75,11 +75,11 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
           <input
             type="text" placeholder="Buscar leads…" value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-[12rem] bg-surface-2 border border-line text-fg rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+            className="bp-field flex-1 min-w-[12rem] t-body"
           />
           <select
             value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="bg-surface-2 border border-line text-muted rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+            className="bp-field t-body"
           >
             {STATUSES.map(s => <option key={s} value={s}>{s ? LEAD_STATUS_LABELS[s] : 'Todos os status'}</option>)}
           </select>
@@ -126,7 +126,7 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
                   {lead.value ? formatCurrency(lead.value) : <span className="text-subtle font-normal">—</span>}
                 </Td>
                 <Td className="text-subtle">{lead.owner.name}</Td>
-                <Td className="text-subtle tabular-nums">{formatDate(lead.createdAt)}</Td>
+                <Td className="text-subtle t-num">{formatDate(lead.createdAt)}</Td>
               </Row>
             ))}
             {filtered.length === 0 && (
@@ -137,14 +137,14 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
       </TableShell>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Novo Lead</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Novo Lead</h2>
+              <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleCreate} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2"><label className={lbl}>Nome *</label><input required value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inp} /></div>
                 <div><label className={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className={inp} /></div>
                 <div><label className={lbl}>Telefone</label><input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} className={inp} /></div>
@@ -155,10 +155,9 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
                 <div className="col-span-2"><label className={lbl}>Notas</label><textarea rows={2} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className={inp + ' resize-none'} /></div>
               </div>
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-gray-700 text-gray-500 hover:text-white text-sm rounded-lg">Cancelar</button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-line-2 text-subtle hover:text-fg text-sm rounded-lg">Cancelar</button>
                 <button type="submit" disabled={loading}
-                  className="flex-1 px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
-                  style={{ background: '#2F6BFF' }}>
+                  className="bp-btn-primary flex-1 px-4 py-2 text-sm font-medium rounded-lg">
                   {loading ? 'Salvando...' : 'Criar Lead'}
                 </button>
               </div>

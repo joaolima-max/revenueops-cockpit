@@ -4,8 +4,9 @@ import { prisma } from '@/lib/prisma'
 
 const CRITICIDADES = ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'] as const
 
+/* Severidade crescente nos tokens semânticos — responde ao tema. */
 const COR_CRITICIDADE: Record<string, string> = {
-  BAIXA: '#A7ACB4', MEDIA: '#E0A62B', ALTA: '#FF7A80', CRITICA: '#C4262E',
+  BAIXA: 'bg-subtle', MEDIA: 'bg-warn', ALTA: 'bg-alert', CRITICA: 'bg-neg',
 }
 
 function formatDuracao(mins: number): string {
@@ -21,10 +22,10 @@ export default async function MetricasOpPage() {
   if (incidentes.length === 0) {
     return (
       <div className="space-y-8">
-        <h1 className="text-lg font-bold text-white">Métricas Operacionais</h1>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center mt-5">
-          <p className="text-white font-medium">Nenhum incidente registrado</p>
-          <p className="text-gray-600 text-sm mt-1">
+        <h1 className="t-h1 text-fg">Métricas Operacionais</h1>
+        <div className="bg-surface border border-line rounded-xl p-8 text-center mt-5">
+          <p className="text-fg font-medium">Nenhum incidente registrado</p>
+          <p className="text-subtle text-sm mt-1">
             Os indicadores desta tela são calculados a partir dos incidentes.
           </p>
         </div>
@@ -68,49 +69,49 @@ export default async function MetricasOpPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-lg font-bold text-white">Métricas Operacionais</h1>
-        <p className="text-gray-600 text-sm mt-0.5">Indicadores derivados dos incidentes registrados.</p>
+        <h1 className="t-h1 text-fg">Métricas Operacionais</h1>
+        <p className="text-subtle text-sm mt-0.5">Indicadores derivados dos incidentes registrados.</p>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {cards.map((c) => (
-          <div key={c.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
-            <p className="text-xs text-gray-600 mb-1.5">{c.label}</p>
-            <p className="text-xl font-bold text-white leading-none tabular-nums">{c.valor}</p>
-            <p className="text-[10px] text-gray-700 mt-1.5">{c.sub}</p>
+          <div key={c.label} className="bg-surface border border-line rounded-xl p-4">
+            <p className="text-xs text-subtle mb-1.5">{c.label}</p>
+            <p className="t-figure-sm text-fg">{c.valor}</p>
+            <p className="text-[10px] text-subtle mt-1.5">{c.sub}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Incidentes por criticidade</h3>
+        <div className="bg-surface border border-line rounded-xl p-5">
+          <h3 className="t-h3 text-fg mb-4">Incidentes por criticidade</h3>
           <div className="space-y-3">
             {porCriticidade.map((p) => (
               <div key={p.criticidade}>
                 <div className="flex justify-between items-baseline mb-1">
-                  <span className="text-xs text-gray-500">{p.criticidade}</span>
-                  <span className="text-xs text-gray-400 tabular-nums">{p.total}</span>
+                  <span className="text-xs text-subtle">{p.criticidade}</span>
+                  <span className="t-sm text-muted t-num">{p.total}</span>
                 </div>
-                <div className="h-1.5 bg-gray-800 rounded-full">
-                  <div className="h-1.5 rounded-full transition-all"
-                    style={{ width: `${(p.total / maxCrit) * 100}%`, background: COR_CRITICIDADE[p.criticidade] }} />
+                <div className="h-1.5 bg-surface-2 rounded-full">
+                  <div className={`h-1.5 rounded-full transition-all ${COR_CRITICIDADE[p.criticidade]}`}
+                    style={{ width: `${(p.total / maxCrit) * 100}%` }} />
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Volume nos últimos 6 meses</h3>
+        <div className="bg-surface border border-line rounded-xl p-5">
+          <h3 className="t-h3 text-fg mb-4">Volume nos últimos 6 meses</h3>
           <div className="flex items-end gap-2 h-32">
             {meses.map((m, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-                <div className="w-full bg-blue-600/70 rounded-t transition-all"
+                <div className="w-full bg-accent/70 rounded-t transition-all"
                   style={{ height: `${Math.max((m.total / maxMes) * 100, m.total > 0 ? 6 : 2)}%` }}
                   title={`${m.total} incidentes · ${formatDuracao(m.downtime)}`} />
-                <span className="text-[10px] text-gray-600 tabular-nums">{m.total}</span>
-                <span className="text-[9px] text-gray-700 capitalize">{m.rotulo}</span>
+                <span className="t-mono text-subtle">{m.total}</span>
+                <span className="text-[9px] text-subtle capitalize">{m.rotulo}</span>
               </div>
             ))}
           </div>

@@ -70,8 +70,8 @@ export default function MetasClient() {
     fetchData(periodo)
   }
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
 
   const tiposComMeta = new Set(metas.map(m => m.tipo))
   const tiposFaltando = TIPOS.filter(t => !tiposComMeta.has(t))
@@ -80,66 +80,66 @@ export default function MetasClient() {
     <div className="space-y-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-lg font-bold text-white">Metas</h1>
-          <p className="text-gray-600 text-sm mt-0.5">Acompanhamento de metas por período</p>
+          <h1 className="t-h1 text-fg">Metas</h1>
+          <p className="text-subtle text-sm mt-0.5">Acompanhamento de metas por período</p>
         </div>
         <div className="flex items-center gap-3">
           <input type="month" value={periodo} onChange={e => { setPeriodo(e.target.value) }}
-            className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
-          <button onClick={() => setShowModal(true)} className="px-4 py-2 text-sm font-medium text-white rounded-lg" style={{ background: '#2F6BFF' }}>
+            className="bp-field text-sm" />
+          <button onClick={() => setShowModal(true)} className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
             + Definir Meta
           </button>
         </div>
       </div>
 
       {loading ? (
-        <p className="text-gray-700 text-sm">Carregando...</p>
+        <p className="text-subtle text-sm">Carregando...</p>
       ) : (
         <div className="space-y-4">
           {metas.length === 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-              <p className="text-gray-600 text-sm">Nenhuma meta definida para este período.</p>
-              <button onClick={() => setShowModal(true)} className="mt-3 text-emerald-400 hover:text-emerald-300 text-sm">Definir metas →</button>
+            <div className="bg-surface border border-line rounded-xl p-8 text-center">
+              <p className="text-subtle text-sm">Nenhuma meta definida para este período.</p>
+              <button onClick={() => setShowModal(true)} className="mt-3 text-pos hover:text-pos text-sm">Definir metas →</button>
             </div>
           )}
           {metas.map(meta => {
             const pct = meta.realizado !== null && meta.valor > 0 ? Math.min((meta.realizado / meta.valor) * 100, 100) : null
-            const color = pct === null ? 'bg-gray-700' : pct >= 90 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-red-500'
-            const textColor = pct === null ? 'text-gray-500' : pct >= 90 ? 'text-emerald-400' : pct >= 70 ? 'text-amber-400' : 'text-red-400'
+            const color = pct === null ? 'bg-surface-2' : pct >= 90 ? 'bg-pos' : pct >= 70 ? 'bg-warn' : 'bg-neg'
+            const textColor = pct === null ? 'text-subtle' : pct >= 90 ? 'text-pos' : pct >= 70 ? 'text-warn' : 'text-neg'
             return (
-              <div key={meta.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div key={meta.id} className="bg-surface border border-line rounded-xl p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="text-sm font-semibold text-white">{META_TIPO_LABELS[meta.tipo] || meta.tipo}</p>
-                    <p className="text-xs text-gray-600 mt-0.5">Meta: {formatVal(meta.tipo, meta.valor)}</p>
+                    <p className="text-sm font-semibold text-fg">{META_TIPO_LABELS[meta.tipo] || meta.tipo}</p>
+                    <p className="text-xs text-subtle mt-0.5">Meta: {formatVal(meta.tipo, meta.valor)}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className={`text-xl font-bold ${textColor}`}>
+                      <p className={`text-xl font-bold tnum ${textColor}`}>
                         {pct !== null ? formatPercent(pct, 1) : '—'}
                       </p>
-                      <p className="text-xs text-gray-600 mt-0.5">
+                      <p className="text-xs text-subtle mt-0.5">
                         {meta.realizado !== null ? formatVal(meta.tipo, meta.realizado) : 'Sem realizado'}
                       </p>
                     </div>
                     {/* Edit / Delete buttons */}
                     <div className="flex flex-col gap-1 ml-2">
                       <button onClick={() => openEdit(meta)} title="Editar"
-                        className="p-1.5 rounded-lg bg-gray-800 hover:bg-indigo-500/20 text-gray-600 hover:text-indigo-400 transition-colors">
+                        className="p-1.5 rounded-lg bg-surface-2 hover:bg-accent/20 text-subtle hover:text-accent-soft transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
                       <button onClick={() => handleDelete(meta.id)} title="Excluir"
-                        className="p-1.5 rounded-lg bg-gray-800 hover:bg-red-500/20 text-gray-600 hover:text-red-400 transition-colors">
+                        className="p-1.5 rounded-lg bg-surface-2 hover:bg-neg/20 text-subtle hover:text-neg transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
                     </div>
                   </div>
                 </div>
-                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
                   <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${pct ?? 0}%` }} />
                 </div>
                 {meta.realizado !== null && meta.valor > 0 && (
-                  <div className="flex justify-between mt-2 text-xs text-gray-700">
+                  <div className="flex justify-between mt-2 text-xs text-subtle">
                     <span>0</span>
                     <span>{formatVal(meta.tipo, meta.valor)}</span>
                   </div>
@@ -148,18 +148,18 @@ export default function MetasClient() {
             )
           })}
           {tiposFaltando.length > 0 && metas.length > 0 && (
-            <p className="text-xs text-gray-700">Sem meta definida para: {tiposFaltando.map(t => META_TIPO_LABELS[t] || t).join(', ')}</p>
+            <p className="text-xs text-subtle">Sem meta definida para: {tiposFaltando.map(t => META_TIPO_LABELS[t] || t).join(', ')}</p>
           )}
         </div>
       )}
 
       {/* Criar Meta Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Definir Meta</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Definir Meta</h2>
+              <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
               <div>
@@ -181,8 +181,8 @@ export default function MetasClient() {
                 <input type="number" step="0.01" value={form.realizado} onChange={e => setForm(p => ({ ...p, realizado: e.target.value }))} className={inp} />
               </div>
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
               </div>
             </form>
           </div>
@@ -191,11 +191,11 @@ export default function MetasClient() {
 
       {/* Editar Meta Modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setEditModal(null)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Editar Meta — {META_TIPO_LABELS[editModal.tipo] || editModal.tipo}</h2>
-              <button onClick={() => setEditModal(null)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setEditModal(null)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Editar Meta — {META_TIPO_LABELS[editModal.tipo] || editModal.tipo}</h2>
+              <button onClick={() => setEditModal(null)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleEdit} className="p-5 space-y-4">
               <div>
@@ -207,8 +207,8 @@ export default function MetasClient() {
                 <input type="number" step="0.01" value={editForm.realizado} onChange={e => setEditForm(p => ({ ...p, realizado: e.target.value }))} className={inp} placeholder="Deixe vazio para limpar" />
               </div>
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setEditModal(null)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
+                <button type="button" onClick={() => setEditModal(null)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
               </div>
             </form>
           </div>

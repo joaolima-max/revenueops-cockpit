@@ -7,7 +7,7 @@ import Topbar from './Topbar'
 /**
  * Casca do Cockpit: navegação + barra superior + área de conteúdo.
  * O padding e a largura máxima moram aqui — antes eram repetidos à mão
- * em 20 páginas como `min-h-screen bg-gray-950 p-6`.
+ * em 20 páginas como `min-h-screen bg-ink p-6`.
  */
 export default function DashboardShell({
   role, userName, userEmail, children,

@@ -110,79 +110,95 @@ export const PEDIDO_STATUS_LABELS: Record<string, string> = {
   PENDENTE: 'Pendente', FATURADO: 'Faturado', PAGO: 'Pago', CANCELADO: 'Cancelado',
 }
 
+/* ==========================================================================
+   MAPAS DE COR DE STATUS
+   Todos apontam para tokens do design system (pos / warn / alert / neg /
+   accent / neutro), então respondem à troca de tema sem classe condicional.
+   Regra do sistema: cor comunica ESTADO, nunca categoria — segmento e modelo
+   operacional ficam neutros, o rótulo já os identifica.
+   ========================================================================== */
+
+const NEUTRO = 'bg-[var(--bp-hover)] text-muted'
+const ACCENT = 'bg-accent/10 text-accent-soft'
+const POS = 'bg-pos/10 text-pos'
+const WARN = 'bg-warn/10 text-warn'
+const ALERT = 'bg-alert/10 text-alert'
+const NEG = 'bg-neg/10 text-neg'
+
 export const LEAD_STATUS_COLORS: Record<string, string> = {
-  NOVO: 'bg-sky-500/10 text-sky-400',
-  QUALIFICADO: 'bg-violet-500/10 text-violet-400',
-  PROPOSTA: 'bg-amber-500/10 text-amber-400',
-  NEGOCIACAO: 'bg-orange-500/10 text-orange-400',
-  GANHO: 'bg-emerald-500/10 text-emerald-400',
-  PERDIDO: 'bg-red-500/10 text-red-400',
+  NOVO: NEUTRO,
+  QUALIFICADO: ACCENT,
+  PROPOSTA: WARN,
+  NEGOCIACAO: ALERT,
+  GANHO: POS,
+  PERDIDO: NEG,
 }
 
 export const DEAL_STAGE_COLORS: Record<string, string> = {
-  PROSPECCAO: 'bg-gray-500/10 text-gray-400',
-  QUALIFICACAO: 'bg-sky-500/10 text-sky-400',
-  PROPOSTA: 'bg-amber-500/10 text-amber-400',
-  NEGOCIACAO: 'bg-orange-500/10 text-orange-400',
-  FECHAMENTO: 'bg-violet-500/10 text-violet-400',
-  GANHO: 'bg-emerald-500/10 text-emerald-400',
-  PERDIDO: 'bg-red-500/10 text-red-400',
+  PROSPECCAO: NEUTRO,
+  QUALIFICACAO: ACCENT,
+  PROPOSTA: WARN,
+  NEGOCIACAO: ALERT,
+  FECHAMENTO: ACCENT,
+  GANHO: POS,
+  PERDIDO: NEG,
 }
 
 export const CLIENTE_STATUS_COLORS: Record<string, string> = {
-  ATIVO: 'bg-emerald-500/10 text-emerald-400',
-  INATIVO: 'bg-gray-500/10 text-gray-400',
-  PROSPECCAO: 'bg-sky-500/10 text-sky-400',
-  ENCERRADO: 'bg-red-500/10 text-red-400',
+  ATIVO: POS,
+  INATIVO: NEUTRO,
+  PROSPECCAO: ACCENT,
+  ENCERRADO: NEG,
 }
 
+/* Modelo operacional e segmento são CATEGORIA, não estado: tom neutro. */
 export const MODELO_OPERACIONAL_COLORS: Record<string, string> = {
-  API: 'bg-sky-500/10 text-sky-400',
-  WHITE_LABEL: 'bg-violet-500/10 text-violet-400',
+  API: NEUTRO,
+  WHITE_LABEL: NEUTRO,
 }
 
 export const SEGMENTO_COLORS: Record<string, string> = {
-  IGAMING: 'bg-purple-500/10 text-purple-400',
-  ECOMMERCE: 'bg-sky-500/10 text-sky-400',
-  SAAS: 'bg-emerald-500/10 text-emerald-400',
-  ERP: 'bg-blue-500/10 text-blue-400',
-  TELECOM: 'bg-cyan-500/10 text-cyan-400',
-  CRIPTOMOEDAS: 'bg-amber-500/10 text-amber-400',
-  VAREJO: 'bg-orange-500/10 text-orange-400',
-  OUTROS: 'bg-gray-500/10 text-gray-400',
+  IGAMING: NEUTRO,
+  ECOMMERCE: NEUTRO,
+  SAAS: NEUTRO,
+  ERP: NEUTRO,
+  TELECOM: NEUTRO,
+  CRIPTOMOEDAS: NEUTRO,
+  VAREJO: NEUTRO,
+  OUTROS: NEUTRO,
 }
 
 export const SCORE_RISCO_COLORS: Record<string, string> = {
-  BAIXO: 'bg-emerald-500/10 text-emerald-400',
-  MEDIO: 'bg-amber-500/10 text-amber-400',
-  ALTO: 'bg-orange-500/10 text-orange-400',
-  CRITICO: 'bg-red-500/10 text-red-400',
+  BAIXO: POS,
+  MEDIO: WARN,
+  ALTO: ALERT,
+  CRITICO: NEG,
 }
 
 export const TAREFA_STATUS_COLORS: Record<string, string> = {
-  PENDENTE: 'bg-amber-500/10 text-amber-400',
-  EM_ANDAMENTO: 'bg-sky-500/10 text-sky-400',
-  CONCLUIDA: 'bg-emerald-500/10 text-emerald-400',
-  CANCELADA: 'bg-gray-500/10 text-gray-400',
+  PENDENTE: WARN,
+  EM_ANDAMENTO: ACCENT,
+  CONCLUIDA: POS,
+  CANCELADA: NEUTRO,
 }
 
 export const TAREFA_PRIORIDADE_COLORS: Record<string, string> = {
-  BAIXA: 'bg-gray-500/10 text-gray-400',
-  MEDIA: 'bg-sky-500/10 text-sky-400',
-  ALTA: 'bg-amber-500/10 text-amber-400',
-  CRITICA: 'bg-red-500/10 text-red-400',
+  BAIXA: NEUTRO,
+  MEDIA: ACCENT,
+  ALTA: WARN,
+  CRITICA: NEG,
 }
 
 export const INCIDENTE_CRITICIDADE_COLORS: Record<string, string> = {
-  BAIXA: 'bg-emerald-500/10 text-emerald-400',
-  MEDIA: 'bg-amber-500/10 text-amber-400',
-  ALTA: 'bg-orange-500/10 text-orange-400',
-  CRITICA: 'bg-red-500/10 text-red-400',
+  BAIXA: POS,
+  MEDIA: WARN,
+  ALTA: ALERT,
+  CRITICA: NEG,
 }
 
 export const PEDIDO_STATUS_COLORS: Record<string, string> = {
-  PENDENTE: 'bg-amber-500/10 text-amber-400',
-  FATURADO: 'bg-sky-500/10 text-sky-400',
-  PAGO: 'bg-emerald-500/10 text-emerald-400',
-  CANCELADO: 'bg-red-500/10 text-red-400',
+  PENDENTE: WARN,
+  FATURADO: ACCENT,
+  PAGO: POS,
+  CANCELADO: NEG,
 }

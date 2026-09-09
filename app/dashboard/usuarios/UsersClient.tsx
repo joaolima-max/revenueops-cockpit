@@ -16,9 +16,9 @@ interface User {
 const ROLES = ['ADMIN', 'OPERACIONAL', 'COMERCIAL']
 
 const ROLE_BADGE: Record<string, string> = {
-  ADMIN: 'bg-red-500/10 text-red-400 border border-red-500/20',
-  OPERACIONAL: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
-  COMERCIAL: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+  ADMIN: 'bg-neg/10 text-neg border border-neg/20',
+  OPERACIONAL: 'bg-accent/10 text-accent-soft border border-accent/20',
+  COMERCIAL: 'bg-pos/10 text-pos border border-pos/20',
 }
 
 // Permissions data inlined for client component use
@@ -211,57 +211,55 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
   }
 
   return (
-    <div className="p-8 bg-gray-950 min-h-screen">
+    <div className="p-8 bg-ink min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Usuários</h1>
-          <p className="text-gray-400 text-sm mt-1">{users.length} usuário(s) cadastrado(s)</p>
+          <h1 className="t-h1 text-fg">Usuários</h1>
+          <p className="text-muted text-sm mt-1">{users.length} usuário(s) cadastrado(s)</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90"
-          style={{ background: '#2F6BFF' }}
+          className="bp-btn-primary px-4 py-2 rounded-lg text-sm font-medium"
         >
           + Novo Usuário
         </button>
       </div>
 
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+      <div className="bg-surface rounded-xl border border-line overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full min-w-[44rem]">
-          <thead className="border-b border-gray-800">
+          <thead className="border-b border-line">
             <tr>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Nome</th>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Email</th>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Perfil</th>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Status</th>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Criado</th>
-              <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Ações</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Nome</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Email</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Perfil</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Status</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Criado</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800">
+          <tbody className="divide-y divide-line">
             {users.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-800/40 transition-colors">
+              <tr key={user.id} className="hover:bg-[var(--bp-hover)] transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ background: '#2F6BFF' }}
+                      className="bg-accent text-on-accent w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                     >
-                      <span className="text-white text-xs font-bold">
+                      <span className="text-fg text-xs font-bold">
                         {user.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <p className="text-sm font-medium text-white">{user.name}</p>
+                    <p className="text-sm font-medium text-fg">{user.name}</p>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-400">{user.email}</td>
+                <td className="px-4 py-3 text-sm text-muted">{user.email}</td>
                 <td className="px-4 py-3">
                   {editingId === user.id ? (
                     <div className="flex items-center gap-2">
                       <select
                         value={editForm.role}
                         onChange={(e) => setEditForm({ role: e.target.value })}
-                        className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                        className="bp-field text-xs"
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -269,19 +267,19 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       </select>
                       <button
                         onClick={() => handleEditRole(user.id)}
-                        className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
+                        className="text-xs text-pos hover:text-pos font-medium"
                       >
                         OK
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="text-xs text-gray-500 hover:text-gray-300"
+                        className="text-xs text-subtle hover:text-muted"
                       >
                         ✕
                       </button>
                     </div>
                   ) : (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_BADGE[user.role] ?? 'bg-gray-500/10 text-gray-400'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_BADGE[user.role] ?? 'bg-[var(--bp-hover)] text-muted'}`}>
                       {ROLE_LABELS[user.role]}
                     </span>
                   )}
@@ -289,19 +287,19 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     user.active
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      : 'bg-gray-500/10 text-gray-500 border border-gray-700'
+                      ? 'bg-pos/10 text-pos border border-pos/20'
+                      : 'bg-[var(--bp-hover)] text-subtle border border-line-2'
                   }`}>
                     {user.active ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-500">{formatDate(user.createdAt)}</td>
+                <td className="px-4 py-3 text-sm text-subtle">{formatDate(user.createdAt)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => openEdit(user)}
                       title="Editar perfil"
-                      className="text-xs text-gray-500 hover:text-blue-400 transition-colors"
+                      className="text-xs text-subtle hover:text-accent-soft transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -310,7 +308,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                     <button
                       onClick={() => openPermModal(user)}
                       title="Configurar permissões"
-                      className="text-xs text-gray-500 hover:text-violet-400 transition-colors"
+                      className="text-xs text-subtle hover:text-accent-soft transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
@@ -319,7 +317,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                     <button
                       onClick={() => handleToggleActive(user)}
                       title={user.active ? 'Desativar usuário' : 'Ativar usuário'}
-                      className={`text-xs transition-colors ${user.active ? 'text-gray-500 hover:text-red-400' : 'text-gray-500 hover:text-accent-soft'}`}
+                      className={`text-xs transition-colors ${user.active ? 'text-subtle hover:text-neg' : 'text-subtle hover:text-accent-soft'}`}
                     >
                       {user.active ? (
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -341,40 +339,40 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
 
       {/* Create User Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
-            <div className="p-6 border-b border-gray-800">
-              <h2 className="text-lg font-semibold text-white">Novo Usuário</h2>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface border border-line-2 rounded-xl w-full max-w-md shadow-2xl">
+            <div className="p-6 border-b border-line">
+              <h2 className="t-h2 text-fg">Novo Usuário</h2>
             </div>
             <form onSubmit={handleCreate} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Nome *</label>
+                <label className="bp-field-label">Nome *</label>
                 <input
                   type="text"
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                  className="bp-field w-full t-body disabled:opacity-40"
                   placeholder="Nome completo"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Email *</label>
+                <label className="bp-field-label">Email *</label>
                 <input
                   type="email"
                   required
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                  className="bp-field w-full t-body disabled:opacity-40"
                   placeholder="email@exemplo.com"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Perfil</label>
+                <label className="bp-field-label">Perfil</label>
                 <select
                   value={form.role}
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                  className="bp-field w-full t-body disabled:opacity-40"
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -382,30 +380,29 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Senha <span className="text-gray-500 font-normal">(padrão: Revenue@2025)</span>
+                <label className="bp-field-label">
+                  Senha <span className="text-subtle font-normal">(padrão: Revenue@2025)</span>
                 </label>
                 <input
                   type="password"
                   placeholder="Revenue@2025"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                  className="bp-field w-full t-body disabled:opacity-40"
                 />
               </div>
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => { setShowModal(false); setForm({ name: '', email: '', role: 'COMERCIAL', password: '' }) }}
-                  className="flex-1 px-4 py-2 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 rounded-lg text-sm transition-colors"
+                  className="flex-1 px-4 py-2 border border-line-2 text-muted hover:text-fg hover:border-line-2 rounded-lg text-sm transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ background: '#2F6BFF' }}
+                  className="bp-btn-primary flex-1 px-4 py-2 rounded-lg text-sm font-medium"
                 >
                   {loading ? 'Criando...' : 'Criar Usuário'}
                 </button>
@@ -417,16 +414,16 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
 
       {/* Permissions Modal */}
       {permModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface border border-line-2 rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-line flex items-center justify-between flex-shrink-0">
               <div>
-                <h2 className="text-lg font-semibold text-white">Permissões</h2>
-                <p className="text-sm text-gray-400 mt-0.5">{permModal.userName}</p>
+                <h2 className="t-h2 text-fg">Permissões</h2>
+                <p className="text-sm text-muted mt-0.5">{permModal.userName}</p>
               </div>
               <button
                 onClick={closePermModal}
-                className="text-gray-500 hover:text-gray-300 transition-colors"
+                className="text-subtle hover:text-muted transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -436,11 +433,11 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
 
             <div className="overflow-y-auto flex-1 p-6 space-y-6">
               {permModal.role === 'ADMIN' && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-                  <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="flex items-center gap-2 px-3 py-2 bg-neg/10 border border-neg/20 rounded-lg">
+                  <svg className="w-4 h-4 text-neg flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <p className="text-xs text-red-400">Administradores têm todas as permissões por padrão, independente das configurações abaixo.</p>
+                  <p className="text-xs text-neg">Administradores têm todas as permissões por padrão, independente das configurações abaixo.</p>
                 </div>
               )}
 
@@ -458,21 +455,21 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                         onClick={() => toggleGroup(group)}
                         className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                           allChecked
-                            ? 'bg-violet-500 border-violet-500'
+                            ? 'bg-accent border-accent'
                             : someChecked
-                            ? 'bg-violet-500/40 border-violet-500/60'
-                            : 'bg-transparent border-gray-600 hover:border-gray-400'
+                            ? 'bg-accent/40 border-accent/60'
+                            : 'bg-transparent border-line-2 hover:border-line-2'
                         }`}
                       >
                         {(allChecked || someChecked) && (
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-2.5 h-2.5 text-fg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d={allChecked ? "M5 13l4 4L19 7" : "M20 12H4"} />
                           </svg>
                         )}
                       </button>
-                      <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">{group}</span>
+                      <span className="text-xs font-semibold text-muted uppercase tracking-wider">{group}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 ml-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 ml-6">
                       {groupPerms.map(perm => (
                         <label
                           key={perm.key}
@@ -482,19 +479,19 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                             onClick={() => togglePerm(perm.key)}
                             className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer ${
                               permChecked.includes(perm.key)
-                                ? 'bg-violet-500 border-violet-500'
-                                : 'bg-transparent border-gray-600 group-hover:border-gray-400'
+                                ? 'bg-accent border-accent'
+                                : 'bg-transparent border-line-2 group-hover:border-line-2'
                             }`}
                           >
                             {permChecked.includes(perm.key) && (
-                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <svg className="w-2.5 h-2.5 text-fg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                               </svg>
                             )}
                           </div>
                           <span
                             onClick={() => togglePerm(perm.key)}
-                            className="text-sm text-gray-300 group-hover:text-white transition-colors select-none"
+                            className="text-sm text-muted group-hover:text-fg transition-colors select-none"
                           >
                             {perm.label}
                           </span>
@@ -506,10 +503,10 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               })}
             </div>
 
-            <div className="p-6 border-t border-gray-800 flex items-center justify-between flex-shrink-0">
+            <div className="p-6 border-t border-line flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {permSaved && (
-                  <span className="flex items-center gap-1.5 text-sm text-emerald-400">
+                  <span className="flex items-center gap-1.5 text-sm text-pos">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
@@ -521,7 +518,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 <button
                   type="button"
                   onClick={closePermModal}
-                  className="px-4 py-2 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 border border-line-2 text-muted hover:text-fg hover:border-line-2 rounded-lg text-sm transition-colors"
                 >
                   Fechar
                 </button>
@@ -529,8 +526,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   type="button"
                   onClick={handleSavePermissions}
                   disabled={permLoading}
-                  className="px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ background: '#2F6BFF' }}
+                  className="bp-btn-primary px-4 py-2 rounded-lg text-sm font-medium"
                 >
                   {permLoading ? 'Salvando...' : 'Salvar Permissões'}
                 </button>

@@ -203,8 +203,8 @@ export default function CarteiraClient({ role }: { role: string }) {
   const mrr = clientes.filter(c => c.status === 'ATIVO').reduce((s, c) => s + (c.mensalidadeApi || 0) + (c.sustentacaoWhiteLabel || 0), 0)
   const ativos = clientes.filter(c => c.status === 'ATIVO').length
 
-  const input = 'w-full bg-surface-2 border border-line text-fg t-body rounded-lg px-3.5 py-2.5 transition-colors duration-[180ms] focus:outline-none focus:border-accent'
-  const lbl = 'block t-label text-subtle mb-1.5'
+  const input = 'bp-field'
+  const lbl = 'bp-field-label'
 
   const allOperacoes = [...OPERACOES, ...customOperacoes]
   const allSegmentos = [...SEGMENTOS, ...customSegmentos]
@@ -220,7 +220,7 @@ export default function CarteiraClient({ role }: { role: string }) {
   const STATUS_TONE: Record<string, BadgeTone> = {
     ATIVO: 'pos', PROSPECCAO: 'accent', INATIVO: 'neutral', ENCERRADO: 'neutral',
   }
-  const filtro = 'bg-surface-2 border border-line text-muted rounded-lg px-3.5 py-2.5 t-body transition-colors duration-[180ms] focus:outline-none focus:border-accent'
+  const filtro = 'bp-field w-auto'
 
   return (
     <div className="space-y-8">
@@ -236,7 +236,7 @@ export default function CarteiraClient({ role }: { role: string }) {
           <input
             type="text" placeholder="Buscar cliente…" value={search}
             onChange={e => setSearch(e.target.value)}
-            className={`${filtro} text-fg flex-1 min-w-[12rem]`}
+            className={`${filtro} flex-1 min-w-[12rem]`}
           />
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={filtro}>
             <option value="">Todos os status</option>
@@ -258,7 +258,7 @@ export default function CarteiraClient({ role }: { role: string }) {
         <Table>
           <THead>
             <HeadRow>
-              <Th className="pl-5">Cliente</Th>
+              <Th>Cliente</Th>
               <Th>Segmento</Th>
               <Th>Modelo</Th>
               <Th>Score</Th>
@@ -304,14 +304,14 @@ export default function CarteiraClient({ role }: { role: string }) {
       </TableShell>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && resetModal()}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Novo Cliente</h2>
-              <button onClick={resetModal} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && resetModal()}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Novo Cliente</h2>
+              <button onClick={resetModal} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleCreate} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2"><label className={lbl}>Nome *</label><input required value={form.nome} onChange={f('nome')} className={input} /></div>
                 <div><label className={lbl}>CNPJ</label><input value={form.cnpj} onChange={f('cnpj')} placeholder="00.000.000/0001-00" className={input} /></div>
                 <div><label className={lbl}>Modelo Operacional *</label>
@@ -342,14 +342,13 @@ export default function CarteiraClient({ role }: { role: string }) {
                         onChange={e => setNewSegInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSeg())}
                         placeholder="Nome do segmento..."
-                        className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+                        className="bp-field flex-1 text-sm"
                       />
                       <button
                         type="button"
                         onClick={handleAddCustomSeg}
                         disabled={!newSegInput.trim()}
-                        className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
-                        style={{ background: '#2F6BFF' }}
+                        className="bp-btn-primary px-3 py-1.5 text-sm rounded-lg"
                       >
                         OK
                       </button>
@@ -392,14 +391,14 @@ export default function CarteiraClient({ role }: { role: string }) {
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                           checked
                             ? 'bg-accent/15 border-accent/40 text-accent-soft'
-                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                            : 'bg-surface-2 border-line-2 text-muted hover:border-line-2'
                         }`}
                       >
                         <span className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
-                          checked ? 'bg-accent border-accent' : 'border-gray-600'
+                          checked ? 'bg-accent border-accent' : 'border-line-2'
                         }`}>
                           {checked && (
-                            <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 10 10">
+                            <svg className="w-2 h-2 text-fg" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 10 10">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 5l2.5 2.5 4.5-4" />
                             </svg>
                           )}
@@ -416,14 +415,13 @@ export default function CarteiraClient({ role }: { role: string }) {
                       onChange={e => setNewOpInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomOp())}
                       placeholder="Nome da operação..."
-                      className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent"
+                      className="bp-field flex-1 text-sm"
                     />
                     <button
                       type="button"
                       onClick={handleAddCustomOp}
                       disabled={!newOpInput.trim()}
-                      className="px-3 py-1.5 text-sm text-white rounded-lg disabled:opacity-40"
-                      style={{ background: '#2F6BFF' }}
+                      className="bp-btn-primary px-3 py-1.5 text-sm rounded-lg"
                     >
                       OK
                     </button>
@@ -431,9 +429,9 @@ export default function CarteiraClient({ role }: { role: string }) {
                 )}
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-xs text-gray-600 font-semibold tracking-wider mb-3">FINANCEIRO</p>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="border-t border-line pt-4">
+                <p className="text-xs text-subtle font-semibold tracking-wider mb-3">FINANCEIRO</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className={lbl}>Mensalidade API (R$)</label><input type="number" step="0.01" value={form.mensalidadeApi} onChange={f('mensalidadeApi')} className={input} /></div>
                   <div><label className={lbl}>Sustentação White Label (R$)</label><input type="number" step="0.01" value={form.sustentacaoWhiteLabel} onChange={f('sustentacaoWhiteLabel')} className={input} /></div>
                   <div><label className={lbl}>Setup (R$)</label><input type="number" step="0.01" value={form.setup} onChange={f('setup')} className={input} /></div>
@@ -450,10 +448,9 @@ export default function CarteiraClient({ role }: { role: string }) {
               <div><label className={lbl}>Notas</label><textarea rows={2} value={form.notas} onChange={f('notas')} className={input + ' resize-none'} /></div>
 
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={resetModal} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="button" onClick={resetModal} className="px-4 py-2 text-subtle border border-line-2 hover:border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving}
-                  className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
-                  style={{ background: '#2F6BFF' }}>
+                  className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg transition-all">
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

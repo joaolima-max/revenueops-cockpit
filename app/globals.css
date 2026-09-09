@@ -1,57 +1,132 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   BASS PAGO REVOPS — CAMADA DE TOKENS
-   Derivada do design system do site institucional (basspago-site).
-   O Cockpit é o modo escuro da marca: usa os mesmos tokens on-dark
-   (--d-line, --d-muted, --d-subtle) e o mesmo accent (#2F6BFF).
-   Nenhuma cor nova é inventada aqui.
+   BASS PAGO REVOPS — DESIGN SYSTEM
+   Derivado do site institucional. Dois temas, um só sistema: os utilitários
+   apontam para var(--color-*), então trocar o tema é redefinir as variáveis
+   em [data-theme] — nenhuma classe condicional espalhada pelas telas.
    ========================================================================== */
 
 @theme {
-  /* superfícies */
-  --color-ink: #050608;
-  --color-surface: #0b0d10;
-  --color-surface-2: #12151a;
+  /* Valores DARK: são o default do produto e o que o Tailwind emite em :root.
+     O tema claro sobrescreve estas mesmas variáveis mais abaixo. */
+  --color-ink: #050608;          /* fundo da página */
+  --color-surface: #0b0d10;      /* painéis, células, sidebar */
+  --color-surface-2: #12151a;    /* hover, inputs, trilhos */
 
-  /* fios e texto on-dark */
   --color-line: rgba(255, 255, 255, 0.10);
   --color-line-2: rgba(255, 255, 255, 0.16);
+
   --color-fg: #ffffff;
   --color-muted: rgba(255, 255, 255, 0.56);
   --color-subtle: rgba(255, 255, 255, 0.36);
 
-  /* signal — accent único da marca */
   --color-accent: #2f6bff;
-  --color-accent-soft: #6b8cff;
-  --color-accent-dark: #1747c7;
+  --color-accent-soft: #6b8cff;  /* ênfase sobre fundo escuro */
+  --color-accent-dark: #1747c7;  /* hover de superfície accent */
 
-  /* semântica — só para status de dado, nunca decorativo */
-  --color-pos: #07cf22;
-  --color-warn: #e0a62b;
-  --color-neg: #ff7a80;
+  /* Semântica de estado. Três níveis de severidade porque o produto precisa
+     distinguir "atenção" de "risco alto" de "crítico" — colapsar os três em
+     uma cor só apagaria informação que já existe nos dados. */
+  --color-pos: #22d049;
+  --color-warn: #e0a62b;   /* atenção */
+  --color-alert: #ff8f3c;  /* risco alto */
+  --color-neg: #ff7a80;    /* crítico / negativo */
 
-  --font-sans: var(--font-onest), system-ui, -apple-system, sans-serif;
+  /* Texto sobre superfície accent preenchida. Branco nos DOIS temas: o azul
+     da marca não muda entre eles, então o texto por cima também não pode. */
+  --color-on-accent: #ffffff;
+
+  --font-display: var(--font-inter-tight), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --ease-bp: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* --------------------------------------------------------------------------
+   TOKENS DERIVADOS — DARK
+   -------------------------------------------------------------------------- */
 :root {
-  /* largura do conteúdo — --shell do site institucional */
+  color-scheme: dark;
+
   --bp-shell: 88rem;
-  --bp-accent-wash: rgba(47, 107, 255, 0.09);
   --bp-t-fast: 180ms;
   --bp-t-med: 380ms;
   --bp-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --bp-shadow-hover: 0 1.5rem 3rem -1.5rem rgba(5, 6, 8, 0.55);
-  --bp-shadow-overlay: 0 3rem 6rem -2rem rgba(5, 6, 8, 0.6);
-  color-scheme: dark;
+
+  --bp-accent-wash: rgba(47, 107, 255, 0.10);
+  --bp-hover: rgba(255, 255, 255, 0.04);
+  --bp-selected: rgba(47, 107, 255, 0.12);
+  --bp-disabled: 0.38;
+
+  --bp-shadow-sm: 0 0.5rem 1.25rem -0.75rem rgba(0, 0, 0, 0.6);
+  --bp-shadow-hover: 0 1.5rem 3rem -1.5rem rgba(0, 0, 0, 0.65);
+  --bp-shadow-overlay: 0 3rem 6rem -2rem rgba(0, 0, 0, 0.75);
+
+  /* Gráficos: uma só linguagem, resolvida por tema. */
+  --bp-chart-grid: rgba(255, 255, 255, 0.055);
+  --bp-chart-axis: rgba(255, 255, 255, 0.34);
+  --bp-chart-1: #2f6bff;   /* série atual */
+  --bp-chart-2: #6b8cff;   /* série secundária */
+  --bp-chart-3: rgba(255, 255, 255, 0.22); /* período anterior / referência */
+  --bp-chart-tip-bg: #0b0d10;
+  --bp-chart-cursor: rgba(255, 255, 255, 0.05);
+}
+
+/* --------------------------------------------------------------------------
+   TOKENS DERIVADOS — LIGHT
+   Off-white na página, branco puro nas superfícies: o painel "levanta" sem
+   precisar de sombra, do mesmo jeito que o site institucional resolve.
+   -------------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-ink: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f3f6;
+
+  --color-line: #e4e7ec;
+  --color-line-2: #cbd1da;
+
+  --color-fg: #0b0d10;
+  --color-muted: #5c626b;
+  --color-subtle: #878d96;
+
+  --color-accent: #2f6bff;
+  /* No claro a ênfase precisa ESCURECER, não clarear. */
+  --color-accent-soft: #1b4fd8;
+  --color-accent-dark: #1747c7;
+
+  /* No claro a semântica precisa ESCURECER para manter contraste sobre branco. */
+  --color-pos: #0e9f2a;
+  --color-warn: #a9750a;
+  --color-alert: #c2560c;
+  --color-neg: #d0323f;
+
+  --color-on-accent: #ffffff;
+
+  --bp-accent-wash: rgba(47, 107, 255, 0.07);
+  --bp-hover: rgba(11, 13, 16, 0.035);
+  --bp-selected: rgba(47, 107, 255, 0.09);
+
+  --bp-shadow-sm: 0 0.5rem 1.25rem -0.75rem rgba(11, 13, 16, 0.14);
+  --bp-shadow-hover: 0 1.5rem 3rem -1.5rem rgba(11, 13, 16, 0.18);
+  --bp-shadow-overlay: 0 3rem 6rem -2rem rgba(11, 13, 16, 0.28);
+
+  --bp-chart-grid: rgba(11, 13, 16, 0.07);
+  --bp-chart-axis: rgba(11, 13, 16, 0.42);
+  --bp-chart-1: #2f6bff;
+  --bp-chart-2: #7c9bff;
+  --bp-chart-3: rgba(11, 13, 16, 0.20);
+  --bp-chart-tip-bg: #ffffff;
+  --bp-chart-cursor: rgba(11, 13, 16, 0.04);
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--color-ink);
 }
 
 body {
@@ -59,57 +134,151 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   line-height: 1.5;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.006em;
 }
 
-/* Títulos herdam o tracking negativo do site (-.028em) */
+/* A troca de tema é instantânea, mas não brusca: só cor transiciona. */
+html.bp-theme-ready body,
+html.bp-theme-ready aside,
+html.bp-theme-ready header,
+html.bp-theme-ready table {
+  transition: background-color 220ms var(--bp-ease), color 220ms var(--bp-ease),
+              border-color 220ms var(--bp-ease);
+}
+
 h1, h2, h3, h4 {
+  font-family: var(--font-display);
   font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.028em;
+  line-height: 1.12;
+  letter-spacing: -0.022em;
   text-wrap: balance;
 }
 
-/* Todo número é tabular por padrão dentro de dados */
 table, .tnum { font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------------------
-   ESCALA TIPOGRÁFICA — fixa em px. Não replicamos o html{font-size:vw}
-   fluido do site: em UI densa de dados isso quebra tabelas.
+   ESCALA TIPOGRÁFICA — Inter Tight (display) + Inter (interface)
    -------------------------------------------------------------------------- */
 @layer components {
   .t-hero {
+    font-family: var(--font-display);
     font-size: 3rem; font-weight: 600; line-height: 1;
-    letter-spacing: -0.035em; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.032em;
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
   }
   .t-figure {
-    font-size: 1.75rem; font-weight: 600; line-height: 1;
-    letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+    font-family: var(--font-display);
+    font-size: 1.75rem; font-weight: 600; line-height: 1.05;
+    letter-spacing: -0.022em;
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
   }
-  .t-h1 { font-size: 1.5rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.028em; }
-  .t-h2 { font-size: 1.0625rem; font-weight: 600; line-height: 1.28; letter-spacing: -0.015em; }
-  .t-body { font-size: 0.9375rem; line-height: 1.6; letter-spacing: -0.005em; }
-  .t-sm { font-size: 0.8125rem; line-height: 1.5; letter-spacing: -0.005em; }
+  .t-figure-sm {
+    font-family: var(--font-display);
+    font-size: 1.25rem; font-weight: 600; line-height: 1.1;
+    letter-spacing: -0.018em;
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+  }
+  .t-h1 {
+    font-family: var(--font-display);
+    font-size: 1.5rem; font-weight: 600; line-height: 1.14; letter-spacing: -0.024em;
+  }
+  .t-h2 {
+    font-family: var(--font-display);
+    font-size: 1.0625rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.014em;
+  }
+  .t-h3 {
+    font-family: var(--font-display);
+    font-size: 0.9375rem; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em;
+  }
+
+  .t-body { font-size: 0.9375rem; line-height: 1.6; letter-spacing: -0.006em; }
+  .t-sm   { font-size: 0.8125rem; line-height: 1.5; letter-spacing: -0.002em; }
+
   .t-label {
     font-size: 0.6875rem; font-weight: 500; line-height: 1.3;
-    text-transform: uppercase; letter-spacing: 0.14em;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    font-variant-numeric: tabular-nums;
   }
   .t-mono {
     font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500;
-    letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em; font-variant-numeric: tabular-nums;
+  }
+  .t-num {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.012em;
   }
 
-  /* Régua que cresce no hover — .pillar__bar do site.
-     Única microinteração decorativa permitida. */
   .bp-rule {
-    height: 2px; width: 1.75rem; background: var(--color-line);
+    height: 2px; width: 1.75rem; background: var(--color-line-2);
     transition: width var(--bp-t-med) var(--bp-ease), background-color var(--bp-t-med) ease;
   }
   .group:hover .bp-rule { width: 3.5rem; background: var(--color-accent); }
+
+  /* Truncamento com reticências que ainda entrega o valor no title. */
+  .bp-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ------------------------------------------------------------------------
+     CONTROLES DE FORMULÁRIO
+     Um só contrato para input, select, textarea e filtro. Antes cada tela
+     repetia a mesma pilha de classes com valores ligeiramente diferentes —
+     e nenhuma delas respondia ao tema.
+     ------------------------------------------------------------------------ */
+  .bp-field {
+    width: 100%;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--color-fg);
+    transition: border-color var(--bp-t-fast) var(--bp-ease),
+                background-color var(--bp-t-fast) var(--bp-ease),
+                box-shadow var(--bp-t-fast) var(--bp-ease);
+  }
+  .bp-field:hover:not(:disabled):not(:focus) { border-color: var(--color-line-2); }
+  .bp-field:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--bp-accent-wash);
+  }
+  .bp-field::placeholder { color: var(--color-subtle); }
+  .bp-field:disabled { opacity: var(--bp-disabled); cursor: not-allowed; }
+  /* Somente-leitura não é desabilitado: o valor precisa continuar legível,
+     só não editável. Fundo rebaixado e cursor avisam, o contraste fica. */
+  .bp-field[readonly] {
+    background: var(--color-ink);
+    color: var(--color-muted);
+    cursor: not-allowed;
+  }
+  .bp-field[readonly]:focus { border-color: var(--color-line-2); box-shadow: none; }
+  .bp-field[type="number"], .bp-field.tnum { font-variant-numeric: tabular-nums; }
+  textarea.bp-field { resize: vertical; min-height: 4.5rem; }
+
+  /* Rótulo de campo — mesma régua do t-label, sem repetir a classe. */
+  .bp-field-label {
+    display: block;
+    font-size: 0.6875rem; font-weight: 500; line-height: 1.3;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--color-subtle);
+    margin-bottom: 0.375rem;
+  }
+
+  /* Botão preenchido de accent. O texto vem de --color-on-accent, nunca de
+     --color-fg: no tema claro o fg é quase preto e sumiria sobre o azul. */
+  .bp-btn-primary {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+    transition: background-color var(--bp-t-fast) var(--bp-ease), opacity var(--bp-t-fast) var(--bp-ease);
+  }
+  .bp-btn-primary:hover:not(:disabled) { background: var(--color-accent-dark); }
+  .bp-btn-primary:disabled { opacity: var(--bp-disabled); cursor: not-allowed; }
 }
 
 /* --------------------------------------------------------------------------
-   FOCO — não existia no app. Navegação por teclado agora é visível.
+   ESTADOS GLOBAIS
    -------------------------------------------------------------------------- */
 :focus-visible {
   outline: 2px solid var(--color-accent);
@@ -118,20 +287,39 @@ table, .tnum { font-variant-numeric: tabular-nums; }
 }
 :focus:not(:focus-visible) { outline: none; }
 
-/* Scrollbar discreta, coerente com os fios */
-* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+[disabled], [aria-disabled="true"] { opacity: var(--bp-disabled); cursor: not-allowed; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12); border-radius: 9999px;
+  background: var(--color-line-2); border-radius: 9999px;
   border: 3px solid transparent; background-clip: content-box;
 }
-*::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: content-box; }
 
-/* Campos de formulário herdam a marca sem precisar de classe */
 input, select, textarea, button { font-family: inherit; letter-spacing: inherit; }
 input::placeholder, textarea::placeholder { color: var(--color-subtle); }
-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.45); cursor: pointer; }
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer; opacity: 0.55;
+}
+:root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Skeleton de carregamento — a forma do conteúdo, não um spinner solto. */
+.bp-skeleton {
+  background: linear-gradient(90deg,
+    var(--color-surface-2) 0%,
+    color-mix(in srgb, var(--color-surface-2) 60%, var(--color-line)) 50%,
+    var(--color-surface-2) 100%);
+  background-size: 200% 100%;
+  animation: bp-shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+@keyframes bp-shimmer {
+  0% { background-position: 200% 0 }
+  100% { background-position: -200% 0 }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -140,4 +328,9 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacit
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+@media print {
+  :root { color-scheme: light }
+  body { background: #fff; color: #000 }
 }

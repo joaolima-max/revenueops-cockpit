@@ -68,14 +68,13 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-white">Incidentes Operacionais</h1>
-          <p className="text-gray-600 text-sm mt-0.5">Registro de ocorrências e impactos</p>
+          <h1 className="t-h1 text-fg">Incidentes Operacionais</h1>
+          <p className="text-subtle text-sm mt-0.5">Registro de ocorrências e impactos</p>
         </div>
         {canEdit && (
           <button
             onClick={() => setModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-            style={{ background: '#2F6BFF' }}
+            className="bp-btn-primary flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           >
             + Novo Incidente
           </button>
@@ -83,9 +82,9 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
       </div>
 
       {abertos > 0 && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3">
-          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-          <p className="text-red-400 text-sm font-medium">{abertos} incidente{abertos !== 1 ? 's' : ''} em aberto</p>
+        <div className="bg-neg/10 border border-neg/20 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-2 h-2 bg-neg rounded-full animate-pulse" />
+          <p className="text-neg text-sm font-medium">{abertos} incidente{abertos !== 1 ? 's' : ''} em aberto</p>
         </div>
       )}
 
@@ -97,20 +96,20 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
             : null
 
           return (
-            <div key={inc.id} className={`bg-gray-900 border rounded-xl p-5 ${isAberto ? 'border-red-500/20' : 'border-gray-800'}`}>
+            <div key={inc.id} className={`bg-surface border rounded-xl p-5 ${isAberto ? 'border-neg/20' : 'border-line'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    {isAberto && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                    {isAberto && <div className="w-2 h-2 bg-neg rounded-full animate-pulse" />}
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${INCIDENTE_CRITICIDADE_COLORS[inc.criticidade]}`}>
                       {INCIDENTE_CRITICIDADE_LABELS[inc.criticidade]}
                     </span>
-                    {isAberto && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Em Aberto</span>}
-                    {!isAberto && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">Resolvido</span>}
+                    {isAberto && <span className="text-xs px-2 py-0.5 rounded-full bg-neg/10 text-neg font-medium">Em Aberto</span>}
+                    {!isAberto && <span className="text-xs px-2 py-0.5 rounded-full bg-pos/10 text-pos font-medium">Resolvido</span>}
                   </div>
-                  <p className="text-white font-medium text-sm">{inc.titulo}</p>
-                  {inc.descricao && <p className="text-gray-500 text-xs mt-0.5">{inc.descricao}</p>}
-                  <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-600">
+                  <p className="text-fg font-medium text-sm">{inc.titulo}</p>
+                  {inc.descricao && <p className="text-subtle text-xs mt-0.5">{inc.descricao}</p>}
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-subtle">
                     <span>Início: {formatDate(inc.inicio)}</span>
                     {inc.fim && <span>Fim: {formatDate(inc.fim)}</span>}
                     {duration && <span>Duração: {duration} min</span>}
@@ -120,7 +119,7 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
                 {canEdit && isAberto && (
                   <button
                     onClick={() => fecharIncidente(inc.id)}
-                    className="text-xs px-3 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500/20 flex-shrink-0"
+                    className="text-xs px-3 py-1.5 bg-pos/10 text-pos rounded-lg hover:bg-pos/20 flex-shrink-0"
                   >
                     Fechar
                   </button>
@@ -130,56 +129,55 @@ export default function IncidentesClient({ initial, canEdit }: Props) {
           )
         })}
         {incidentes.length === 0 && (
-          <div className="text-center py-12 text-gray-600">Nenhum incidente registrado</div>
+          <div className="text-center py-12 text-subtle">Nenhum incidente registrado</div>
         )}
       </div>
 
       {modal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-base font-bold text-white">Registrar Incidente</h2>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface border border-line-2 rounded-2xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="t-h2 text-fg">Registrar Incidente</h2>
             <div className="space-y-3">
               <input value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
                 placeholder="Título do incidente *"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
+                className="bp-field w-full t-body disabled:opacity-40" />
               <textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
                 placeholder="Descrição" rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent resize-none" />
-              <div className="grid grid-cols-2 gap-3">
+                className="bp-field w-full t-body disabled:opacity-40 resize-none" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Início *</label>
+                  <label className="bp-field-label">Início *</label>
                   <input type="datetime-local" value={form.inicio} onChange={e => setForm(p => ({ ...p, inicio: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
+                    className="bp-field w-full t-body disabled:opacity-40" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Fim</label>
+                  <label className="bp-field-label">Fim</label>
                   <input type="datetime-local" value={form.fim} onChange={e => setForm(p => ({ ...p, fim: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
+                    className="bp-field w-full t-body disabled:opacity-40" />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Criticidade</label>
+                  <label className="bp-field-label">Criticidade</label>
                   <select value={form.criticidade} onChange={e => setForm(p => ({ ...p, criticidade: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent">
+                    className="bp-field w-full t-body disabled:opacity-40">
                     {CRITICIDADES.map(c => <option key={c} value={c}>{INCIDENTE_CRITICIDADE_LABELS[c]}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Downtime (min)</label>
+                  <label className="bp-field-label">Downtime (min)</label>
                   <input type="number" value={form.downtimeMins} onChange={e => setForm(p => ({ ...p, downtimeMins: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent" />
+                    className="bp-field w-full t-body disabled:opacity-40" />
                 </div>
               </div>
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(false)}
-                className="flex-1 py-2 px-4 rounded-lg text-sm text-gray-400 border border-gray-700 hover:bg-gray-800">
+                className="flex-1 py-2 px-4 rounded-lg text-sm text-muted border border-line-2 hover:bg-surface-2">
                 Cancelar
               </button>
               <button onClick={handleCreate} disabled={saving || !form.titulo || !form.inicio}
-                className="flex-1 py-2 px-4 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                style={{ background: '#2F6BFF' }}>
+                className="bp-btn-primary flex-1 py-2 px-4 rounded-lg text-sm font-medium">
                 {saving ? 'Salvando...' : 'Registrar'}
               </button>
             </div>

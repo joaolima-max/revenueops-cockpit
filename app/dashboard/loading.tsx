@@ -1,22 +1,25 @@
-import BrandMark from '@/components/ui/BrandMark'
+import { SkeletonTiles, Skeleton } from '@/components/ui/Skeleton'
 
+/** Esqueleto com a forma da tela, em vez de um logo girando. */
 export default function Loading() {
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
-      <BrandMark size={40} className="text-fg opacity-90" />
-
-      <div className="w-40 h-px bg-line overflow-hidden rounded-full">
-        <div className="h-full w-1/3 bg-accent animate-[bp-sweep_1.4s_ease-in-out_infinite]" />
+    <div className="space-y-8" aria-busy="true" aria-live="polite">
+      <div className="pb-6 border-b border-line space-y-3">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-3 w-80" />
       </div>
-
-      <p className="t-label text-subtle">Carregando indicadores</p>
-
-      <style>{`
-        @keyframes bp-sweep {
-          0%   { transform: translateX(-100%) }
-          100% { transform: translateX(300%) }
-        }
-      `}</style>
+      <SkeletonTiles />
+      <SkeletonTiles />
+      <div className="grid gap-4 xl:grid-cols-2">
+        {[0, 1].map(i => (
+          <div key={i} className="bg-surface border border-line rounded-2xl p-6 space-y-4">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-56" />
+            <Skeleton className="h-[190px] w-full" />
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">Carregando indicadores…</span>
     </div>
   )
 }

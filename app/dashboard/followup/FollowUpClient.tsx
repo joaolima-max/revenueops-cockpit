@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
+import { paleta, gridProps, axisProps, legendProps, cursorBarra, BAR } from '@/lib/chart-theme'
+import { useTheme } from '@/components/theme/ThemeProvider'
 
 interface Cliente { id: string; nome: string; segmento: string | null; modeloOperacional: string }
 
@@ -41,21 +43,21 @@ const TIPO_LABELS: Record<string, string> = {
 }
 
 const TIPO_COLORS: Record<string, string> = {
-  PICO_OPERACIONAL: 'bg-amber-500/15 text-amber-400 border border-amber-500/20',
-  REUNIAO: 'bg-sky-500/15 text-sky-400 border border-sky-500/20',
-  MONITORAMENTO: 'bg-violet-500/15 text-violet-400 border border-violet-500/20',
-  FOLLOW_UP: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20',
-  ALERTA: 'bg-red-500/15 text-red-400 border border-red-500/20',
-  OUTRO: 'bg-gray-500/15 text-gray-400 border border-gray-700',
+  PICO_OPERACIONAL: 'bg-warn/15 text-warn border border-warn/20',
+  REUNIAO: 'bg-accent/15 text-accent-soft border border-accent/20',
+  MONITORAMENTO: 'bg-accent/15 text-accent-soft border border-accent/20',
+  FOLLOW_UP: 'bg-pos/15 text-pos border border-pos/20',
+  ALERTA: 'bg-neg/15 text-neg border border-neg/20',
+  OUTRO: 'bg-[var(--bp-hover)] text-muted border border-line-2',
 }
 
 const TIPO_BG: Record<string, string> = {
-  PICO_OPERACIONAL: 'bg-amber-500/10 border-l-2 border-amber-500',
-  REUNIAO: 'bg-sky-500/10 border-l-2 border-sky-500',
-  MONITORAMENTO: 'bg-violet-500/10 border-l-2 border-violet-500',
-  FOLLOW_UP: 'bg-emerald-500/10 border-l-2 border-emerald-500',
-  ALERTA: 'bg-red-500/10 border-l-2 border-red-500',
-  OUTRO: 'bg-gray-800 border-l-2 border-gray-600',
+  PICO_OPERACIONAL: 'bg-warn/10 border-l-2 border-warn',
+  REUNIAO: 'bg-accent/10 border-l-2 border-accent',
+  MONITORAMENTO: 'bg-accent/10 border-l-2 border-accent',
+  FOLLOW_UP: 'bg-pos/10 border-l-2 border-pos',
+  ALERTA: 'bg-neg/10 border-l-2 border-neg',
+  OUTRO: 'bg-surface-2 border-l-2 border-line-2',
 }
 
 const emptyForm = {
@@ -87,14 +89,14 @@ function fmtDateFull(iso: string): string {
 }
 
 function proximoContatoColor(iso: string | null): string {
-  if (!iso) return 'text-gray-500'
+  if (!iso) return 'text-subtle'
   const d = new Date(iso)
   const now = new Date()
   const diffMs = d.getTime() - now.getTime()
   const diffDays = diffMs / (1000 * 60 * 60 * 24)
-  if (diffDays < 0) return 'text-red-400'
-  if (diffDays <= 1) return 'text-amber-400'
-  return 'text-emerald-400'
+  if (diffDays < 0) return 'text-neg'
+  if (diffDays <= 1) return 'text-warn'
+  return 'text-pos'
 }
 
 function isCarteiraGeral(clienteId: string): boolean {
@@ -104,8 +106,7 @@ function isCarteiraGeral(clienteId: string): boolean {
 function CarteiraGeralBadge() {
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold text-white"
-      style={{ background: '#2F6BFF' }}
+      className="bg-accent text-on-accent inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"
     >
       🗂 Carteira Geral
     </span>
@@ -154,41 +155,41 @@ function MultiClientSelect({ clientes, selected, onChange }: MultiClientSelectPr
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-left flex items-center justify-between focus:outline-none focus:border-accent"
+        className="w-full bg-surface-2 border border-line-2 text-sm rounded-lg px-3 py-2 text-left flex items-center justify-between focus:outline-none focus:border-accent"
       >
-        <span className={selected.length === 0 ? 'text-gray-500' : 'text-white'}>{label}</span>
-        <svg className={`w-4 h-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <span className={selected.length === 0 ? 'text-subtle' : 'text-fg'}>{label}</span>
+        <svg className={`w-4 h-4 text-subtle transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+        <div className="absolute z-50 top-full mt-1 w-full bg-surface border border-line-2 rounded-lg shadow-xl max-h-56 overflow-y-auto">
           {/* Selecionar todos */}
-          <label className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-800 cursor-pointer border-b border-gray-700/60">
+          <label className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface-2 cursor-pointer border-b border-line-2">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={toggleAll}
-              className="w-4 h-4 rounded accent-emerald-500"
+              className="w-4 h-4 accent-[var(--color-accent)]"
             />
-            <span className="text-xs font-semibold text-emerald-400">Selecionar todos</span>
+            <span className="text-xs font-semibold text-pos">Selecionar todos</span>
           </label>
 
           {clientes.map(c => (
-            <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-800 cursor-pointer">
+            <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-surface-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={selected.includes(c.id)}
                 onChange={() => toggleOne(c.id)}
-                className="w-4 h-4 rounded accent-emerald-500"
+                className="w-4 h-4 accent-[var(--color-accent)]"
               />
-              <span className="text-sm text-gray-300 truncate">{c.nome}</span>
+              <span className="text-sm text-muted truncate">{c.nome}</span>
             </label>
           ))}
 
           {clientes.length === 0 && (
-            <p className="text-xs text-gray-600 text-center py-4">Nenhum cliente disponível</p>
+            <p className="text-xs text-subtle text-center py-4">Nenhum cliente disponível</p>
           )}
         </div>
       )}
@@ -199,6 +200,9 @@ function MultiClientSelect({ clientes, selected, onChange }: MultiClientSelectPr
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function FollowUpClient({ clientes }: Props) {
+  const { theme } = useTheme()
+  const chartPal = paleta(theme)
+
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'calendario' | 'frequencia' | 'lista'>('calendario')
@@ -389,8 +393,8 @@ export default function FollowUpClient({ clientes }: Props) {
     return { label, Recorrentes: recorrentes, Frequência: frequencia }
   })
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
 
   const todayNum = new Date().getDay()
 
@@ -399,12 +403,11 @@ export default function FollowUpClient({ clientes }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-white">Follow-up & Calendário CRM</h1>
-          <p className="text-gray-600 text-sm mt-0.5">Monitoramento de clientes da carteira por datas e horários</p>
+          <h1 className="t-h1 text-fg">Follow-up & Calendário CRM</h1>
+          <p className="text-subtle text-sm mt-0.5">Monitoramento de clientes da carteira por datas e horários</p>
         </div>
         <button onClick={openNew}
-          className="px-4 py-2 text-white text-sm font-medium rounded-lg"
-          style={{ background: '#2F6BFF' }}>
+          className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
           + Novo Evento
         </button>
       </div>
@@ -423,10 +426,10 @@ export default function FollowUpClient({ clientes }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 w-fit">
         {(['calendario', 'frequencia', 'lista'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-gray-800 text-white' : 'text-gray-600 hover:text-gray-400'}`}>
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-surface-2 text-fg' : 'text-subtle hover:text-muted'}`}>
             {t === 'calendario' ? 'Calendário Semanal' : t === 'frequencia' ? 'Frequência de Follow-up' : 'Todos os Eventos'}
           </button>
         ))}
@@ -438,15 +441,15 @@ export default function FollowUpClient({ clientes }: Props) {
           {/* Week navigation */}
           <div className="flex items-center gap-4">
             <button onClick={() => setWeekOffset(w => w - 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700 transition-colors">
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface border border-line text-muted hover:text-fg hover:border-line-2 transition-colors">
               ‹
             </button>
-            <span className="text-sm text-gray-300 font-medium">
+            <span className="text-sm text-muted font-medium">
               {weekOffset === 0 ? 'Semana atual' : weekOffset === 1 ? 'Próxima semana' : weekOffset === -1 ? 'Semana passada' : `${weekOffset > 0 ? '+' : ''}${weekOffset} semanas`}
               {' · '}{fmtDate(weekDays[0])} – {fmtDate(weekDays[6])}
             </span>
             <button onClick={() => setWeekOffset(w => w + 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700 transition-colors">
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface border border-line text-muted hover:text-fg hover:border-line-2 transition-colors">
               ›
             </button>
             {weekOffset !== 0 && (
@@ -456,24 +459,26 @@ export default function FollowUpClient({ clientes }: Props) {
             )}
           </div>
 
-          {/* Week grid */}
-          <div className="grid grid-cols-7 gap-2">
+          {/* Week grid — abaixo de ~900px os 7 dias rolam na horizontal em
+              vez de espremer cada coluna a uns 40px. */}
+          <div className="overflow-x-auto -mx-1 px-1">
+            <div className="grid grid-cols-7 gap-2 min-w-[52rem]">
             {weekDays.map((dayDate, i) => {
               const dayNum = weekDayNums[i]
               const events = getEventsForDay(dayNum, dayDate)
               const isToday = weekOffset === 0 && dayNum === todayNum
               return (
-                <div key={i} className={`bg-gray-900 border rounded-xl p-3 min-h-[160px] ${isToday ? 'border-emerald-500/40' : 'border-gray-800'}`}>
-                  <div className={`text-xs font-semibold mb-2 ${isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
+                <div key={i} className={`bg-surface border rounded-xl p-3 min-h-[160px] ${isToday ? 'border-pos/40' : 'border-line'}`}>
+                  <div className={`text-xs font-semibold mb-2 ${isToday ? 'text-pos' : 'text-subtle'}`}>
                     {DIAS[dayNum]}
-                    <span className="block text-gray-700 font-normal">{fmtDate(dayDate)}</span>
+                    <span className="block text-subtle font-normal">{fmtDate(dayDate)}</span>
                   </div>
                   <div className="space-y-1.5">
                     {events.map(fu => (
                       <button key={fu.id} onClick={() => openEdit(fu)}
                         className={`w-full text-left rounded-lg px-2 py-1.5 ${TIPO_BG[fu.tipo]} hover:opacity-80 transition-opacity`}>
                         {(fu.horaInicio || fu.dataInicio) && (
-                          <p className="text-xs text-gray-400 leading-tight">
+                          <p className="text-xs text-muted leading-tight">
                             {fu.horaInicio}{fu.horaFim ? `–${fu.horaFim}` : ''}
                             {!fu.horaInicio && fu.dataInicio && new Date(fu.dataInicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -481,50 +486,50 @@ export default function FollowUpClient({ clientes }: Props) {
                         {isCarteiraGeral(fu.cliente.id) ? (
                           <p className="leading-snug">
                             <span
-                              className="text-xs font-semibold text-white px-1.5 py-0.5 rounded-full"
-                              style={{ background: '#2F6BFF' }}
+                              className="bg-accent text-on-accent text-xs font-semibold px-1.5 py-0.5 rounded-full"
                             >
                               🗂 Carteira
                             </span>
                           </p>
                         ) : (
-                          <p className="text-xs font-medium text-white leading-snug truncate">{fu.cliente.nome}</p>
+                          <p className="text-xs font-medium text-fg leading-snug truncate">{fu.cliente.nome}</p>
                         )}
-                        <p className="text-xs text-gray-500 leading-tight truncate">{fu.titulo}</p>
+                        <p className="text-xs text-subtle leading-tight truncate">{fu.titulo}</p>
                       </button>
                     ))}
                     {events.length === 0 && (
-                      <p className="text-xs text-gray-800 text-center pt-4">—</p>
+                      <p className="t-sm text-subtle text-center pt-4">—</p>
                     )}
                   </div>
                 </div>
               )
             })}
+            </div>
           </div>
 
           {/* Upcoming one-time events */}
           {upcoming.length > 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Próximos Eventos (agenda)</h3>
+            <div className="bg-surface border border-line rounded-xl p-5">
+              <h3 className="t-h3 text-fg mb-4">Próximos Eventos (agenda)</h3>
               <div className="space-y-2">
                 {upcoming.map(fu => {
                   const d = new Date(fu.dataInicio!)
                   return (
                     <div key={fu.id} className={`flex items-center gap-4 rounded-lg px-3 py-2.5 ${TIPO_BG[fu.tipo]}`}>
                       <div className="w-14 text-center flex-shrink-0">
-                        <p className="text-xs font-bold text-white">{DIAS[d.getDay()]}</p>
-                        <p className="text-xs text-gray-500">{fmtDate(d)}</p>
+                        <p className="text-xs font-bold text-fg">{DIAS[d.getDay()]}</p>
+                        <p className="text-xs text-subtle">{fmtDate(d)}</p>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{fu.titulo}</p>
+                        <p className="text-sm font-medium text-fg truncate">{fu.titulo}</p>
                         {isCarteiraGeral(fu.cliente.id) ? (
                           <CarteiraGeralBadge />
                         ) : (
-                          <p className="text-xs text-gray-500 truncate">{fu.cliente.nome}</p>
+                          <p className="text-xs text-subtle truncate">{fu.cliente.nome}</p>
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">
-                        {fu.horaInicio && <p className="text-xs text-gray-400">{fu.horaInicio}{fu.horaFim ? `–${fu.horaFim}` : ''}</p>}
+                        {fu.horaInicio && <p className="text-xs text-muted">{fu.horaInicio}{fu.horaFim ? `–${fu.horaFim}` : ''}</p>}
                         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TIPO_COLORS[fu.tipo]}`}>{TIPO_LABELS[fu.tipo]}</span>
                       </div>
                     </div>
@@ -540,52 +545,57 @@ export default function FollowUpClient({ clientes }: Props) {
       {tab === 'frequencia' && (
         <div className="space-y-6">
           {/* Chart: Agenda de Follow-ups da Semana */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4">Agenda de Follow-ups da Semana</h3>
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <h3 className="t-h3 text-fg mb-4">Agenda de Follow-ups da Semana</h3>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={weekChartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid {...gridProps(chartPal)} />
+                <XAxis dataKey="label" {...axisProps(chartPal)} />
+                <YAxis allowDecimals={false} {...axisProps(chartPal)} />
                 <Tooltip
-                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                  labelStyle={{ color: '#e5e7eb' }}
-                  itemStyle={{ color: '#9ca3af' }}
+                  cursor={cursorBarra(chartPal)}
+                  contentStyle={{
+                    background: chartPal.tipBg, border: `1px solid ${chartPal.tipBorder}`,
+                    borderRadius: 12, fontSize: 12,
+                  }}
+                  labelStyle={{ color: chartPal.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em' }}
+                  itemStyle={{ color: chartPal.fg }}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-                <Bar dataKey="Recorrentes" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Frequência" stackId="a" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Legend {...legendProps(chartPal)} />
+                <Bar dataKey="Recorrentes" stackId="a" fill={chartPal.s1} maxBarSize={BAR.maxBarSize} />
+                <Bar dataKey="Frequência" stackId="a" fill={chartPal.s2} radius={[3, 3, 0, 0]} maxBarSize={BAR.maxBarSize} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           {/* Section A: Regras de Frequência */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4">Regras de Frequência</h3>
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <h3 className="t-h3 text-fg mb-4">Regras de Frequência</h3>
             {loading ? (
-              <p className="text-gray-700 text-sm py-6 text-center">Carregando...</p>
+              <p className="text-subtle text-sm py-6 text-center">Carregando...</p>
             ) : freqRules.length === 0 ? (
-              <p className="text-gray-700 text-sm py-6 text-center">Nenhuma regra de frequência cadastrada</p>
+              <p className="text-subtle text-sm py-6 text-center">Nenhuma regra de frequência cadastrada</p>
             ) : (
               <div className="space-y-3">
                 {freqRules.map(fu => {
                   const pcColor = proximoContatoColor(fu.proximoContato)
                   return (
-                    <div key={fu.id} className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div key={fu.id} className="bg-surface-2 border border-line-2 rounded-xl px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex-1 min-w-0 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           {isCarteiraGeral(fu.cliente.id) ? (
                             <CarteiraGeralBadge />
                           ) : (
-                            <span className="text-sm font-medium text-white truncate">{fu.cliente.nome}</span>
+                            <span className="text-sm font-medium text-fg truncate">{fu.cliente.nome}</span>
                           )}
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
                             {TIPO_LABELS[fu.tipo]}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-400 truncate">{fu.titulo}</p>
+                        <p className="text-xs text-muted truncate">{fu.titulo}</p>
                         <div className="flex flex-wrap gap-4 text-xs">
-                          <span className="text-emerald-400 font-medium">A cada {fu.frequenciaDias} dias</span>
-                          <span className="text-gray-500">
+                          <span className="text-pos font-medium">A cada {fu.frequenciaDias} dias</span>
+                          <span className="text-subtle">
                             Último contato: {fu.ultimoContato ? fmtDateFull(fu.ultimoContato) : '—'}
                           </span>
                           <span className={`font-medium ${pcColor}`}>
@@ -597,16 +607,15 @@ export default function FollowUpClient({ clientes }: Props) {
                         <button
                           onClick={() => registrarContato(fu.id, fu.frequenciaDias!)}
                           disabled={registrandoId === fu.id}
-                          className="text-xs px-3 py-1.5 rounded-lg font-medium text-white disabled:opacity-50"
-                          style={{ background: '#2F6BFF' }}>
+                          className="bp-btn-primary text-xs px-3 py-1.5 rounded-lg font-medium">
                           {registrandoId === fu.id ? 'Registrando...' : 'Registrar Contato'}
                         </button>
                         <button onClick={() => openEdit(fu)}
-                          className="text-xs px-2 py-1.5 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600">
+                          className="text-xs px-2 py-1.5 bg-surface-2 text-muted rounded-lg hover:bg-line-2">
                           Editar
                         </button>
                         <button onClick={() => handleDelete(fu.id)}
-                          className="text-xs px-2 py-1.5 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20">
+                          className="text-xs px-2 py-1.5 bg-neg/10 text-neg rounded-lg hover:bg-neg/20">
                           ✕
                         </button>
                       </div>
@@ -618,8 +627,8 @@ export default function FollowUpClient({ clientes }: Props) {
           </div>
 
           {/* Section B: Adicionar Regra de Frequência */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4">Adicionar Regra de Frequência</h3>
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <h3 className="t-h3 text-fg mb-4">Adicionar Regra de Frequência</h3>
             <form onSubmit={handleFreqSubmit} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
               <div>
                 <label className={lbl}>Clientes * ({freqSelectedClientes.length} selecionados)</label>
@@ -648,16 +657,15 @@ export default function FollowUpClient({ clientes }: Props) {
               <div className="col-span-2 sm:col-span-4 flex items-center justify-between gap-4">
                 {freqSaveProgress && (
                   <div className="flex items-center gap-3 flex-1">
-                    <div className="flex-1 bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    <div className="flex-1 bg-surface-2 rounded-full h-1.5 overflow-hidden">
                       <div
-                        className="h-1.5 rounded-full transition-all duration-300"
+                        className="h-1.5 rounded-full bg-accent transition-all duration-300"
                         style={{
                           width: `${Math.round((freqSaveProgress.done / freqSaveProgress.total) * 100)}%`,
-                          background: '#2F6BFF',
                         }}
                       />
                     </div>
-                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                    <span className="text-xs text-muted whitespace-nowrap">
                       {freqSaveProgress.done}/{freqSaveProgress.total} clientes
                     </span>
                   </div>
@@ -665,8 +673,7 @@ export default function FollowUpClient({ clientes }: Props) {
                 <button
                   type="submit"
                   disabled={savingFreq || freqSelectedClientes.length === 0}
-                  className="ml-auto px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ background: '#2F6BFF' }}>
+                  className="bp-btn-primary ml-auto px-5 py-2 rounded-lg text-sm font-medium">
                   {savingFreq
                     ? `Salvando ${freqSaveProgress?.done ?? 0}/${freqSaveProgress?.total ?? freqSelectedClientes.length}...`
                     : freqSelectedClientes.length > 1
@@ -681,55 +688,55 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* LIST TAB */}
       {tab === 'lista' && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm">
             <thead>
-              <tr className="border-b border-gray-800">
+              <tr className="border-b border-line">
                 {['Cliente', 'Título', 'Tipo', 'Quando', 'Horário', 'Recorrente', 'Ações'].map(h => (
-                  <th key={h} className={`text-xs font-medium text-gray-600 px-4 py-3 ${h === 'Ações' ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`t-label text-subtle px-4 py-3 ${h === 'Ações' ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
+                <tr><td colSpan={7} className="text-center text-subtle py-12 text-sm">Carregando...</td></tr>
               ) : followUps.length === 0 ? (
-                <tr><td colSpan={7} className="text-center text-gray-700 py-12 text-sm">Nenhum evento cadastrado</td></tr>
+                <tr><td colSpan={7} className="text-center text-subtle py-12 text-sm">Nenhum evento cadastrado</td></tr>
               ) : followUps.map(fu => (
-                <tr key={fu.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
+                <tr key={fu.id} className="border-b border-line hover:bg-[var(--bp-hover)]">
                   <td className="px-4 py-3">
                     {isCarteiraGeral(fu.cliente.id)
                       ? <CarteiraGeralBadge />
-                      : <span className="text-white font-medium">{fu.cliente.nome}</span>
+                      : <span className="text-fg font-medium">{fu.cliente.nome}</span>
                     }
                   </td>
-                  <td className="px-4 py-3 text-gray-300">{fu.titulo}</td>
+                  <td className="px-4 py-3 text-muted">{fu.titulo}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
                       {TIPO_LABELS[fu.tipo]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">
+                  <td className="px-4 py-3 text-muted text-xs">
                     {fu.frequenciaDias
                       ? `A cada ${fu.frequenciaDias}d`
                       : fu.recorrente
                         ? DIAS_FULL[fu.diaSemana ?? 0]
-                        : fu.dataInicio ? new Date(fu.dataInicio).toLocaleDateString('pt-BR') : '—'}
+                        : fu.dataInicio ? fmtDateFull(fu.dataInicio) : '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">
+                  <td className="px-4 py-3 text-muted text-xs">
                     {fu.horaInicio ? `${fu.horaInicio}${fu.horaFim ? `–${fu.horaFim}` : ''}` : '—'}
                   </td>
                   <td className="px-4 py-3">
                     {fu.frequenciaDias
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">Frequência</span>
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-warn/10 text-warn">Frequência</span>
                       : fu.recorrente
-                        ? <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">Semanal</span>
-                        : <span className="text-xs text-gray-700">Único</span>}
+                        ? <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent-soft">Semanal</span>
+                        : <span className="text-xs text-subtle">Único</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openEdit(fu)} className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded hover:bg-gray-700">Editar</button>
-                      <button onClick={() => handleDelete(fu.id)} className="text-xs px-2 py-1 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20">✕</button>
+                      <button onClick={() => openEdit(fu)} className="text-xs px-2 py-1 bg-surface-2 text-muted rounded hover:bg-surface-2">Editar</button>
+                      <button onClick={() => handleDelete(fu.id)} className="text-xs px-2 py-1 bg-neg/10 text-neg rounded hover:bg-neg/20">✕</button>
                     </div>
                   </td>
                 </tr>
@@ -741,22 +748,22 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">{editingId ? 'Editar Evento' : 'Novo Evento'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">{editingId ? 'Editar Evento' : 'Novo Evento'}</h2>
+              <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
               {/* Scope toggle + client select (new events only) */}
               {!editingId && (
                 <div className="space-y-2">
                   {/* Toggle pills */}
-                  <div className="flex gap-1 p-1 bg-gray-800 rounded-lg w-fit">
+                  <div className="flex gap-1 p-1 bg-surface-2 rounded-lg w-fit">
                     <button
                       type="button"
                       onClick={() => setEventoScope('especifico')}
-                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${eventoScope === 'especifico' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${eventoScope === 'especifico' ? 'bg-accent text-on-accent' : 'text-subtle hover:text-muted'}`}
                     >
                       Específico ▾
                     </button>
@@ -765,10 +772,9 @@ export default function FollowUpClient({ clientes }: Props) {
                       onClick={() => setEventoScope('carteira')}
                       className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                         eventoScope === 'carteira'
-                          ? 'text-white'
-                          : 'text-gray-500 hover:text-gray-300'
+                          ? 'bg-accent text-on-accent'
+                          : 'text-subtle hover:text-muted'
                       }`}
-                      style={eventoScope === 'carteira' ? { background: '#2F6BFF' } : {}}
                     >
                       Toda a Carteira
                     </button>
@@ -786,7 +792,7 @@ export default function FollowUpClient({ clientes }: Props) {
                   )}
 
                   {eventoScope === 'carteira' && (
-                    <p className="text-xs text-emerald-400">
+                    <p className="text-xs text-pos">
                       Este evento será vinculado à carteira inteira (todos os clientes).
                     </p>
                   )}
@@ -796,7 +802,7 @@ export default function FollowUpClient({ clientes }: Props) {
               {/* When editing a carteira event, show a read-only badge */}
               {editingId && eventoScope === 'carteira' && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Escopo:</span>
+                  <span className="text-xs text-subtle">Escopo:</span>
                   <CarteiraGeralBadge />
                 </div>
               )}
@@ -818,8 +824,8 @@ export default function FollowUpClient({ clientes }: Props) {
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={form.recorrente}
                         onChange={e => setForm(p => ({ ...p, recorrente: e.target.checked }))}
-                        className="w-4 h-4 rounded accent-emerald-500" />
-                      <span className="text-sm text-gray-300">Recorrente (semanal)</span>
+                        className="w-4 h-4 accent-[var(--color-accent)]" />
+                      <span className="text-sm text-muted">Recorrente (semanal)</span>
                     </label>
                   </div>
                 )}
@@ -830,7 +836,7 @@ export default function FollowUpClient({ clientes }: Props) {
                 <input type="number" min="0" value={form.frequenciaDias} onChange={f('frequenciaDias')} className={inp}
                   placeholder="Ex: 7 — preencha para criar uma regra de frequência" />
                 {isFrequencyMode && (
-                  <p className="text-xs text-amber-400 mt-1">Modo frequência ativo — campos de data/hora ocultos.</p>
+                  <p className="text-xs text-warn mt-1">Modo frequência ativo — campos de data/hora ocultos.</p>
                 )}
               </div>
 
@@ -844,7 +850,7 @@ export default function FollowUpClient({ clientes }: Props) {
                       </select>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className={lbl}>Data/Hora Início</label>
                         <input type="datetime-local" value={form.dataInicio} onChange={f('dataInicio')} className={inp} />
@@ -856,7 +862,7 @@ export default function FollowUpClient({ clientes }: Props) {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className={lbl}>Horário Início</label>
                       <input type="time" value={form.horaInicio} onChange={f('horaInicio')} className={inp} />
@@ -881,12 +887,11 @@ export default function FollowUpClient({ clientes }: Props) {
 
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)}
-                  className="flex-1 py-2 rounded-lg text-sm text-gray-400 border border-gray-700 hover:bg-gray-800">
+                  className="flex-1 py-2 rounded-lg text-sm text-muted border border-line-2 hover:bg-surface-2">
                   Cancelar
                 </button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ background: '#2F6BFF' }}>
+                  className="bp-btn-primary flex-1 py-2 rounded-lg text-sm font-medium">
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

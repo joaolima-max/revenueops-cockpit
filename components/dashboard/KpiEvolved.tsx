@@ -65,8 +65,8 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
   return (
     <svg width={W} height={H} className="opacity-50">
-      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="2" fill={color} />
+      <path d={d} fill="none" style={{ stroke: color }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="2" style={{ fill: color }} />
     </svg>
   )
 }
@@ -79,7 +79,7 @@ function MomChip({ curr, prev, isRate = false }: { curr: number; prev: number; i
     ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2).replace('.', ',')} p.p.`
     : `${delta >= 0 ? '+' : ''}${delta.toFixed(1).replace('.', ',')}%`
   return (
-    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${pos ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${pos ? 'bg-pos/10 text-pos' : 'bg-neg/10 text-neg'}`}>
       {label}
     </span>
   )
@@ -88,14 +88,14 @@ function MomChip({ curr, prev, isRate = false }: { curr: number; prev: number; i
 function MetaBar({ current, meta }: { current: number; meta: MetaItem }) {
   if (!meta || meta.valor <= 0) return null
   const pct = Math.min((current / meta.valor) * 100, 100)
-  const color = pct >= 100 ? '#10b981' : pct >= 70 ? '#f59e0b' : '#ef4444'
+  const color = pct >= 100 ? 'var(--color-pos)' : pct >= 70 ? 'var(--color-warn)' : 'var(--color-neg)'
   return (
     <div className="mt-2">
       <div className="flex justify-between items-center mb-0.5">
-        <span className="text-[9px] text-gray-700">Meta</span>
+        <span className="text-[9px] text-subtle">Meta</span>
         <span className="text-[9px]" style={{ color }}>{pct.toFixed(0)}%</span>
       </div>
-      <div className="h-1 bg-gray-800 rounded-full">
+      <div className="h-1 bg-surface-2 rounded-full">
         <div className="h-1 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
@@ -112,28 +112,28 @@ export default function KpiEvolved({ kpis, metas, trends, prevMonth }: KpiEvolve
       value: formatTPV(kpis.tpv),
       curr: kpis.tpv, prev: prevMonth.tpv,
       trend: trends.tpv, meta: metas.tpv,
-      color: '#0ea5e9', sub: `${kpis.qtdTx.toLocaleString('pt-BR')} transações`,
+      color: 'var(--color-accent)', sub: `${kpis.qtdTx.toLocaleString('pt-BR')} transações`,
     },
     {
       label: 'Faturamento Total',
       value: formatCurrency(fatAtual),
       curr: fatAtual, prev: prevMonth.faturamento,
       trend: trends.faturamento, meta: null,
-      color: '#10b981', sub: 'Tarifária + Floating + MRR + Setups',
+      color: 'var(--color-pos)', sub: 'Tarifária + Floating + MRR + Setups',
     },
     {
       label: 'Receita Tarifária',
       value: formatCurrency(recTotal),
       curr: recTotal, prev: prevMonth.receita,
       trend: trends.receita, meta: metas.receita,
-      color: '#6366f1', sub: 'API + White Label',
+      color: 'var(--color-accent-soft)', sub: 'API + White Label',
     },
     {
       label: 'Take Rate',
       value: formatPercent(kpis.takeRate, 3),
       curr: kpis.takeRate, prev: prevMonth.takeRate,
       trend: trends.takeRate, meta: null,
-      color: '#f59e0b', isRate: true, sub: `PMP: ${formatCurrency(kpis.pmp)}`,
+      color: 'var(--color-warn)', isRate: true, sub: `PMP: ${formatCurrency(kpis.pmp)}`,
     },
   ]
 
@@ -143,23 +143,23 @@ export default function KpiEvolved({ kpis, metas, trends, prevMonth }: KpiEvolve
       value: formatCurrency(kpis.mrr),
       curr: kpis.mrr, prev: prevMonth.mrr,
       trend: trends.mrr, meta: metas.mrr,
-      color: '#a855f7', sub: `API ${formatCurrency(kpis.mrrApi)} · WL ${formatCurrency(kpis.mrrWl)}`,
+      color: 'var(--color-accent-soft)', sub: `API ${formatCurrency(kpis.mrrApi)} · WL ${formatCurrency(kpis.mrrWl)}`,
     },
     {
       label: 'Clientes Ativos',
       value: kpis.clientesAtivos.toString(),
       curr: kpis.clientesAtivos, prev: kpis.clientesAtivos + kpis.churn,
       trend: [], meta: null,
-      color: '#2563EB',
+      color: 'var(--color-accent)',
       sub: kpis.churn > 0 ? `${kpis.churn} encerrado${kpis.churn > 1 ? 's' : ''} no mês` : 'Sem churn no mês',
-      subColor: kpis.churn > 0 ? '#ef4444' : '#6b7280',
+      subColor: kpis.churn > 0 ? 'var(--color-neg)' : 'var(--color-subtle)',
     },
     {
       label: 'Floating',
       value: formatCurrency(kpis.floating),
       curr: kpis.floating, prev: prevMonth.floating,
       trend: trends.floating, meta: null,
-      color: '#22d3ee', sub: 'Rendimento em trânsito',
+      color: 'var(--color-accent)', sub: 'Rendimento em trânsito',
     },
     {
       label: kpis.margemOp != null ? 'Margem Operacional' : 'Med. Transacional',
@@ -167,32 +167,32 @@ export default function KpiEvolved({ kpis, metas, trends, prevMonth }: KpiEvolve
       curr: kpis.margemOp ?? kpis.margemTransacional ?? 0,
       prev: prevMonth.margemOp,
       trend: trends.margem, meta: null,
-      color: '#f43f5e', isRate: true,
+      color: 'var(--color-neg)', isRate: true,
       sub: kpis.margemOp != null ? 'Realizado / Previsto' : `MED ${formatPercent(kpis.med, 1)}`,
     },
   ]
 
   const renderCard = (card: typeof primary[0] & { subColor?: string; isRate?: boolean }) => (
-    <div key={card.label} className="bg-gray-900 border border-gray-800/60 rounded-xl p-4">
+    <div key={card.label} className="bg-surface border border-line rounded-xl p-4">
       <div className="flex items-start justify-between mb-1">
-        <p className="text-xs text-gray-600">{card.label}</p>
+        <p className="text-xs text-subtle">{card.label}</p>
         <Sparkline values={card.trend} color={card.color} />
       </div>
-      <p className="text-xl font-bold leading-none mb-1.5" style={{ color: card.color }}>{card.value}</p>
+      <p className="text-xl font-bold leading-none mb-1.5 tnum" style={{ color: card.color }}>{card.value}</p>
       <div className="flex items-center gap-1.5">
         <MomChip curr={card.curr} prev={card.prev} isRate={card.isRate} />
       </div>
-      <p className="text-[10px] mt-1.5" style={{ color: card.subColor ?? '#4b5563' }}>{card.sub}</p>
+      <p className="text-[10px] mt-1.5" style={{ color: card.subColor ?? 'var(--color-subtle)' }}>{card.sub}</p>
       <MetaBar current={card.curr} meta={card.meta ?? null} />
     </div>
   )
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {primary.map(renderCard)}
       </div>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {secondary.map(renderCard)}
       </div>
     </div>

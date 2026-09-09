@@ -32,7 +32,7 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
       <BrandMark size={compact ? 22 : 24} className="flex-none" />
       {!compact && (
         <span className="min-w-0">
-          <span className="block text-[0.9375rem] font-semibold tracking-[-0.022em] leading-none">Bass Pago</span>
+          <span className="block font-display text-[0.9375rem] font-semibold tracking-[-0.02em] leading-none">Bass Pago</span>
           <span className="block t-label text-subtle mt-1">RevOps</span>
         </span>
       )}

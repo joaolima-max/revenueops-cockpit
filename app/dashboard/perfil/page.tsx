@@ -102,7 +102,7 @@ export default function PerfilPage() {
   if (loadingProfile) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Carregando...</p>
+        <p className="text-subtle text-sm">Carregando...</p>
       </div>
     )
   }
@@ -110,7 +110,7 @@ export default function PerfilPage() {
   if (!user) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <p className="text-red-400 text-sm">Não foi possível carregar o perfil.</p>
+        <p className="text-neg text-sm">Não foi possível carregar o perfil.</p>
       </div>
     )
   }
@@ -122,66 +122,65 @@ export default function PerfilPage() {
       <div className="max-w-lg mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-white">Meu Perfil</h1>
-          <p className="text-gray-400 text-sm mt-1">Gerencie suas informações pessoais e senha</p>
+          <h1 className="t-h1 text-fg">Meu Perfil</h1>
+          <p className="text-muted text-sm mt-1">Gerencie suas informações pessoais e senha</p>
         </div>
 
         {/* Avatar + basic info */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex items-center gap-4">
+        <div className="bg-surface border border-line rounded-xl p-6 flex items-center gap-4">
           <div
-            className="w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 text-white text-2xl font-bold"
-            style={{ background: '#2F6BFF' }}
+            className="bg-accent text-on-accent w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 text-2xl font-bold"
           >
             {initial}
           </div>
           <div>
-            <p className="text-white font-semibold text-lg leading-tight">{user.name}</p>
-            <p className="text-gray-400 text-sm mt-0.5">{user.email}</p>
-            <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <p className="text-fg font-semibold text-lg leading-tight">{user.name}</p>
+            <p className="text-muted text-sm mt-0.5">{user.email}</p>
+            <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-pos/10 text-pos border border-pos/20">
               {ROLE_LABELS[user.role] ?? user.role}
             </span>
           </div>
         </div>
 
         {/* Profile Info Section */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-800">
-            <h2 className="text-white font-semibold text-sm">Informações do Perfil</h2>
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-line">
+            <h2 className="t-h3 text-fg">Informações do Perfil</h2>
           </div>
           <form onSubmit={handleSaveProfile} className="p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Nome</label>
+              <label className="bp-field-label">Nome</label>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                className="bp-field w-full t-body disabled:opacity-40"
                 placeholder="Seu nome completo"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+              <label className="bp-field-label">Email</label>
               <input
                 type="email"
                 value={user.email}
                 readOnly
-                className="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 text-gray-500 rounded-lg text-sm cursor-not-allowed"
+                className="bp-field w-full text-sm"
               />
-              <p className="text-xs text-gray-600 mt-1">O email não pode ser alterado.</p>
+              <p className="text-xs text-subtle mt-1">O email não pode ser alterado.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Perfil de Acesso</label>
+              <label className="bp-field-label">Perfil de Acesso</label>
               <input
                 type="text"
                 value={ROLE_LABELS[user.role] ?? user.role}
                 readOnly
-                className="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 text-gray-500 rounded-lg text-sm cursor-not-allowed"
+                className="bp-field w-full text-sm"
               />
             </div>
 
             {profileMsg && (
-              <div className={`text-xs px-3 py-2 rounded-lg ${profileMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+              <div className={`text-xs px-3 py-2 rounded-lg ${profileMsg.type === 'success' ? 'bg-pos/10 text-pos border border-pos/20' : 'bg-neg/10 text-neg border border-neg/20'}`}>
                 {profileMsg.text}
               </div>
             )}
@@ -189,8 +188,7 @@ export default function PerfilPage() {
             <button
               type="submit"
               disabled={savingProfile}
-              className="w-full py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ background: '#2F6BFF' }}
+              className="bp-btn-primary w-full py-2 rounded-lg text-sm font-medium"
             >
               {savingProfile ? 'Salvando...' : 'Salvar Alterações'}
             </button>
@@ -198,47 +196,47 @@ export default function PerfilPage() {
         </div>
 
         {/* Change Password Section */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-800">
-            <h2 className="text-white font-semibold text-sm">Alterar Senha</h2>
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-line">
+            <h2 className="t-h3 text-fg">Alterar Senha</h2>
           </div>
           <form onSubmit={handleSavePassword} className="p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Senha Atual</label>
+              <label className="bp-field-label">Senha Atual</label>
               <input
                 type="password"
                 required
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                className="bp-field w-full t-body disabled:opacity-40"
                 placeholder="••••••••"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Nova Senha</label>
+              <label className="bp-field-label">Nova Senha</label>
               <input
                 type="password"
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                className="bp-field w-full t-body disabled:opacity-40"
                 placeholder="••••••••"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Confirmar Nova Senha</label>
+              <label className="bp-field-label">Confirmar Nova Senha</label>
               <input
                 type="password"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-gray-600"
+                className="bp-field w-full t-body disabled:opacity-40"
                 placeholder="••••••••"
               />
             </div>
 
             {passwordMsg && (
-              <div className={`text-xs px-3 py-2 rounded-lg ${passwordMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+              <div className={`text-xs px-3 py-2 rounded-lg ${passwordMsg.type === 'success' ? 'bg-pos/10 text-pos border border-pos/20' : 'bg-neg/10 text-neg border border-neg/20'}`}>
                 {passwordMsg.text}
               </div>
             )}
@@ -246,8 +244,7 @@ export default function PerfilPage() {
             <button
               type="submit"
               disabled={savingPassword}
-              className="w-full py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ background: '#2F6BFF' }}
+              className="bp-btn-primary w-full py-2 rounded-lg text-sm font-medium"
             >
               {savingPassword ? 'Alterando...' : 'Alterar Senha'}
             </button>

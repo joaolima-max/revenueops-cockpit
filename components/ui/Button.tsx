@@ -5,9 +5,9 @@ import { cn } from '@/lib/utils'
 type Variant = 'primary' | 'ghost' | 'subtle' | 'danger'
 
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent-dark border border-transparent',
-  ghost: 'border border-line text-fg hover:border-line-2 hover:bg-white/[0.04]',
-  subtle: 'border border-transparent text-muted hover:text-fg hover:bg-white/[0.06]',
+  primary: 'bp-btn-primary border border-transparent',
+  ghost: 'border border-line text-fg hover:border-line-2 hover:bg-[var(--bp-hover)]',
+  subtle: 'border border-transparent text-muted hover:text-fg hover:bg-[var(--bp-hover)]',
   danger: 'border border-neg/30 text-neg hover:bg-neg/10 hover:border-neg/50',
 }
 

@@ -40,9 +40,9 @@ const TABS: { id: Tab; label: string }[] = [
 const SEGMENTOS = ['IGAMING', 'ECOMMERCE', 'SAAS', 'ERP', 'TELECOM', 'CRIPTOMOEDAS', 'VAREJO', 'OUTROS']
 const OPERACOES = ['CASH_IN', 'CASH_OUT', 'BAAS', 'WHITE_LABEL']
 const SCORES = ['BAIXO', 'MEDIO', 'ALTO', 'CRITICO']
-const PRIORIDADE_COLORS: Record<string, string> = { CRITICA: 'text-red-400', ALTA: 'text-amber-400', MEDIA: 'text-blue-400', BAIXA: 'text-gray-500' }
+const PRIORIDADE_COLORS: Record<string, string> = { CRITICA: 'text-neg', ALTA: 'text-warn', MEDIA: 'text-accent-soft', BAIXA: 'text-subtle' }
 const STATUS_TAREFA_LABELS: Record<string, string> = { PENDENTE: 'Pendente', EM_ANDAMENTO: 'Em andamento', CONCLUIDA: 'Concluída', CANCELADA: 'Cancelada' }
-const CONTA_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-amber-400', FATURADO: 'text-blue-400', PAGO: 'text-emerald-400', INADIMPLENTE: 'text-red-400' }
+const CONTA_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-warn', FATURADO: 'text-accent-soft', PAGO: 'text-pos', INADIMPLENTE: 'text-neg' }
 
 
 function toEditForm(c: Cliente) {
@@ -88,14 +88,14 @@ export default function ClienteDetailClient({
 
   const mrr = (cliente.mensalidadeApi || 0) + (cliente.sustentacaoWhiteLabel || 0)
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
   const ef = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setEditForm(p => ({ ...p, [f]: e.target.value }))
 
   const healthLabel = healthScore >= 80 ? 'Saudável' : healthScore >= 60 ? 'Estável' : healthScore >= 40 ? 'Atenção' : 'Risco'
-  const healthColor = healthScore >= 80 ? '#10b981' : healthScore >= 60 ? '#f59e0b' : healthScore >= 40 ? '#f97316' : '#ef4444'
-  const healthTextColor = healthScore >= 80 ? 'text-emerald-400' : healthScore >= 60 ? 'text-amber-400' : healthScore >= 40 ? 'text-orange-400' : 'text-red-400'
+  const healthStroke = healthScore >= 80 ? 'stroke-pos' : healthScore >= 60 ? 'stroke-warn' : healthScore >= 40 ? 'stroke-alert' : 'stroke-neg'
+  const healthTextColor = healthScore >= 80 ? 'text-pos' : healthScore >= 60 ? 'text-warn' : healthScore >= 40 ? 'text-alert' : 'text-neg'
 
   // Insights derivados do que pertence ao cliente. TPV é indicador da empresa,
   // não do cliente, e por isso não aparece aqui.
@@ -184,34 +184,34 @@ export default function ClienteDetailClient({
   return (
     <div className="space-y-8">
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur border-b border-gray-800/40">
+      <div className="sticky top-0 z-10 bg-ink/95 backdrop-blur border-b border-line">
         <div className="px-6 pt-5 pb-0">
           <div className="flex items-start justify-between mb-4 gap-4">
             <div className="min-w-0">
-              <button onClick={() => router.back()} className="text-gray-600 hover:text-gray-400 text-xs mb-2 block">← Carteira</button>
-              <h1 className="text-xl font-bold text-white truncate">{cliente.nome}</h1>
+              <button onClick={() => router.back()} className="text-subtle hover:text-muted text-xs mb-2 block">← Carteira</button>
+              <h1 className="t-h1 text-fg truncate">{cliente.nome}</h1>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CLIENTE_STATUS_COLORS[statusEdit]}`}>{CLIENTE_STATUS_LABELS[statusEdit]}</span>
-                <span className="text-xs text-gray-600">{MODELO_OPERACIONAL_LABELS[cliente.modeloOperacional]}</span>
+                <span className="text-xs text-subtle">{MODELO_OPERACIONAL_LABELS[cliente.modeloOperacional]}</span>
                 {cliente.segmento && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[cliente.segmento]}`}>{SEGMENTO_LABELS[cliente.segmento]}</span>}
                 {cliente.scoreRisco && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_RISCO_COLORS[cliente.scoreRisco]}`}>{SCORE_RISCO_LABELS[cliente.scoreRisco]}</span>}
-                {cliente.cnpj && <span className="text-xs text-gray-600">{cliente.cnpj}</span>}
+                {cliente.cnpj && <span className="text-xs text-subtle">{cliente.cnpj}</span>}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
-              <button onClick={() => setShowTarefaModal(true)} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg border border-gray-700 transition-colors">+ Tarefa</button>
+              <button onClick={() => setShowTarefaModal(true)} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-2 text-muted text-xs font-medium rounded-lg border border-line-2 transition-colors">+ Tarefa</button>
               <select value={statusEdit} onChange={e => handleStatusChange(e.target.value)}
-                className="bg-gray-900 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-accent">
+                className="bp-field text-sm">
                 <option value="PROSPECCAO">Prospecção</option>
                 <option value="ATIVO">Ativo</option>
                 <option value="INATIVO">Inativo</option>
                 <option value="ENCERRADO">Encerrado</option>
               </select>
               <button onClick={() => { setEditForm(toEditForm(cliente)); setShowEditModal(true) }}
-                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg border border-gray-700 transition-colors">Editar</button>
+                className="px-3 py-1.5 bg-surface-2 hover:bg-surface-2 text-muted text-xs font-medium rounded-lg border border-line-2 transition-colors">Editar</button>
               {role === 'ADMIN' && (
                 <button onClick={handleDelete} disabled={deleting}
-                  className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg border border-red-500/20 transition-colors disabled:opacity-50">
+                  className="px-3 py-1.5 bg-neg/10 hover:bg-neg/20 text-neg text-xs font-medium rounded-lg border border-neg/20 transition-colors disabled:opacity-50">
                   {deleting ? '...' : 'Excluir'}
                 </button>
               )}
@@ -223,7 +223,7 @@ export default function ClienteDetailClient({
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`px-4 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-colors ${
-                  tab === t.id ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+                  tab === t.id ? 'border-pos text-pos' : 'border-transparent text-subtle hover:text-muted'
                 }`}>
                 {t.label}
               </button>
@@ -237,26 +237,26 @@ export default function ClienteDetailClient({
         {/* ── VISÃO GERAL ──────────────────────────────────────────────────── */}
         {tab === 'visao-geral' && (
           <>
-            <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               {[
-                { label: 'MRR contratado', value: mrr > 0 ? formatCurrency(mrr) : '—', color: 'text-emerald-400' },
-                { label: 'Mensalidade API', value: cliente.mensalidadeApi ? formatCurrency(cliente.mensalidadeApi) : '—', color: 'text-sky-400' },
-                { label: 'Sustentação WL', value: cliente.sustentacaoWhiteLabel ? formatCurrency(cliente.sustentacaoWhiteLabel) : '—', color: 'text-indigo-400' },
-                { label: 'Setup', value: cliente.setup ? formatCurrency(cliente.setup) : '—', color: 'text-amber-400' },
-                { label: 'TPV esperado', value: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : '—', color: 'text-gray-400' },
-                { label: 'Receita prevista', value: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : '—', color: 'text-gray-400' },
+                { label: 'MRR contratado', value: mrr > 0 ? formatCurrency(mrr) : '—', color: 'text-pos' },
+                { label: 'Mensalidade API', value: cliente.mensalidadeApi ? formatCurrency(cliente.mensalidadeApi) : '—', color: 'text-accent-soft' },
+                { label: 'Sustentação WL', value: cliente.sustentacaoWhiteLabel ? formatCurrency(cliente.sustentacaoWhiteLabel) : '—', color: 'text-accent-soft' },
+                { label: 'Setup', value: cliente.setup ? formatCurrency(cliente.setup) : '—', color: 'text-warn' },
+                { label: 'TPV esperado', value: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : '—', color: 'text-muted' },
+                { label: 'Receita prevista', value: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : '—', color: 'text-muted' },
               ].map(k => (
-                <div key={k.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-600 text-[10px] uppercase tracking-wide mb-1.5">{k.label}</p>
-                  <p className={`text-lg font-bold leading-none ${k.color}`}>{k.value}</p>
+                <div key={k.label} className="bg-surface border border-line rounded-xl p-4">
+                  <p className="text-subtle text-[10px] uppercase tracking-wide mb-1.5">{k.label}</p>
+                  <p className={`text-lg font-bold leading-none tnum ${k.color}`}>{k.value}</p>
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
               {/* Informações */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <h3 className="text-sm font-semibold text-white mb-3">Informações</h3>
+              <div className="bg-surface border border-line rounded-xl p-5">
+                <h3 className="t-h3 text-fg mb-3">Informações</h3>
                 <div className="space-y-2.5 text-sm">
                   {([
                     { l: 'Responsável', v: cliente.owner.name },
@@ -270,56 +270,56 @@ export default function ClienteDetailClient({
                     { l: 'Desconto', v: cliente.descontoPercent ? `${cliente.descontoPercent}%` : null },
                   ] as { l: string; v: string | null }[]).filter(r => r.v).map(({ l, v }) => (
                     <div key={l} className="flex justify-between gap-3">
-                      <span className="text-gray-600 flex-shrink-0">{l}</span>
-                      <span className="text-gray-300 text-right truncate">{v}</span>
+                      <span className="text-subtle flex-shrink-0">{l}</span>
+                      <span className="text-muted text-right truncate">{v}</span>
                     </div>
                   ))}
                 </div>
-                {cliente.notas && <p className="mt-3 text-xs text-gray-600 border-t border-gray-800 pt-3">{cliente.notas}</p>}
+                {cliente.notas && <p className="mt-3 text-xs text-subtle border-t border-line pt-3">{cliente.notas}</p>}
               </div>
 
               {/* Health Score */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <h3 className="text-sm font-semibold text-white mb-3">Saúde do Cliente</h3>
+              <div className="bg-surface border border-line rounded-xl p-5">
+                <h3 className="t-h3 text-fg mb-3">Saúde do Cliente</h3>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="relative w-20 h-20 flex-shrink-0">
                     <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90">
-                      <circle cx="18" cy="18" r="15.5" fill="none" stroke="#1f2937" strokeWidth="3" />
-                      <circle cx="18" cy="18" r="15.5" fill="none" stroke={healthColor} strokeWidth="3"
+                      <circle cx="18" cy="18" r="15.5" fill="none" className="stroke-line" strokeWidth="3" />
+                      <circle cx="18" cy="18" r="15.5" fill="none" className={healthStroke} strokeWidth="3"
                         strokeDasharray={`${(healthScore / 100) * 97.4} 97.4`} strokeLinecap="round" />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className={`text-lg font-bold ${healthTextColor}`}>{healthScore}</span>
+                      <span className={`text-lg font-bold tnum ${healthTextColor}`}>{healthScore}</span>
                     </div>
                   </div>
                   <div>
                     <p className={`text-lg font-bold ${healthTextColor}`}>{healthLabel}</p>
-                    <p className="text-xs text-gray-600 mt-0.5">Score de saúde</p>
+                    <p className="text-xs text-subtle mt-0.5">Score de saúde</p>
                   </div>
                 </div>
-                <div className="space-y-1.5 border-t border-gray-800 pt-3">
+                <div className="space-y-1.5 border-t border-line pt-3">
                   {insights.slice(0, 4).map((ins, i) => (
-                    <p key={i} className="text-xs text-gray-500">{ins}</p>
+                    <p key={i} className="text-xs text-subtle">{ins}</p>
                   ))}
                 </div>
               </div>
 
               {/* Tarefas pendentes */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="bg-surface border border-line rounded-xl p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-white">Tarefas Abertas</h3>
+                  <h3 className="t-h3 text-fg">Tarefas Abertas</h3>
                   <button onClick={() => setShowTarefaModal(true)} className="text-xs text-accent hover:text-accent-soft">+ Nova</button>
                 </div>
                 {cliente.tarefas.filter(t => t.status !== 'CONCLUIDA' && t.status !== 'CANCELADA').length === 0 ? (
-                  <p className="text-xs text-gray-700">Nenhuma tarefa pendente</p>
+                  <p className="text-xs text-subtle">Nenhuma tarefa pendente</p>
                 ) : (
                   <div className="space-y-2.5">
                     {cliente.tarefas.filter(t => t.status !== 'CONCLUIDA' && t.status !== 'CANCELADA').slice(0, 5).map(t => (
                       <div key={t.id} className="flex items-start gap-2">
-                        <span className={`text-xs mt-0.5 flex-shrink-0 ${PRIORIDADE_COLORS[t.prioridade] || 'text-gray-500'}`}>●</span>
+                        <span className={`text-xs mt-0.5 flex-shrink-0 ${PRIORIDADE_COLORS[t.prioridade] || 'text-subtle'}`}>●</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-300 truncate">{t.titulo}</p>
-                          <p className="text-[10px] text-gray-600">{t.responsavel.name}{t.dueDate ? ` · ${formatDate(t.dueDate)}` : ''}</p>
+                          <p className="text-xs text-muted truncate">{t.titulo}</p>
+                          <p className="text-[10px] text-subtle">{t.responsavel.name}{t.dueDate ? ` · ${formatDate(t.dueDate)}` : ''}</p>
                         </div>
                       </div>
                     ))}
@@ -327,12 +327,12 @@ export default function ClienteDetailClient({
                 )}
                 {/* Follow-ups */}
                 {cliente.followUps.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-gray-800">
-                    <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-2">Próximo Follow-up</p>
+                  <div className="mt-4 pt-3 border-t border-line">
+                    <p className="text-[10px] text-subtle uppercase tracking-wide mb-2">Próximo Follow-up</p>
                     {cliente.followUps.filter(f => f.proximoContato).slice(0, 1).map(f => (
                       <div key={f.id}>
-                        <p className="text-xs text-gray-300">{f.titulo}</p>
-                        <p className="text-[10px] text-gray-600">{f.proximoContato ? formatDate(f.proximoContato) : '—'}</p>
+                        <p className="text-xs text-muted">{f.titulo}</p>
+                        <p className="text-[10px] text-subtle">{f.proximoContato ? formatDate(f.proximoContato) : '—'}</p>
                       </div>
                     ))}
                   </div>
@@ -348,28 +348,28 @@ export default function ClienteDetailClient({
 
 
             {/* Contas a Receber */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Contas a Receber</h3>
+            <div className="bg-surface border border-line rounded-xl p-5">
+              <h3 className="t-h3 text-fg mb-4">Contas a Receber</h3>
               {cliente.contasReceber.length === 0 ? (
-                <p className="text-xs text-gray-700">Nenhuma conta registrada</p>
+                <p className="text-xs text-subtle">Nenhuma conta registrada</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-800">
+                      <tr className="border-b border-line">
                         {['Descrição', 'Tipo', 'Vencimento', 'Valor', 'Status'].map(h => (
-                          <th key={h} className="text-xs font-medium text-gray-600 pb-2 text-right first:text-left">{h}</th>
+                          <th key={h} className="t-label text-subtle pb-2 text-right first:text-left">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {cliente.contasReceber.map(c => (
-                        <tr key={c.id} className={`border-b border-gray-800/50 ${c.status === 'INADIMPLENTE' ? 'bg-red-500/5' : ''}`}>
-                          <td className="py-2.5 text-gray-300 text-xs">{c.descricao}</td>
-                          <td className="py-2.5 text-right text-gray-500 text-xs">{c.tipo}</td>
-                          <td className="py-2.5 text-right text-gray-400 text-xs">{formatDate(c.dataVenc)}</td>
-                          <td className="py-2.5 text-right text-emerald-400">{formatCurrency(c.valor)}</td>
-                          <td className={`py-2.5 text-right text-xs font-medium ${CONTA_STATUS_COLORS[c.status] || 'text-gray-500'}`}>{c.status}</td>
+                        <tr key={c.id} className={`border-b border-line ${c.status === 'INADIMPLENTE' ? 'bg-neg/5' : ''}`}>
+                          <td className="py-2.5 text-muted text-xs">{c.descricao}</td>
+                          <td className="py-2.5 text-right text-subtle text-xs">{c.tipo}</td>
+                          <td className="py-2.5 text-right text-muted text-xs">{formatDate(c.dataVenc)}</td>
+                          <td className="py-2.5 text-right text-pos">{formatCurrency(c.valor)}</td>
+                          <td className={`py-2.5 text-right text-xs font-medium ${CONTA_STATUS_COLORS[c.status] || 'text-subtle'}`}>{c.status}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -386,26 +386,26 @@ export default function ClienteDetailClient({
         {tab === 'relacionamento' && (
           <>
             {/* Follow-ups */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Follow-ups</h3>
+            <div className="bg-surface border border-line rounded-xl p-5">
+              <h3 className="t-h3 text-fg mb-4">Follow-ups</h3>
               {cliente.followUps.length === 0 ? (
-                <p className="text-xs text-gray-700">Nenhum follow-up registrado</p>
+                <p className="text-xs text-subtle">Nenhum follow-up registrado</p>
               ) : (
                 <div className="space-y-3">
                   {cliente.followUps.map(f => (
-                    <div key={f.id} className="border border-gray-800 rounded-lg p-3">
+                    <div key={f.id} className="border border-line rounded-lg p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-sm text-white font-medium">{f.titulo}</p>
-                          <p className="text-xs text-gray-600 mt-0.5">{f.tipo}</p>
-                          {f.descricao && <p className="text-xs text-gray-500 mt-1">{f.descricao}</p>}
+                          <p className="text-sm text-fg font-medium">{f.titulo}</p>
+                          <p className="text-xs text-subtle mt-0.5">{f.tipo}</p>
+                          {f.descricao && <p className="text-xs text-subtle mt-1">{f.descricao}</p>}
                         </div>
-                        <div className="text-right text-xs text-gray-600 flex-shrink-0">
+                        <div className="text-right text-xs text-subtle flex-shrink-0">
                           {f.proximoContato && <p>Próximo: {formatDate(f.proximoContato)}</p>}
                           {f.ultimoContato && <p>Último: {formatDate(f.ultimoContato)}</p>}
                         </div>
                       </div>
-                      {f.notas && <p className="mt-2 text-xs text-gray-600 border-t border-gray-800 pt-2">{f.notas}</p>}
+                      {f.notas && <p className="mt-2 text-xs text-subtle border-t border-line pt-2">{f.notas}</p>}
                     </div>
                   ))}
                 </div>
@@ -413,31 +413,31 @@ export default function ClienteDetailClient({
             </div>
 
             {/* Tarefas */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div className="bg-surface border border-line rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Tarefas</h3>
-                <button onClick={() => setShowTarefaModal(true)} className="text-xs px-3 py-1.5 text-white rounded-lg" style={{ background: '#2F6BFF' }}>+ Nova</button>
+                <h3 className="t-h3 text-fg">Tarefas</h3>
+                <button onClick={() => setShowTarefaModal(true)} className="bp-btn-primary text-xs px-3 py-1.5 rounded-lg">+ Nova</button>
               </div>
               {cliente.tarefas.length === 0 ? (
-                <p className="text-xs text-gray-700">Nenhuma tarefa registrada</p>
+                <p className="text-xs text-subtle">Nenhuma tarefa registrada</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-800">
+                      <tr className="border-b border-line">
                         {['Tarefa', 'Prioridade', 'Status', 'Responsável', 'Prazo'].map(h => (
-                          <th key={h} className="text-xs font-medium text-gray-600 pb-2 text-left">{h}</th>
+                          <th key={h} className="t-label text-subtle pb-2 text-left">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {cliente.tarefas.map(t => (
-                        <tr key={t.id} className="border-b border-gray-800/50">
-                          <td className="py-2.5 text-gray-300 text-xs max-w-[200px] truncate">{t.titulo}</td>
-                          <td className={`py-2.5 text-xs font-medium ${PRIORIDADE_COLORS[t.prioridade] || 'text-gray-500'}`}>{t.prioridade}</td>
-                          <td className="py-2.5 text-xs text-gray-400">{STATUS_TAREFA_LABELS[t.status] || t.status}</td>
-                          <td className="py-2.5 text-xs text-gray-400">{t.responsavel.name}</td>
-                          <td className="py-2.5 text-xs text-gray-600">{t.dueDate ? formatDate(t.dueDate) : '—'}</td>
+                        <tr key={t.id} className="border-b border-line">
+                          <td className="py-2.5 text-muted text-xs max-w-[200px] truncate">{t.titulo}</td>
+                          <td className={`py-2.5 text-xs font-medium ${PRIORIDADE_COLORS[t.prioridade] || 'text-subtle'}`}>{t.prioridade}</td>
+                          <td className="py-2.5 text-xs text-muted">{STATUS_TAREFA_LABELS[t.status] || t.status}</td>
+                          <td className="py-2.5 text-xs text-muted">{t.responsavel.name}</td>
+                          <td className="py-2.5 text-xs text-subtle">{t.dueDate ? formatDate(t.dueDate) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -454,14 +454,14 @@ export default function ClienteDetailClient({
 
       {/* ── MODAL: Editar Cliente ─────────────────────────────────────────── */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowEditModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Editar Cliente</h2>
-              <button onClick={() => setShowEditModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowEditModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Editar Cliente</h2>
+              <button onClick={() => setShowEditModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleEdit} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2"><label className={lbl}>Nome *</label><input required value={editForm.nome} onChange={ef('nome')} className={inp} /></div>
                 <div><label className={lbl}>CNPJ</label><input value={editForm.cnpj} onChange={ef('cnpj')} placeholder="00.000.000/0001-00" className={inp} /></div>
                 <div><label className={lbl}>Modelo *</label>
@@ -497,9 +497,9 @@ export default function ClienteDetailClient({
                 <div><label className={lbl}>Data de Fechamento</label><input type="date" value={editForm.dataFechamento} onChange={ef('dataFechamento')} className={inp} /></div>
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-[10px] text-gray-600 font-semibold tracking-widest mb-3">FINANCEIRO</p>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="border-t border-line pt-4">
+                <p className="text-[10px] text-subtle font-semibold tracking-widest mb-3">FINANCEIRO</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className={lbl}>Mensalidade API (R$)</label><input type="number" step="0.01" value={editForm.mensalidadeApi} onChange={ef('mensalidadeApi')} className={inp} /></div>
                   <div><label className={lbl}>Sustentação WL (R$)</label><input type="number" step="0.01" value={editForm.sustentacaoWhiteLabel} onChange={ef('sustentacaoWhiteLabel')} className={inp} /></div>
                   <div><label className={lbl}>Setup (R$)</label><input type="number" step="0.01" value={editForm.setup} onChange={ef('setup')} className={inp} /></div>
@@ -515,8 +515,8 @@ export default function ClienteDetailClient({
               <div><label className={lbl}>Notas</label><textarea rows={2} value={editForm.notas} onChange={ef('notas')} className={inp + ' resize-none'} /></div>
 
               <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:border-gray-600 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: '#2F6BFF' }}>
+                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="submit" disabled={saving} className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
@@ -529,15 +529,15 @@ export default function ClienteDetailClient({
 
       {/* ── MODAL: Nova Tarefa ───────────────────────────────────────────── */}
       {showTarefaModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowTarefaModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">Nova Tarefa</h2>
-              <button onClick={() => setShowTarefaModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowTarefaModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">Nova Tarefa</h2>
+              <button onClick={() => setShowTarefaModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleAddTarefa} className="p-5 space-y-4">
               <div><label className={lbl}>Título *</label><input required value={tarefaForm.titulo} onChange={e => setTarefaForm(p => ({ ...p, titulo: e.target.value }))} placeholder="Ex: Revisar contrato" className={inp} /></div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><label className={lbl}>Prioridade</label>
                   <select value={tarefaForm.prioridade} onChange={e => setTarefaForm(p => ({ ...p, prioridade: e.target.value }))} className={inp}>
                     <option value="BAIXA">Baixa</option>
@@ -554,8 +554,8 @@ export default function ClienteDetailClient({
                 </select>
               </div>
               <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setShowTarefaModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg" style={{ background: '#2F6BFF' }}>
+                <button type="button" onClick={() => setShowTarefaModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg">Cancelar</button>
+                <button type="submit" disabled={saving} className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
                   {saving ? 'Salvando...' : 'Criar Tarefa'}
                 </button>
               </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { activeFeatures } from '@/lib/modules'
 import { Dot } from '@/components/ui/Badge'
+import ThemeToggle from '@/components/theme/ThemeToggle'
 
 /**
  * Barra superior — não existia. Cada tela inventava o próprio cabeçalho.
@@ -37,7 +38,7 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
         <button
           onClick={onMenu}
           aria-label="Abrir navegação"
-          className="lg:hidden -ml-1 p-2 rounded-lg text-muted hover:text-fg hover:bg-white/[0.06] transition-colors duration-[180ms]"
+          className="lg:hidden -ml-1 p-2 rounded-lg text-muted hover:text-fg hover:bg-[var(--bp-hover)] transition-colors duration-[180ms]"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeWidth={1.5} d="M4 7h16M4 12h16M4 17h16" />
@@ -58,10 +59,11 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-line bg-white/[0.03]">
+          <span className="hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-line bg-[var(--bp-hover)]">
             <span className="t-label text-subtle">São Paulo</span>
             <span className="t-mono text-fg tabular-nums">{clock ?? '--:--:--'}</span>
           </span>
+          <ThemeToggle />
         </div>
       </div>
     </header>

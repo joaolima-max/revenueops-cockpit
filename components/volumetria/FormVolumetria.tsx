@@ -37,24 +37,24 @@ export default function FormVolumetria() {
   }
 
   return (
-    <form onSubmit={salvar} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-      <h3 className="text-sm font-semibold text-white mb-4">Definir volumetria mínima</h3>
+    <form onSubmit={salvar} className="bg-surface border border-line rounded-xl p-5">
+      <h3 className="t-h3 text-fg mb-4">Definir volumetria mínima</h3>
       {erro && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2 rounded-lg text-xs mb-3">{erro}</div>
+        <div className="bg-neg/10 border border-neg/20 text-neg px-3 py-2 rounded-lg text-xs mb-3">{erro}</div>
       )}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Período</label>
+          <label className="bp-field-label">Período</label>
           <input
             type="month"
             value={periodo}
             onChange={(e) => setPeriodo(e.target.value)}
             required
-            className="px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
+            className="bp-field text-sm"
           />
         </div>
         <div className="flex-1 min-w-[180px]">
-          <label className="block text-xs text-gray-500 mb-1">Quantidade mínima de transações</label>
+          <label className="bp-field-label">Quantidade mínima de transações</label>
           <input
             type="number"
             min="0"
@@ -63,13 +63,13 @@ export default function FormVolumetria() {
             onChange={(e) => setQtdMinima(e.target.value)}
             required
             placeholder="Ex.: 1.500.000"
-            className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white tabular-nums focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
+            className="bp-field w-full text-sm tabular-nums"
           />
         </div>
         <button
           type="submit"
           disabled={salvando}
-          className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white text-sm font-medium disabled:opacity-50 transition-colors"
+          className="bp-btn-primary px-4 py-2 rounded-lg text-sm font-medium"
         >
           {salvando ? 'Salvando...' : 'Salvar'}
         </button>

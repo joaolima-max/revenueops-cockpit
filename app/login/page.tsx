@@ -59,25 +59,25 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="block t-label text-subtle mb-2">Email</label>
+              <label className="bp-field-label">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+                className="bp-field w-full t-body"
                 placeholder="seu@email.com.br"
               />
             </div>
 
             <div>
-              <label className="block t-label text-subtle mb-2">Senha</label>
+              <label className="bp-field-label">Senha</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-3 bg-surface-2 border border-line rounded-lg t-body text-fg transition-colors duration-[180ms] focus:outline-none focus:border-accent"
+                className="bp-field w-full t-body"
                 placeholder="••••••••"
               />
             </div>
@@ -85,7 +85,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-lg font-medium text-[0.875rem] text-white bg-accent hover:bg-accent-dark disabled:opacity-40 disabled:pointer-events-none transition-colors duration-[180ms]"
+              className="bp-btn-primary w-full py-3 px-4 rounded-lg font-medium text-[0.875rem] disabled:pointer-events-none"
             >
               {loading ? 'Entrando...' : 'Entrar'}
             </button>

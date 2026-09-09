@@ -60,7 +60,7 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
                       'transition-colors duration-[180ms] ease-bp',
                       isActive
                         ? 'text-fg font-medium bg-[var(--bp-accent-wash)]'
-                        : 'text-muted hover:text-fg hover:bg-white/[0.04]'
+                        : 'text-muted hover:text-fg hover:bg-[var(--bp-hover)]'
                     )}
                   >
                     {/* Barra de 2px marca o item ativo — o mesmo recurso do site. */}
@@ -98,7 +98,7 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
         <Link
           href="/dashboard/perfil"
           onClick={onNavigate}
-          className="flex items-center gap-2.5 px-2 py-2 rounded-lg t-sm text-muted hover:text-fg hover:bg-white/[0.04] transition-colors duration-[180ms]"
+          className="flex items-center gap-2.5 px-2 py-2 rounded-lg t-sm text-muted hover:text-fg hover:bg-[var(--bp-hover)] transition-colors duration-[180ms]"
         >
           <svg className="w-3.5 h-3.5 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -108,7 +108,7 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
 
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg t-sm text-muted hover:text-fg hover:bg-white/[0.04] transition-colors duration-[180ms]"
+          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg t-sm text-muted hover:text-fg hover:bg-[var(--bp-hover)] transition-colors duration-[180ms]"
         >
           <svg className="w-3.5 h-3.5 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

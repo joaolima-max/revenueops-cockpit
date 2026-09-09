@@ -15,12 +15,38 @@ export function TableShell({ className, children }: { className?: string; childr
   )
 }
 
-export function Table({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <table className={cn('w-full min-w-[44rem] border-collapse', className)}>{children}</table>
+export function Table({
+  className, children, dense = false,
+}: { className?: string; children: React.ReactNode; dense?: boolean }) {
+  return (
+    <table className={cn('w-full min-w-[44rem] border-collapse', dense && '[&_td]:py-2.5', className)}>
+      {children}
+    </table>
+  )
+}
+
+/** Célula de texto longo: trunca na tela e entrega o valor inteiro no title. */
+export function TdTrunc({
+  children, title, className, align, numeric,
+}: {
+  children: React.ReactNode
+  title?: string
+  className?: string
+  align?: 'left' | 'right' | 'center'
+  numeric?: boolean
+}) {
+  return (
+    <Td align={align} numeric={numeric} className={cn('max-w-[18rem]', className)}>
+      <span title={title ?? (typeof children === 'string' ? children : undefined)} className="block bp-truncate">
+        {children}
+      </span>
+    </Td>
+  )
 }
 
 export function THead({ children }: { children: React.ReactNode }) {
-  return <thead className="sticky top-0 z-10 bg-surface">{children}</thead>
+  // Sticky com fundo sólido: o cabeçalho não deixa a linha vazar por baixo.
+  return <thead className="sticky top-0 z-10 bg-surface [&_th]:bg-surface">{children}</thead>
 }
 
 export function HeadRow({ children }: { children: React.ReactNode }) {
@@ -51,8 +77,10 @@ export function Row({
     <tr
       {...rest}
       className={cn(
-        'border-b border-line/60 last:border-0',
+        'border-b border-line last:border-0',
         'transition-colors duration-[180ms] ease-bp hover:bg-surface-2',
+        // Foco de teclado na linha inteira, para tabelas navegáveis.
+        'focus-within:bg-surface-2',
         className
       )}
     >
@@ -69,7 +97,8 @@ export function Td({
       {...rest}
       className={cn(
         'px-4 py-3.5 t-body text-muted align-middle',
-        numeric && 'tabular-nums',
+        // Cifra em Inter Tight tabular: as colunas de milhar empilham.
+        numeric && 't-num',
         align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left',
         className
       )}
@@ -83,7 +112,12 @@ export function Td({
 export function EmptyRow({ colSpan, children }: { colSpan: number; children: React.ReactNode }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-4 py-14 text-center t-sm text-subtle">{children}</td>
+      <td colSpan={colSpan} className="px-4 py-12 text-center">
+        <span className="inline-flex flex-col items-center gap-3">
+          <span aria-hidden className="bp-rule" />
+          <span className="t-sm text-subtle">{children}</span>
+        </span>
+      </td>
     </tr>
   )
 }

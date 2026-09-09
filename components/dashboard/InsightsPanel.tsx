@@ -9,10 +9,10 @@ import {
 } from '@/lib/insights'
 
 const TYPE_STYLE: Record<InsightType, { dot: string; text: string; bg: string }> = {
-  positive: { dot: 'bg-emerald-500', text: 'text-emerald-300', bg: 'bg-emerald-500/5 border border-emerald-500/15' },
-  negative: { dot: 'bg-red-500', text: 'text-red-300', bg: 'bg-red-500/5 border border-red-500/15' },
-  warning: { dot: 'bg-amber-400', text: 'text-amber-300', bg: 'bg-amber-400/5 border border-amber-400/15' },
-  neutral: { dot: 'bg-sky-500', text: 'text-sky-300', bg: 'bg-sky-500/5 border border-sky-500/15' },
+  positive: { dot: 'bg-pos', text: 'text-pos', bg: 'bg-pos/5 border border-pos/15' },
+  negative: { dot: 'bg-neg', text: 'text-neg', bg: 'bg-neg/5 border border-neg/15' },
+  warning: { dot: 'bg-warn', text: 'text-warn', bg: 'bg-warn/5 border border-warn/15' },
+  neutral: { dot: 'bg-accent', text: 'text-accent-soft', bg: 'bg-accent/5 border border-accent/15' },
 }
 
 export default async function InsightsPanel() {
@@ -61,10 +61,10 @@ export default async function InsightsPanel() {
   if (insights.length === 0) return null
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div className="bg-surface border border-line rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3">
-        <h2 className="text-sm font-semibold text-white">Insights</h2>
-        <span className="text-xs text-gray-600">· Regras de negócio sobre o lançamento diário</span>
+        <h2 className="t-h3 text-fg">Insights</h2>
+        <span className="text-xs text-subtle">· Regras de negócio sobre o lançamento diário</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {insights.map((insight) => {

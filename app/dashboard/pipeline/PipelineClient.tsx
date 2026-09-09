@@ -12,17 +12,20 @@ interface Lead { id: string; name: string; company: string | null }
 
 const STAGES = ['PROSPECCAO', 'QUALIFICACAO', 'PROPOSTA', 'NEGOCIACAO', 'FECHAMENTO']
 
+/* O funil é PROGRESSÃO, não severidade: warn/alert aqui leriam como problema.
+   Uma só matiz em cinco intensidades — quanto mais perto do fechamento, mais
+   cheio o accent. Distingue os cinco estágios e responde aos dois temas. */
 const STAGE_ACCENT: Record<string, string> = {
-  PROSPECCAO: 'border-t-gray-500', QUALIFICACAO: 'border-t-sky-500',
-  PROPOSTA: 'border-t-amber-500', NEGOCIACAO: 'border-t-orange-500', FECHAMENTO: 'border-t-violet-500',
+  PROSPECCAO: 'border-t-line-2', QUALIFICACAO: 'border-t-accent/30',
+  PROPOSTA: 'border-t-accent/50', NEGOCIACAO: 'border-t-accent/75', FECHAMENTO: 'border-t-accent',
 }
 const CARD_BORDER: Record<string, string> = {
-  PROSPECCAO: 'border-l-gray-500', QUALIFICACAO: 'border-l-sky-500',
-  PROPOSTA: 'border-l-amber-500', NEGOCIACAO: 'border-l-orange-500', FECHAMENTO: 'border-l-violet-500',
+  PROSPECCAO: 'border-l-line-2', QUALIFICACAO: 'border-l-accent/30',
+  PROPOSTA: 'border-l-accent/50', NEGOCIACAO: 'border-l-accent/75', FECHAMENTO: 'border-l-accent',
 }
 const DOT: Record<string, string> = {
-  PROSPECCAO: 'bg-gray-400', QUALIFICACAO: 'bg-sky-400',
-  PROPOSTA: 'bg-amber-400', NEGOCIACAO: 'bg-orange-400', FECHAMENTO: 'bg-violet-400',
+  PROSPECCAO: 'bg-subtle', QUALIFICACAO: 'bg-accent/40',
+  PROPOSTA: 'bg-accent/60', NEGOCIACAO: 'bg-accent/80', FECHAMENTO: 'bg-accent',
 }
 
 const emptyForm = { title: '', value: '', probability: '30', leadId: '' }
@@ -75,8 +78,8 @@ export default function PipelineClient({ deals: initial, leads, userId, role }: 
   return (
     <div className="space-y-8">
       <div className="mb-6">
-        <h1 className="text-lg font-bold text-white">Pipeline</h1>
-        <p className="text-gray-600 text-sm mt-0.5">
+        <h1 className="t-h1 text-fg">Pipeline</h1>
+        <p className="text-subtle text-sm mt-0.5">
           {deals.length} negócios · Valor ponderado {formatCurrency(totalPonderado)}
         </p>
       </div>
@@ -92,75 +95,74 @@ export default function PipelineClient({ deals: initial, leads, userId, role }: 
               onDragOver={e => e.preventDefault()}
               onDrop={() => { if (dragging) { moveDeal(dragging, stage); setDragging(null) } }}
             >
-              <div className={`border-t-2 ${STAGE_ACCENT[stage]} bg-gray-900 border-x border-gray-800 rounded-t-xl px-3 py-2.5 flex items-center justify-between`}>
+              <div className={`border-t-2 ${STAGE_ACCENT[stage]} bg-surface border-x border-line rounded-t-xl px-3 py-2.5 flex items-center justify-between`}>
                 <div className="flex items-center gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full ${DOT[stage]}`} />
-                  <span className="text-xs font-semibold text-white">{DEAL_STAGE_LABELS[stage]}</span>
-                  <span className="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded-full">{stageDeals.length}</span>
+                  <span className="text-xs font-semibold text-fg">{DEAL_STAGE_LABELS[stage]}</span>
+                  <span className="text-xs bg-surface-2 text-subtle px-1.5 py-0.5 rounded-full">{stageDeals.length}</span>
                 </div>
-                <span className="text-xs text-gray-600">{formatCurrency(stageTotal)}</span>
+                <span className="text-xs text-subtle">{formatCurrency(stageTotal)}</span>
               </div>
 
-              <div className="bg-gray-900 border-x border-b border-gray-800 rounded-b-xl p-2 space-y-2 min-h-20">
+              <div className="bg-surface border-x border-b border-line rounded-b-xl p-2 space-y-2 min-h-20">
                 {stageDeals.map(deal => (
                   <div key={deal.id} draggable onDragStart={() => setDragging(deal.id)}
-                    className={`bg-gray-800/50 border border-gray-700/40 border-l-2 ${CARD_BORDER[deal.stage]} rounded-lg p-3 cursor-grab active:cursor-grabbing hover:bg-gray-800 transition-colors group`}
+                    className={`bg-surface-2 border border-line-2 border-l-2 ${CARD_BORDER[deal.stage]} rounded-lg p-3 cursor-grab active:cursor-grabbing hover:bg-surface-2 transition-colors group`}
                   >
                     <div className="flex items-start justify-between gap-1">
-                      <p className="text-xs font-medium text-white leading-tight flex-1">{deal.title}</p>
+                      <p className="text-xs font-medium text-fg leading-tight flex-1">{deal.title}</p>
                       {(role === 'ADMIN') && (
                         <button onClick={() => deleteDeal(deal.id)}
-                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 text-xs transition-opacity flex-shrink-0">✕</button>
+                          className="opacity-0 group-hover:opacity-100 text-subtle hover:text-neg text-xs transition-opacity flex-shrink-0">✕</button>
                       )}
                     </div>
                     {deal.lead && (
-                      <p className="text-xs text-gray-600 mt-0.5 truncate">{deal.lead.company || deal.lead.name}</p>
+                      <p className="text-xs text-subtle mt-0.5 truncate">{deal.lead.company || deal.lead.name}</p>
                     )}
                     <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-xs font-bold text-emerald-400">{formatCurrency(deal.value)}</span>
-                      <span className="text-xs text-gray-600">{deal.probability}%</span>
+                      <span className="text-xs font-bold text-pos">{formatCurrency(deal.value)}</span>
+                      <span className="text-xs text-subtle">{deal.probability}%</span>
                     </div>
-                    <p className="text-xs text-gray-700 mt-0.5">{deal.owner.name}</p>
+                    <p className="text-xs text-subtle mt-0.5">{deal.owner.name}</p>
                   </div>
                 ))}
 
                 {isAdding ? (
-                  <div className="bg-gray-800 border border-gray-700 rounded-lg p-2.5 space-y-2">
+                  <div className="bg-surface-2 border border-line-2 rounded-lg p-2.5 space-y-2">
                     <input autoFocus value={form.title}
                       onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
                       placeholder="Título *"
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
+                      className="bp-field w-full text-xs" />
                     <input type="number" value={form.value}
                       onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
                       placeholder="Valor R$ *"
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
+                      className="bp-field w-full text-xs" />
                     <div className="grid grid-cols-2 gap-1.5">
                       <input type="number" min="0" max="100" value={form.probability}
                         onChange={e => setForm(p => ({ ...p, probability: e.target.value }))}
                         placeholder="% prob."
-                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent" />
+                        className="bp-field w-full text-xs" />
                       <select value={form.leadId}
                         onChange={e => setForm(p => ({ ...p, leadId: e.target.value }))}
-                        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent">
+                        className="bp-field w-full text-xs">
                         <option value="">Lead opt.</option>
                         {leads.map(l => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
                       </select>
                     </div>
                     <div className="flex gap-1.5">
                       <button onClick={() => { setAddingTo(null); setForm(emptyForm) }}
-                        className="flex-1 py-1.5 text-xs text-gray-500 border border-gray-600 rounded hover:bg-gray-700">
+                        className="flex-1 py-1.5 text-xs text-subtle border border-line-2 rounded hover:bg-surface-2">
                         Cancelar
                       </button>
                       <button onClick={() => handleCreate(stage)} disabled={saving || !form.title || !form.value}
-                        className="flex-1 py-1.5 text-xs font-medium text-white rounded disabled:opacity-50"
-                        style={{ background: '#2F6BFF' }}>
+                        className="bp-btn-primary flex-1 py-1.5 text-xs font-medium rounded">
                         {saving ? '...' : 'Criar'}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <button onClick={() => { setAddingTo(stage); setForm(emptyForm) }}
-                    className="w-full py-2 text-xs text-gray-600 hover:text-gray-400 hover:bg-gray-800/50 rounded-lg transition-colors flex items-center justify-center gap-1">
+                    className="w-full py-2 text-xs text-subtle hover:text-muted hover:bg-surface-2 rounded-lg transition-colors flex items-center justify-center gap-1">
                     + Adicionar
                   </button>
                 )}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { formatCurrency, formatTPV, formatPercent, formatMesRef, getCurrentMonth } from '@/lib/utils'
+import { formatCurrency, formatTPV, formatPercent, formatMesRef, getCurrentMonth, formatDate} from '@/lib/utils'
 
 interface ForecastGeral {
   id: string; mesRef: string
@@ -98,35 +98,34 @@ export default function ForecastClient() {
 
   const currentMonthFc = forecasts.find(fc => fc.mesRef === getCurrentMonth())
 
-  const inp = 'w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-accent'
-  const lbl = 'block text-xs text-gray-500 mb-1'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-lg font-bold text-white">Forecast da Carteira</h1>
-          <p className="text-gray-600 text-sm mt-0.5">Previsão geral de TPV, transações, faturamento e margem</p>
+          <h1 className="t-h1 text-fg">Forecast da Carteira</h1>
+          <p className="text-subtle text-sm mt-0.5">Previsão geral de TPV, transações, faturamento e margem</p>
         </div>
         <button onClick={openNew}
-          className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all"
-          style={{ background: '#2F6BFF' }}>
+          className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg transition-all">
           + Novo Forecast
         </button>
       </div>
 
       {currentMonthFc && (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           {[
-            { l: 'TPV Previsto (mês atual)', v: formatTPV(currentMonthFc.tpvPrevisto), r: currentMonthFc.tpvRealizado ? formatTPV(currentMonthFc.tpvRealizado) : null, c: 'text-sky-400' },
-            { l: 'Qtd. Transações Prevista', v: currentMonthFc.qtdTransacoesPrevista.toLocaleString('pt-BR'), r: currentMonthFc.qtdTransacoesRealizadas ? currentMonthFc.qtdTransacoesRealizadas.toLocaleString('pt-BR') : null, c: 'text-violet-400' },
-            { l: 'Faturamento Previsto', v: formatCurrency(currentMonthFc.faturamentoPrevisto), r: null, c: 'text-emerald-400' },
-            { l: 'Margem Prevista', v: formatPercent(currentMonthFc.margemPrevista, 2), r: currentMonthFc.margemRealizada != null ? formatPercent(currentMonthFc.margemRealizada, 2) : null, c: 'text-amber-400' },
+            { l: 'TPV Previsto (mês atual)', v: formatTPV(currentMonthFc.tpvPrevisto), r: currentMonthFc.tpvRealizado ? formatTPV(currentMonthFc.tpvRealizado) : null, c: 'text-accent-soft' },
+            { l: 'Qtd. Transações Prevista', v: currentMonthFc.qtdTransacoesPrevista.toLocaleString('pt-BR'), r: currentMonthFc.qtdTransacoesRealizadas ? currentMonthFc.qtdTransacoesRealizadas.toLocaleString('pt-BR') : null, c: 'text-accent-soft' },
+            { l: 'Faturamento Previsto', v: formatCurrency(currentMonthFc.faturamentoPrevisto), r: null, c: 'text-pos' },
+            { l: 'Margem Prevista', v: formatPercent(currentMonthFc.margemPrevista, 2), r: currentMonthFc.margemRealizada != null ? formatPercent(currentMonthFc.margemRealizada, 2) : null, c: 'text-warn' },
           ].map(k => (
-            <div key={k.l} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <p className="text-gray-600 text-xs mb-1.5">{k.l}</p>
-              <p className={`text-xl font-bold ${k.c}`}>{k.v}</p>
-              {k.r && <p className="text-xs text-gray-500 mt-0.5">Realizado: <span className="text-gray-300">{k.r}</span></p>}
+            <div key={k.l} className="bg-surface border border-line rounded-xl p-4">
+              <p className="text-subtle text-xs mb-1.5">{k.l}</p>
+              <p className={`text-xl font-bold tnum ${k.c}`}>{k.v}</p>
+              {k.r && <p className="text-xs text-subtle mt-0.5">Realizado: <span className="text-muted">{k.r}</span></p>}
             </div>
           ))}
         </div>
@@ -134,57 +133,57 @@ export default function ForecastClient() {
 
       <div className="flex gap-3 mb-5">
         <input type="month" value={mesFilter} onChange={e => setMesFilter(e.target.value)}
-          className="bg-gray-900 border border-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+          className="bp-field text-sm" />
         {mesFilter && (
-          <button onClick={() => setMesFilter('')} className="text-gray-600 hover:text-gray-400 text-sm px-3">Limpar</button>
+          <button onClick={() => setMesFilter('')} className="text-subtle hover:text-muted text-sm px-3">Limpar</button>
         )}
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-x-auto">
+      <div className="bg-surface border border-line rounded-xl overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-800">
+            <tr className="border-b border-line">
               {['Mês', 'Lançamento', 'TPV Previsto', 'TPV Realizado', 'Qtd. Tx', 'Qtd. MED', 'Rec. Tarif. WL', 'Margem Prev.', 'Margem Real.', ''].map(h => (
-                <th key={h} className={`text-xs font-medium text-gray-600 py-3 whitespace-nowrap ${h === 'Mês' || h === '' ? 'text-left px-5' : 'text-right px-3'}`}>{h}</th>
+                <th key={h} className={`t-label text-subtle py-3 whitespace-nowrap ${h === 'Mês' || h === '' ? 'text-left px-5' : 'text-right px-3'}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="text-center text-gray-700 py-12 text-sm">Carregando...</td></tr>
+              <tr><td colSpan={10} className="text-center text-subtle py-12 text-sm">Carregando...</td></tr>
             ) : forecasts.length === 0 ? (
-              <tr><td colSpan={10} className="text-center text-gray-700 py-12 text-sm">Nenhum forecast cadastrado</td></tr>
+              <tr><td colSpan={10} className="text-center text-subtle py-12 text-sm">Nenhum forecast cadastrado</td></tr>
             ) : forecasts.map(fc => {
               const medPct = fc.qtdMedRealizada != null && fc.qtdTransacoesRealizadas && fc.qtdTransacoesRealizadas > 0
                 ? (fc.qtdMedRealizada / fc.qtdTransacoesRealizadas) * 100 : null
               return (
-                <tr key={fc.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                  <td className="px-5 py-3 text-sm font-semibold text-white whitespace-nowrap">{formatMesRef(fc.mesRef)}</td>
-                  <td className="px-3 py-3 text-right text-xs text-gray-600 whitespace-nowrap">
-                    {fc.dataLancamento ? new Date(fc.dataLancamento).toLocaleDateString('pt-BR') : '—'}
+                <tr key={fc.id} className="border-b border-line hover:bg-[var(--bp-hover)]">
+                  <td className="px-5 py-3 text-sm font-semibold text-fg whitespace-nowrap">{formatMesRef(fc.mesRef)}</td>
+                  <td className="px-3 py-3 text-right text-xs text-subtle whitespace-nowrap">
+                    {fc.dataLancamento ? formatDate(fc.dataLancamento) : '—'}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm text-sky-400 whitespace-nowrap">{formatTPV(fc.tpvPrevisto)}</td>
-                  <td className="px-3 py-3 text-right text-sm text-sky-300 whitespace-nowrap">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-gray-700">—</span>}</td>
-                  <td className="px-3 py-3 text-right text-sm text-violet-400 whitespace-nowrap">
+                  <td className="px-3 py-3 text-right text-sm text-accent-soft whitespace-nowrap">{formatTPV(fc.tpvPrevisto)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-accent-soft whitespace-nowrap">{fc.tpvRealizado != null ? formatTPV(fc.tpvRealizado) : <span className="text-subtle">—</span>}</td>
+                  <td className="px-3 py-3 text-right text-sm text-accent-soft whitespace-nowrap">
                     {fc.qtdTransacoesPrevista.toLocaleString('pt-BR')}
-                    {fc.qtdTransacoesRealizadas != null && <span className="text-gray-600 text-xs"> / {fc.qtdTransacoesRealizadas.toLocaleString('pt-BR')}</span>}
+                    {fc.qtdTransacoesRealizadas != null && <span className="text-subtle text-xs"> / {fc.qtdTransacoesRealizadas.toLocaleString('pt-BR')}</span>}
                   </td>
                   <td className="px-3 py-3 text-right text-sm whitespace-nowrap">
                     {fc.qtdMedRealizada != null
-                      ? <span className="text-indigo-400">{fc.qtdMedRealizada.toLocaleString('pt-BR')}{medPct !== null && <span className="text-gray-600 text-xs ml-1">({medPct.toFixed(1)}%)</span>}</span>
-                      : <span className="text-gray-700">—</span>}
+                      ? <span className="text-accent-soft">{fc.qtdMedRealizada.toLocaleString('pt-BR')}{medPct !== null && <span className="text-subtle text-xs ml-1">({medPct.toFixed(1)}%)</span>}</span>
+                      : <span className="text-subtle">—</span>}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm text-emerald-400 whitespace-nowrap">
-                    {fc.receitaTarifariaWl != null ? formatCurrency(fc.receitaTarifariaWl) : <span className="text-gray-700">—</span>}
+                  <td className="px-3 py-3 text-right text-sm text-pos whitespace-nowrap">
+                    {fc.receitaTarifariaWl != null ? formatCurrency(fc.receitaTarifariaWl) : <span className="text-subtle">—</span>}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm text-amber-400 whitespace-nowrap">{formatPercent(fc.margemPrevista, 2)}</td>
-                  <td className="px-3 py-3 text-right text-sm text-amber-300 whitespace-nowrap">
-                    {fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-gray-700">—</span>}
+                  <td className="px-3 py-3 text-right text-sm text-warn whitespace-nowrap">{formatPercent(fc.margemPrevista, 2)}</td>
+                  <td className="px-3 py-3 text-right text-sm text-warn whitespace-nowrap">
+                    {fc.margemRealizada != null ? formatPercent(fc.margemRealizada, 2) : <span className="text-subtle">—</span>}
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => openEdit(fc)} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">Editar</button>
-                      <button onClick={() => handleDelete(fc)} className="text-xs text-red-700 hover:text-red-400 transition-colors">Excluir</button>
+                      <button onClick={() => openEdit(fc)} className="text-xs text-subtle hover:text-muted transition-colors">Editar</button>
+                      <button onClick={() => handleDelete(fc)} className="text-xs text-neg hover:text-neg transition-colors">Excluir</button>
                     </div>
                   </td>
                 </tr>
@@ -195,17 +194,17 @@ export default function ForecastClient() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
-              <h2 className="text-base font-semibold text-white">{editingId ? 'Editar Forecast' : 'Novo Forecast'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-600 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="bg-surface border border-line-2 rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">{editingId ? 'Editar Forecast' : 'Novo Forecast'}</h2>
+              <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleSave} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={lbl}>Mês de Referência *</label>
-                  <input required type="month" value={form.mesRef} onChange={f('mesRef')} disabled={!!editingId} className={inp + (editingId ? ' opacity-50 cursor-not-allowed' : '')} />
+                  <input required type="month" value={form.mesRef} onChange={f('mesRef')} disabled={!!editingId} className={inp} />
                 </div>
                 <div>
                   <label className={lbl}>Data do Lançamento</label>
@@ -213,9 +212,9 @@ export default function ForecastClient() {
                 </div>
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-xs text-gray-600 font-semibold tracking-wider mb-3">PREVISTO</p>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="border-t border-line pt-4">
+                <p className="text-xs text-subtle font-semibold tracking-wider mb-3">PREVISTO</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className={lbl}>TPV Previsto (R$)</label><input type="number" step="0.01" value={form.tpvPrevisto} onChange={f('tpvPrevisto')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. Transações Prevista</label><input type="number" value={form.qtdTransacoesPrevista} onChange={f('qtdTransacoesPrevista')} className={inp} /></div>
                   <div><label className={lbl}>Faturamento Previsto (R$)</label><input type="number" step="0.01" value={form.faturamentoPrevisto} onChange={f('faturamentoPrevisto')} className={inp} /></div>
@@ -223,9 +222,9 @@ export default function ForecastClient() {
                 </div>
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-xs text-gray-600 font-semibold tracking-wider mb-3">REALIZADO (opcional)</p>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="border-t border-line pt-4">
+                <p className="text-xs text-subtle font-semibold tracking-wider mb-3">REALIZADO (opcional)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className={lbl}>TPV Realizado (R$)</label><input type="number" step="0.01" value={form.tpvRealizado} onChange={f('tpvRealizado')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. Transações Realizadas</label><input type="number" value={form.qtdTransacoesRealizadas} onChange={f('qtdTransacoesRealizadas')} className={inp} /></div>
                   <div><label className={lbl}>Qtd. MED Realizadas</label><input type="number" value={form.qtdMedRealizada} onChange={f('qtdMedRealizada')} className={inp} placeholder="Qtd. de transações MED" /></div>
@@ -237,10 +236,9 @@ export default function ForecastClient() {
               <div><label className={lbl}>Notas</label><textarea rows={2} value={form.notas} onChange={f('notas')} className={inp + ' resize-none'} /></div>
 
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-500 border border-gray-700 hover:text-white text-sm rounded-lg transition-colors">Cancelar</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving}
-                  className="px-4 py-2 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
-                  style={{ background: '#2F6BFF' }}>
+                  className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg transition-all">
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

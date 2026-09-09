@@ -18,15 +18,15 @@ interface Alerta {
 }
 
 const ESTILO: Record<Severidade, { cls: string; label: string }> = {
-  critico: { cls: 'border-red-500/25 bg-red-500/5', label: 'Crítico' },
-  atencao: { cls: 'border-amber-400/25 bg-amber-400/5', label: 'Atenção' },
-  info: { cls: 'border-sky-500/25 bg-sky-500/5', label: 'Informativo' },
+  critico: { cls: 'border-neg/25 bg-neg/5', label: 'Crítico' },
+  atencao: { cls: 'border-warn/25 bg-warn/5', label: 'Atenção' },
+  info: { cls: 'border-accent/25 bg-accent/5', label: 'Informativo' },
 }
 
 const COR_PILL: Record<Severidade, string> = {
-  critico: 'bg-red-500/15 text-red-400',
-  atencao: 'bg-amber-400/15 text-amber-300',
-  info: 'bg-sky-500/15 text-sky-300',
+  critico: 'bg-neg/15 text-neg',
+  atencao: 'bg-warn/15 text-warn',
+  info: 'bg-accent/15 text-accent-soft',
 }
 
 export default async function AlertasPage() {
@@ -124,16 +124,16 @@ export default async function AlertasPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-lg font-bold text-white">Alertas</h1>
-        <p className="text-gray-600 text-sm mt-0.5">
+        <h1 className="t-h1 text-fg">Alertas</h1>
+        <p className="text-subtle text-sm mt-0.5">
           Verificações automáticas sobre lançamentos, volumetria, cobranças e operação.
         </p>
       </div>
 
       {alertas.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-          <p className="text-white font-medium">Nenhum alerta no momento</p>
-          <p className="text-gray-600 text-sm mt-1">
+        <div className="bg-surface border border-line rounded-xl p-8 text-center">
+          <p className="text-fg font-medium">Nenhum alerta no momento</p>
+          <p className="text-subtle text-sm mt-1">
             Lançamentos em dia, volumetria dentro do contratado e nenhuma cobrança vencida.
           </p>
         </div>
@@ -144,12 +144,12 @@ export default async function AlertasPage() {
             const conteudo = (
               <div className={`border rounded-xl p-4 ${e.cls} ${a.href ? 'hover:border-opacity-60 transition-colors' : ''}`}>
                 <div className="flex items-start justify-between gap-3 mb-1">
-                  <h3 className="text-sm font-semibold text-white">{a.titulo}</h3>
+                  <h3 className="t-h3 text-fg">{a.titulo}</h3>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${COR_PILL[a.severidade]}`}>
                     {e.label}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400">{a.detalhe}</p>
+                <p className="text-xs text-muted">{a.detalhe}</p>
               </div>
             )
             return a.href
