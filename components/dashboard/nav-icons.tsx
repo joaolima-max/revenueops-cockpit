@@ -34,6 +34,7 @@ export const ICONS: Record<string, ReactNode> = {
   'operacoes.tarefas': I.tarefas,
   'operacoes.metricas': I.metricas,
   'comercial.pipeline': I.pipeline,
+  'comercial.funis': I.parametros,
   'comercial.leads': I.leads,
   'comercial.followup': I.followup,
   'financeiro.contas': I.financeiro,

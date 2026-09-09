@@ -105,6 +105,20 @@ enum IncidenteCriticidade {
   CRITICA
 }
 
+/// Comportamento da etapa. GANHO e PERDIDO encerram o card: saem das colunas
+/// ativas do quadro e gravam `closedAt` no Deal.
+enum EtapaTipo {
+  NORMAL
+  GANHO
+  PERDIDO
+}
+
+enum MovimentacaoTipo {
+  CRIACAO
+  MOVIMENTO_ETAPA
+  TRANSFERENCIA_FUNIL
+}
+
 
 model User {
   id        String   @id @default(cuid())
@@ -125,6 +139,8 @@ model User {
   tarefasCriadas Tarefa[]        @relation("TarefaCriador")
   tarefasAssign  Tarefa[]        @relation("TarefaResponsavel")
   auditorias     Auditoria[]
+  pipelinePermissoes PipelinePermissao[]
+  movimentacoes      PipelineMovimentacao[]
 }
 
 model Lead {
@@ -168,6 +184,20 @@ model Deal {
   leadId     String?
   lead       Lead?      @relation(fields: [leadId], references: [id])
   activities Activity[]
+
+  /// Funil e etapa em que o card esta AGORA. Nulos apenas ate o backfill da
+  /// migration v11 rodar; depois disso todo Deal mora em algum funil.
+  funilId    String?
+  funil      PipelineFunil? @relation(fields: [funilId], references: [id])
+  etapaId    String?
+  etapa      PipelineEtapa? @relation(fields: [etapaId], references: [id])
+  /// Preenchido quando o card passa para um funil de pos-venda.
+  clienteId  String?
+  cliente    Cliente?   @relation(fields: [clienteId], references: [id])
+
+  movimentacoes PipelineMovimentacao[]
+
+  @@index([funilId, etapaId])
 }
 
 model Activity {
@@ -216,6 +246,7 @@ model Cliente {
   contasReceber  ContaReceber[]
   followUps      FollowUp[]
   volumetrias    VolumetriaMinima[]
+  deals          Deal[]
 }
 
 
@@ -401,4 +432,113 @@ model VolumetriaMinima {
 
   @@unique([clienteId, periodo])
   @@index([clienteId, ativo])
+}
+
+
+/// PIPELINE MULTI-FUNIL
+///
+/// O card NAO e um modelo novo: e o proprio Deal, que ganhou funilId/etapaId.
+/// Um unico Deal atravessa Vendas -> Onboarding -> Operacoes, e por isso lead,
+/// cliente, dono e atividades continuam associados sem nenhuma copia.
+
+model PipelineFunil {
+  id           String   @id @default(cuid())
+  nome         String   @unique
+  descricao    String?
+  /// Area/departamento dono do funil. Rotulo descritivo: quem pode o que fica
+  /// em PipelinePermissao, nao aqui.
+  area         String?
+  ordem        Int      @default(0)
+  ativo        Boolean  @default(true)
+  /// Funis de pos-venda exigem um Cliente vinculado ao receber o card.
+  exigeCliente Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  etapas     PipelineEtapa[]
+  permissoes PipelinePermissao[]
+  deals      Deal[]
+  movOrigem  PipelineMovimentacao[] @relation("MovFunilOrigem")
+  movDestino PipelineMovimentacao[] @relation("MovFunilDestino")
+
+  @@index([ativo, ordem])
+}
+
+model PipelineEtapa {
+  id        String        @id @default(cuid())
+  funilId   String
+  funil     PipelineFunil @relation(fields: [funilId], references: [id], onDelete: Cascade)
+  nome      String
+  descricao String?
+  /// Posicao da coluna. Indice NAO unico de proposito: um unique quebraria
+  /// qualquer troca de posicao entre duas etapas.
+  ordem     Int           @default(0)
+  cor       String?
+  ativo     Boolean       @default(true)
+  tipo      EtapaTipo     @default(NORMAL)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  deals      Deal[]
+  movOrigem  PipelineMovimentacao[] @relation("MovEtapaOrigem")
+  movDestino PipelineMovimentacao[] @relation("MovEtapaDestino")
+
+  @@unique([funilId, nome])
+  @@index([funilId, ordem])
+}
+
+/// Alcada de UM funil para UMA role ou UM usuario — nunca os dois na mesma
+/// linha. Nao substitui o sistema de permissoes: refina, dentro do modulo,
+/// o que `view_pipeline`/`manage_pipeline` ja liberaram.
+model PipelinePermissao {
+  id      String        @id @default(cuid())
+  funilId String
+  funil   PipelineFunil @relation(fields: [funilId], references: [id], onDelete: Cascade)
+  role    Role?
+  userId  String?
+  user    User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ver         Boolean @default(true)
+  editar      Boolean @default(false)
+  mover       Boolean @default(false)
+  criar       Boolean @default(false)
+  transferir  Boolean @default(false)
+  administrar Boolean @default(false)
+  /// Preserva a regra que hoje esta embutida no codigo: o COMERCIAL so
+  /// enxerga os proprios negocios.
+  apenasProprios Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([funilId, role])
+  @@unique([funilId, userId])
+  @@index([funilId])
+}
+
+/// Historico do card. Coexiste com Auditoria: o `detalhes` da Auditoria e
+/// texto livre e nao permite montar uma linha do tempo com origem e destino,
+/// nem filtrar por funil.
+model PipelineMovimentacao {
+  id     String           @id @default(cuid())
+  dealId String
+  deal   Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  tipo   MovimentacaoTipo
+
+  funilOrigemId  String?
+  funilOrigem    PipelineFunil? @relation("MovFunilOrigem", fields: [funilOrigemId], references: [id])
+  etapaOrigemId  String?
+  etapaOrigem    PipelineEtapa? @relation("MovEtapaOrigem", fields: [etapaOrigemId], references: [id])
+  funilDestinoId String
+  funilDestino   PipelineFunil  @relation("MovFunilDestino", fields: [funilDestinoId], references: [id])
+  etapaDestinoId String
+  etapaDestino   PipelineEtapa  @relation("MovEtapaDestino", fields: [etapaDestinoId], references: [id])
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  observacao String?
+  createdAt  DateTime @default(now())
+
+  @@index([dealId, createdAt])
+  @@index([funilDestinoId, createdAt])
 }

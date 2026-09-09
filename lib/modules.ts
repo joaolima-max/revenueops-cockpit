@@ -92,7 +92,11 @@ export const MODULES: Module[] = [
     label: 'COMERCIAL',
     enabled: true,
     features: [
-      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals'], enabled: true },
+      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline'], enabled: true },
+      // Ambiente administrativo dos funis. Fica sob /dashboard/pipeline, que o
+      // `checkAccess` casa por prefixo — por isso o proxy NAO consegue separar as
+      // duas rotas, e o `administrar` e verificado na pagina e em cada API.
+      { key: 'comercial.funis', label: 'Funis', route: '/dashboard/pipeline/funis', enabled: true, roles: ['ADMIN'] },
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.followup', label: 'Follow-up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
     ],

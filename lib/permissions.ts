@@ -28,6 +28,7 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_leads',     label: 'Gerenciar Leads',          group: 'CRM' },
   { key: 'view_pipeline',    label: 'Ver Pipeline',             group: 'CRM' },
   { key: 'manage_pipeline',  label: 'Gerenciar Pipeline',       group: 'CRM' },
+  { key: 'admin_funis',      label: 'Administrar Funis',        group: 'CRM' },
   { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
   { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
   // Admin
