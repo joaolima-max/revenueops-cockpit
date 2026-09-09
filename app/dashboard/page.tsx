@@ -180,8 +180,11 @@ export default async function DashboardPage() {
           <div className="min-w-0">
             <h2 className="t-h2 text-fg">Volumetria Mínima Contratada</h2>
             <p className="t-sm text-muted mt-1 tabular-nums">
-              Mínimo {volumetria.qtdMinima.toLocaleString('pt-BR')} transações ·{' '}
-              Realizado {volumetria.realizado?.toLocaleString('pt-BR') ?? 'sem dados'}
+              Mínimo {volumetria.qtdMinima.toLocaleString('pt-BR')} transações
+              {volumetria.origem === 'CLIENTES'
+                ? ` · soma de ${volumetria.clientes} ${volumetria.clientes === 1 ? 'cliente' : 'clientes'}`
+                : ' · contrato geral'}
+              {' · '}Realizado {volumetria.realizado?.toLocaleString('pt-BR') ?? 'sem dados'}
             </p>
           </div>
           <Badge tone={VOLUMETRIA[volumetria.status]?.tone ?? 'neutral'}>

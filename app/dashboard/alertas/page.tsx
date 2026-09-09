@@ -5,7 +5,18 @@ import { prisma } from '@/lib/prisma'
 import { formatCurrency, formatMesRef } from '@/lib/utils'
 import {
   kpisDoPeriodo, volumetriaDoPeriodo, periodoAtual, ultimosPeriodos, intervaloMes,
+  type VolumetriaPeriodo,
 } from '@/lib/kpi'
+
+/**
+ * O mínimo do mês passou a ser a soma das exigências contratuais dos clientes
+ * vigentes. Dizer de onde ele veio evita que o alerta pareça um número mágico,
+ * e distingue os meses antigos, que ainda usam o contrato geral legado.
+ */
+function origemVolumetria(v: VolumetriaPeriodo): string {
+  if (v.origem !== 'CLIENTES') return ' (contrato geral)'
+  return ` (soma de ${v.clientes} ${v.clientes === 1 ? 'cliente' : 'clientes'})`
+}
 
 type Severidade = 'critico' | 'atencao' | 'info'
 
@@ -57,7 +68,7 @@ export default async function AlertasPage() {
       id: 'vol-anterior',
       severidade: 'critico',
       titulo: `Volumetria mínima não atingida em ${formatMesRef(anterior)}`,
-      detalhe: `Faltaram ${Math.abs(volumetriaAnterior.diferenca ?? 0).toLocaleString('pt-BR')} transações para o mínimo contratado de ${volumetriaAnterior.qtdMinima.toLocaleString('pt-BR')}.`,
+      detalhe: `Faltaram ${Math.abs(volumetriaAnterior.diferenca ?? 0).toLocaleString('pt-BR')} transações para o mínimo contratado de ${volumetriaAnterior.qtdMinima.toLocaleString('pt-BR')}${origemVolumetria(volumetriaAnterior)}.`,
       href: '/dashboard/volumetria',
     })
   }
@@ -67,7 +78,7 @@ export default async function AlertasPage() {
       id: 'vol-atual',
       severidade: 'atencao',
       titulo: 'Volumetria mínima do mês ainda não atingida',
-      detalhe: `Faltam ${Math.abs(volumetria.diferenca ?? 0).toLocaleString('pt-BR')} transações. O mês ainda está em curso.`,
+      detalhe: `Faltam ${Math.abs(volumetria.diferenca ?? 0).toLocaleString('pt-BR')} transações para o mínimo de ${volumetria.qtdMinima.toLocaleString('pt-BR')}${origemVolumetria(volumetria)}. O mês ainda está em curso.`,
       href: '/dashboard/volumetria',
     })
   }

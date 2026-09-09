@@ -215,6 +215,7 @@ model Cliente {
   tarefas        Tarefa[]
   contasReceber  ContaReceber[]
   followUps      FollowUp[]
+  volumetrias    VolumetriaMinima[]
 }
 
 
@@ -372,13 +373,32 @@ model FloatConfig {
   createdAt      DateTime @default(now())
 }
 
-/// Volumetria minima CONTRATADA GERAL da empresa por periodo (YYYY-MM).
-/// O realizado vem de LancamentoDiario; o atingimento e derivado, nunca gravado.
+/// Exigencia CONTRATUAL de quantidade minima de transacoes de UM cliente,
+/// vigente de `periodo` (YYYY-MM, inicio) ate `vigenciaFim` (inclusive) ou por
+/// prazo indeterminado.
+///
+/// Nao e TPV nem realizado por cliente: o realizado continua vindo, sempre e
+/// somente, de LancamentoDiario, que e global por data. O minimo consolidado
+/// de um mes e a SOMA dos contratos vigentes naquele mes.
+///
+/// Linhas com `clienteId` nulo sao contratos GERAIS legados, anteriores a
+/// vinculacao por cliente. Preservadas para leitura e para que os alertas de
+/// meses ja fechados nao mudem de resultado; a aplicacao nao cria mais linhas
+/// assim.
 model VolumetriaMinima {
-  id        String   @id @default(cuid())
-  periodo   String   @unique
-  qtdMinima Int
-  notas     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  clienteId   String?
+  cliente     Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// Inicio da vigencia, "YYYY-MM". Mantem o nome original da coluna.
+  periodo     String
+  /// Fim da vigencia, "YYYY-MM" inclusive. Nulo = prazo indeterminado.
+  vigenciaFim String?
+  qtdMinima   Int
+  ativo       Boolean  @default(true)
+  notas       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clienteId, periodo])
+  @@index([clienteId, ativo])
 }

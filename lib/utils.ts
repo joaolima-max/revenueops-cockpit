@@ -102,6 +102,10 @@ export const TAREFA_PRIORIDADE_LABELS: Record<string, string> = {
   BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta', CRITICA: 'Crítica',
 }
 
+export const VOLUMETRIA_STATUS_LABELS: Record<string, string> = {
+  VIGENTE: 'Vigente', PROGRAMADA: 'Programada', ENCERRADA: 'Encerrada', INATIVA: 'Inativa',
+}
+
 export const INCIDENTE_CRITICIDADE_LABELS: Record<string, string> = {
   BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta', CRITICA: 'Crítica',
 }

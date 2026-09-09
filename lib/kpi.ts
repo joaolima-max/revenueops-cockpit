@@ -14,6 +14,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/float'
+import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
 
 /** Primeiro instante do mês e o primeiro do mês seguinte, para "YYYY-MM". */
 export function intervaloMes(periodo: string): { inicio: Date; fim: Date } {
@@ -224,15 +225,23 @@ export interface VolumetriaPeriodo {
   realizado: number | null
   diferenca: number | null
   status: StatusVolumetria
+  /** Soma dos contratos por cliente, ou contrato geral legado (meses antigos). */
+  origem: 'CLIENTES' | 'GERAL_LEGADO'
+  /** Quantos clientes compõem o mínimo. Zero quando a origem é o legado. */
+  clientes: number
 }
 
 /**
- * Volumetria mínima GERAL do período. O realizado vem do lançamento diário.
+ * Volumetria mínima CONSOLIDADA do período.
+ *
+ * O mínimo é a soma das exigências contratuais dos clientes vigentes no mês
+ * (ver lib/volumetria.ts). O realizado continua vindo do lançamento diário,
+ * que é global — não existe transação por cliente, por decisão de produto.
  * Meses ainda em curso ficam EM_ACOMPANHAMENTO até fecharem.
  */
 export async function volumetriaDoPeriodo(periodo: string): Promise<VolumetriaPeriodo | null> {
   const [contrato, kpis] = await Promise.all([
-    prisma.volumetriaMinima.findUnique({ where: { periodo } }),
+    minimoContratadoDoPeriodo(periodo),
     kpisDoPeriodo(periodo),
   ])
   if (!contrato) return null
@@ -252,5 +261,7 @@ export async function volumetriaDoPeriodo(periodo: string): Promise<VolumetriaPe
     realizado,
     diferenca: realizado === null ? null : realizado - contrato.qtdMinima,
     status,
+    origem: contrato.origem,
+    clientes: contrato.clientes,
   }
 }
