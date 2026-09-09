@@ -166,12 +166,16 @@ export interface MinimoConsolidado {
  * contrato geral legado, para que os alertas historicos nao mudem de resposta.
  * Retorna null quando nao ha contrato nenhum: ausencia de dado, nunca zero.
  */
-export async function minimoContratadoDoPeriodo(periodo: string): Promise<MinimoConsolidado | null> {
-  const linhas = await prisma.volumetriaMinima.findMany({
-    where: { ativo: true, periodo: { lte: periodo } },
-    select: { clienteId: true, periodo: true, vigenciaFim: true, qtdMinima: true, ativo: true },
-  })
+export interface LinhaMinimo extends Vigencia {
+  clienteId: string | null
+  qtdMinima: number
+}
 
+/**
+ * A agregacao propriamente dita, separada da consulta para poder ser testada
+ * sem banco. Recebe candidatas, devolve o minimo do mes.
+ */
+export function consolidarMinimo(linhas: LinhaMinimo[], periodo: string): MinimoConsolidado | null {
   const vigentes = linhas.filter((l) => cobrePeriodo(l, periodo))
 
   const porCliente = vigentes.filter((l) => l.clienteId !== null)
@@ -183,10 +187,19 @@ export async function minimoContratadoDoPeriodo(periodo: string): Promise<Minimo
     }
   }
 
+  // O contrato geral legado valia por UM mes, nao por vigencia aberta.
   const legado = vigentes.find((l) => l.clienteId === null && l.periodo === periodo)
   if (legado) return { qtdMinima: legado.qtdMinima, clientes: 0, origem: 'GERAL_LEGADO' }
 
   return null
+}
+
+export async function minimoContratadoDoPeriodo(periodo: string): Promise<MinimoConsolidado | null> {
+  const linhas = await prisma.volumetriaMinima.findMany({
+    where: { ativo: true, periodo: { lte: periodo } },
+    select: { clienteId: true, periodo: true, vigenciaFim: true, qtdMinima: true, ativo: true },
+  })
+  return consolidarMinimo(linhas, periodo)
 }
 
 /**
