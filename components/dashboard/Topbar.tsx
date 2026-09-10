@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { activeFeatures } from '@/lib/modules'
 import { Dot } from '@/components/ui/Badge'
+import SinoNotificacoes from '@/components/notificacoes/SinoNotificacoes'
+import BrandMark from '@/components/ui/BrandMark'
 import ThemeToggle from '@/components/theme/ThemeToggle'
 
 /**
@@ -45,6 +47,10 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
           </svg>
         </button>
 
+        {/* Abaixo de lg a sidebar vira drawer e a marca sai da tela — aqui ela
+            reaparece, no mesmo tamanho do lockup compacto. */}
+        <BrandMark size={22} className="lg:hidden flex-none text-fg" />
+
         <nav aria-label="Localização" className="min-w-0 flex items-center gap-2.5">
           <Dot tone="accent" />
           {current ? (
@@ -59,6 +65,7 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <SinoNotificacoes />
           <span className="hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-line bg-[var(--bp-hover)]">
             <span className="t-label text-subtle">São Paulo</span>
             <span className="t-mono text-fg tabular-nums">{clock ?? '--:--:--'}</span>

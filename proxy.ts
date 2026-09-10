@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { checkAccess, firstAvailableRoute } from '@/lib/modules'
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login']
+// `/f/` e a pagina publica de formulario e `/api/formularios/publico/` a sua
+// API: sao acessadas por quem recebeu o link, sem conta no sistema.
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/f/', '/api/formularios/publico/']
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl

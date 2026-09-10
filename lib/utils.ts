@@ -63,7 +63,66 @@ export const DEAL_STAGE_LABELS: Record<string, string> = {
 }
 
 export const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Administrador', OPERACIONAL: 'Operacional', COMERCIAL: 'Comercial',
+  ADMIN: 'Administrador', GESTOR: 'Gestor', OPERACIONAL: 'Operador', COMERCIAL: 'Comercial',
+}
+
+export const SEGMENTO_CRM_LABELS: Record<string, string> = {
+  CRYPTO_EXCHANGES: 'Crypto / Exchanges / PSAV / P2P / OTC',
+  REMESSA_FX: 'Remessa / FX / Crossborder / Pagamentos Internacionais',
+  GATEWAY_PAGAMENTOS: 'Gateway de Pagamentos',
+  TELECOM: 'Telecom',
+  ERP: 'ERP',
+  IGAMING: 'iGaming',
+  SAAS: 'SaaS',
+  BAAS: 'BaaS',
+}
+
+export const CANAL_LABELS: Record<string, string> = {
+  OUTBOUND: 'Outbound', INDICACAO: 'Indicação', INBOUND: 'Inbound',
+  EVENTOS: 'Eventos', OUTRO: 'Outro',
+}
+
+export const DOCUMENTO_CATEGORIA_LABELS: Record<string, string> = {
+  CONTRATO: 'Contrato', KYC_KYB: 'KYC/KYB', CERTIFICADO: 'Certificado',
+  COMPROVANTE: 'Comprovante', COMERCIAL: 'Comercial', FINANCEIRO: 'Financeiro',
+  OUTROS: 'Outros',
+}
+
+export const PENDENCIA_MOTIVO_LABELS: Record<string, string> = {
+  ATUALIZACAO_CADASTRAL: 'Atualização cadastral',
+  EXPLICACAO_MOVIMENTACAO: 'Explicação da movimentação',
+  EXPLICACAO_DENUNCIA: 'Explicação sobre denúncia',
+  REGULARIZACAO_DOCUMENTO: 'Regularização do CNPJ / CPF',
+  OUTRO: 'Outro',
+}
+
+export const PENDENCIA_STATUS_LABELS: Record<string, string> = {
+  ABERTA: 'Aberta', EM_ANALISE: 'Em análise', AGUARDANDO_CLIENTE: 'Aguardando cliente',
+  RESOLVIDA: 'Resolvida', CANCELADA: 'Cancelada',
+}
+
+export const AUTOMACAO_GATILHO_LABELS: Record<string, string> = {
+  CARD_CRIADO: 'Card criado',
+  ETAPA_CONCLUIDA: 'Etapa concluída',
+  CARD_TRANSFERIDO: 'Card transferido',
+  FORMULARIO_ENVIADO: 'Formulário enviado',
+}
+
+export const AUTOMACAO_ACAO_LABELS: Record<string, string> = {
+  TRANSFERIR_FUNIL: 'Transferir para outro funil',
+  NOTIFICAR: 'Notificar usuário',
+  CRIAR_TAREFA: 'Criar tarefa',
+  ABRIR_PENDENCIA: 'Abrir pendência de compliance',
+}
+
+export function formatDateTime(d: Date | string): string {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(d))
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export const MODELO_OPERACIONAL_LABELS: Record<string, string> = {
@@ -100,6 +159,10 @@ export const TAREFA_STATUS_LABELS: Record<string, string> = {
 
 export const TAREFA_PRIORIDADE_LABELS: Record<string, string> = {
   BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta', CRITICA: 'Crítica',
+}
+
+export const VOLUMETRIA_STATUS_LABELS: Record<string, string> = {
+  VIGENTE: 'Vigente', PROGRAMADA: 'Programada', ENCERRADA: 'Encerrada', INATIVA: 'Inativa',
 }
 
 export const INCIDENTE_CRITICIDADE_LABELS: Record<string, string> = {

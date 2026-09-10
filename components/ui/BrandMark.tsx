@@ -1,9 +1,15 @@
 /**
- * Marca institucional da Bass Pago — a mesma do favicon do site:
- * quadrado arredondado, diagonal e dois nós, o superior em accent.
+ * MARCA OFICIAL BASS PAGO
  *
- * Substitui o "swoosh" com gradiente #2563EB→#00E5A0 que estava na sidebar,
- * no login e no loading: era outro logo, e #00E5A0 não existe na paleta.
+ * Geometria portada literalmente do site institucional — `const BRANDMARK`
+ * em basspago-site/src/core.js. Mesmo viewBox, mesmo raio, mesmos nós.
+ * Nada aqui foi redesenhado; o arquivo equivalente vive em
+ * public/brandmark.svg (fundo claro) e public/brandmark-dark.svg (escuro).
+ *
+ * Por que inline e não <img src="/brandmark.svg">: o traço herda currentColor,
+ * então a marca acompanha a cor do texto onde é aplicada — é assim que o site
+ * resolve (ele injeta o mesmo SVG inline). Um <img> não herda currentColor e
+ * exigiria trocar de arquivo a cada contexto.
  */
 export default function BrandMark({ size = 24, className }: { size?: number; className?: string }) {
   return (
@@ -12,7 +18,8 @@ export default function BrandMark({ size = 24, className }: { size?: number; cla
       width={size}
       height={size}
       className={className}
-      aria-hidden
+      role="img"
+      aria-label="Bass Pago"
       focusable="false"
     >
       <rect x="2.9" y="2.9" width="18.2" height="18.2" rx="5.2"
@@ -20,12 +27,13 @@ export default function BrandMark({ size = 24, className }: { size?: number; cla
       <path d="M8 15.6 16 8.4"
         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <circle cx="8" cy="15.6" r="2.15" fill="currentColor" />
-      <circle cx="16" cy="8.4" r="2.15" fill="#2F6BFF" />
+      {/* O nó de accent troca de tom entre claro e escuro, como no site. */}
+      <circle cx="16" cy="8.4" r="2.15" fill="var(--bp-brand-node)" />
     </svg>
   )
 }
 
-/** Assinatura completa: marca + wordmark. */
+/** Assinatura completa: marca + wordmark. Proporções do `.brand` do site. */
 export function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2.5 text-fg">

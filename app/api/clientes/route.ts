@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
       ...(modelo ? { modeloOperacional: modelo as 'API' | 'WHITE_LABEL' } : {}),
       ...(segmento ? { segmento: segmento as 'IGAMING' | 'ECOMMERCE' | 'SAAS' | 'ERP' | 'TELECOM' | 'CRIPTOMOEDAS' | 'VAREJO' | 'OUTROS' } : {}),
     },
-    include: { owner: { select: { name: true } } },
+    include: {
+      owner: { select: { name: true } },
+      gestor: { select: { id: true, name: true } },
+    },
     orderBy: [{ status: 'asc' }, { nome: 'asc' }],
   })
 
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
     tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
     receitaPrevistaMensal, volumeMinimo,
     descontoPercent, overpricePercent,
-    dataFechamento, notas,
+    dataFechamento, notas, gestorId,
   } = body
 
   if (!nome || !modeloOperacional) {
@@ -64,6 +67,7 @@ export async function POST(request: NextRequest) {
       overpricePercent: overpricePercent ?? null,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : null,
       notas: notas || null,
+      gestorId: gestorId || null,
       ownerId: session.userId,
     },
   })

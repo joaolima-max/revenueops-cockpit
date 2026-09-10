@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { FUNIL_VENDAS_ID } from '@/lib/pipeline-db'
 import { getSession } from '@/lib/auth'
 import {
   kpisDoPeriodo, linhasReceita, metasDoPeriodo, contagensClientes,
@@ -77,7 +78,13 @@ export async function GET(request: NextRequest) {
       }),
       prisma.incidente.findMany({ orderBy: { inicio: 'desc' }, take: 100 }),
       prisma.lead.groupBy({ by: ['status'], _count: true }),
-      prisma.deal.groupBy({ by: ['stage'], _count: true, _sum: { value: true } }),
+      // Escopado ao funil de Vendas: cards ja transferidos para Onboarding ou
+      // Operacoes mantem o `stage` congelado do fechamento e nao pertencem mais
+      // ao relatorio comercial. `funilId: null` cobre a janela antes do backfill.
+      prisma.deal.groupBy({
+        by: ['stage'], _count: true, _sum: { value: true },
+        where: { OR: [{ funilId: FUNIL_VENDAS_ID }, { funilId: null }] },
+      }),
     ])
 
   const comDados = serie.filter((k: KpisPeriodo) => k.temDados)

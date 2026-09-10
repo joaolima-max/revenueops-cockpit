@@ -9,14 +9,19 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
   const search = searchParams.get('search')
+  const canal = searchParams.get('canal')
+  const segmento = searchParams.get('segmento')
 
   const where: Record<string, unknown> = {}
   if (status) where.status = status
+  if (canal) where.canal = canal
+  if (segmento) where.segmento = segmento
   if (search) {
     where.OR = [
       { name: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } },
       { company: { contains: search, mode: 'insensitive' } },
+      { cnpj: { contains: search, mode: 'insensitive' } },
     ]
   }
   if (session.role === 'COMERCIAL') {
@@ -47,7 +52,11 @@ export async function POST(request: NextRequest) {
       source: data.source,
       value: data.value ? parseFloat(data.value) : null,
       notes: data.notes,
-      ownerId: session.userId,
+      // Cadastro revisado do CRM.
+      cnpj: data.cnpj || null,
+      canal: data.canal || null,
+      segmento: data.segmento || null,
+      ownerId: data.ownerId || session.userId,
     },
     include: { owner: { select: { id: true, name: true } } },
   })

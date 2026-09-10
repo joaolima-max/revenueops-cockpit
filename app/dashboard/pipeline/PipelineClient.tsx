@@ -1,176 +1,274 @@
 'use client'
 
-import { useState } from 'react'
-import { formatCurrency, DEAL_STAGE_LABELS } from '@/lib/utils'
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
+import { formatCurrency } from '@/lib/utils'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Button from '@/components/ui/Button'
+import Badge from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import Panel from '@/components/ui/Panel'
+import TransferirModal from '@/components/pipeline/TransferirModal'
+import HistoricoModal from '@/components/pipeline/HistoricoModal'
+import type { AcessoFunil, FunilResumo, EtapaResumo, Card } from '@/components/pipeline/tipos'
 
-interface Deal {
-  id: string; title: string; value: number; stage: string; probability: number
-  owner: { name: string }
-  lead: { name: string; company: string | null } | null
-}
 interface Lead { id: string; name: string; company: string | null }
 
-const STAGES = ['PROSPECCAO', 'QUALIFICACAO', 'PROPOSTA', 'NEGOCIACAO', 'FECHAMENTO']
+const FORM_VAZIO = { title: '', value: '', probability: '30', leadId: '' }
 
-/* O funil é PROGRESSÃO, não severidade: warn/alert aqui leriam como problema.
-   Uma só matiz em cinco intensidades — quanto mais perto do fechamento, mais
-   cheio o accent. Distingue os cinco estágios e responde aos dois temas. */
-const STAGE_ACCENT: Record<string, string> = {
-  PROSPECCAO: 'border-t-line-2', QUALIFICACAO: 'border-t-accent/30',
-  PROPOSTA: 'border-t-accent/50', NEGOCIACAO: 'border-t-accent/75', FECHAMENTO: 'border-t-accent',
-}
-const CARD_BORDER: Record<string, string> = {
-  PROSPECCAO: 'border-l-line-2', QUALIFICACAO: 'border-l-accent/30',
-  PROPOSTA: 'border-l-accent/50', NEGOCIACAO: 'border-l-accent/75', FECHAMENTO: 'border-l-accent',
-}
-const DOT: Record<string, string> = {
-  PROSPECCAO: 'bg-subtle', QUALIFICACAO: 'bg-accent/40',
-  PROPOSTA: 'bg-accent/60', NEGOCIACAO: 'bg-accent/80', FECHAMENTO: 'bg-accent',
-}
-
-const emptyForm = { title: '', value: '', probability: '30', leadId: '' }
-
-export default function PipelineClient({ deals: initial, leads, userId, role }: {
-  deals: Deal[]; leads: Lead[]; userId: string; role: string
+export default function PipelineClient({ leads, podeAdministrar }: {
+  leads: Lead[]
+  podeAdministrar: boolean
 }) {
-  const [deals, setDeals] = useState(initial)
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [addingTo, setAddingTo] = useState<string | null>(null)
-  const [form, setForm] = useState(emptyForm)
-  const [saving, setSaving] = useState(false)
+  const [funis, setFunis] = useState<FunilResumo[]>([])
+  const [funil, setFunil] = useState<FunilResumo | null>(null)
+  const [etapas, setEtapas] = useState<EtapaResumo[]>([])
+  const [cards, setCards] = useState<Card[]>([])
+  const [acesso, setAcesso] = useState<AcessoFunil | null>(null)
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState('')
 
-  async function moveDeal(dealId: string, newStage: string) {
-    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage: newStage } : d))
-    await fetch(`/api/deals/${dealId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage: newStage }),
+  const [funilId, setFunilId] = useState<string | null>(null)
+  const [versao, setVersao] = useState(0)
+  const recarregar = () => setVersao((v) => v + 1)
+
+  const [arrastando, setArrastando] = useState<string | null>(null)
+  const [criandoEm, setCriandoEm] = useState<string | null>(null)
+  const [form, setForm] = useState(FORM_VAZIO)
+  const [salvando, setSalvando] = useState(false)
+  const [transferir, setTransferir] = useState<Card | null>(null)
+  const [historico, setHistorico] = useState<Card | null>(null)
+
+  useEffect(() => {
+    let vivo = true
+    const qs = funilId ? `?funilId=${funilId}` : ''
+    fetch(`/api/pipeline/board${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!vivo || !d) return
+        setFunis(d.funis ?? [])
+        setFunil(d.funil ?? null)
+        setEtapas(d.etapas ?? [])
+        setCards(d.cards ?? [])
+        setAcesso(d.acesso ?? null)
+      })
+      .catch(() => {})
+      .finally(() => { if (vivo) setCarregando(false) })
+    return () => { vivo = false }
+  }, [funilId, versao])
+
+  const totalPonderado = useMemo(
+    () => cards.reduce((s, c) => s + c.value * (c.probability / 100), 0),
+    [cards],
+  )
+
+  async function mover(cardId: string, etapaId: string) {
+    const antes = cards
+    setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, etapaId } : c)))
+    const res = await fetch(`/api/pipeline/cards/${cardId}/mover`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ etapaId }),
     })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setCards(antes)
+      setErro(d.error ?? 'Não foi possível mover o card.')
+    }
   }
 
-  async function handleCreate(stage: string) {
+  async function criar(etapaId: string) {
     if (!form.title || !form.value) return
-    setSaving(true)
+    setSalvando(true); setErro('')
     const res = await fetch('/api/deals', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: form.title, value: parseFloat(form.value),
+        title: form.title,
+        value: parseFloat(form.value),
         probability: parseInt(form.probability) || 0,
-        leadId: form.leadId || null, stage,
+        leadId: form.leadId || null,
+        etapaId,
       }),
     })
     if (res.ok) {
-      const deal = await res.json()
-      setDeals(prev => [deal, ...prev])
-      setAddingTo(null)
-      setForm(emptyForm)
+      setCriandoEm(null); setForm(FORM_VAZIO); recarregar()
+    } else {
+      const d = await res.json().catch(() => ({}))
+      setErro(d.error ?? 'Não foi possível criar o card.')
     }
-    setSaving(false)
+    setSalvando(false)
   }
 
-  async function deleteDeal(id: string) {
-    if (!confirm('Excluir negócio?')) return
-    const res = await fetch(`/api/deals/${id}`, { method: 'DELETE' })
-    if (res.ok) setDeals(prev => prev.filter(d => d.id !== id))
-  }
+  if (carregando) return <p className="t-sm text-subtle">Carregando...</p>
 
-  const totalPonderado = deals.reduce((s, d) => s + d.value * (d.probability / 100), 0)
+  if (funis.length === 0) {
+    return (
+      <div className="space-y-8">
+        <PageHeader title="Pipeline" />
+        <Panel padded={false}>
+          <EmptyState
+            title="Nenhum funil disponível"
+            description="Você não tem acesso a nenhum funil ativo. Um administrador precisa liberar o acesso ou criar um funil."
+            action={podeAdministrar ? <Link href="/dashboard/pipeline/funis"><Button variant="primary">Gerenciar funis</Button></Link> : undefined}
+          />
+        </Panel>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
-      <div className="mb-6">
-        <h1 className="t-h1 text-fg">Pipeline</h1>
-        <p className="text-subtle text-sm mt-0.5">
-          {deals.length} negócios · Valor ponderado {formatCurrency(totalPonderado)}
-        </p>
-      </div>
+      <PageHeader
+        title="Pipeline"
+        sub={`${cards.length} ${cards.length === 1 ? 'negócio' : 'negócios'} · Valor ponderado ${formatCurrency(totalPonderado)}`}
+        actions={podeAdministrar
+          ? <Link href="/dashboard/pipeline/funis"><Button>Gerenciar funis</Button></Link>
+          : undefined}
+      />
 
-      <div className="flex gap-3 overflow-x-auto pb-4 items-start">
-        {STAGES.map(stage => {
-          const stageDeals = deals.filter(d => d.stage === stage)
-          const stageTotal = stageDeals.reduce((s, d) => s + d.value, 0)
-          const isAdding = addingTo === stage
-
+      {/* Seletor de funis — só os que a alçada do usuário deixa ver. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {funis.map((f) => {
+          const ativo = f.id === funil?.id
           return (
-            <div key={stage} className="flex-shrink-0 w-64"
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => { if (dragging) { moveDeal(dragging, stage); setDragging(null) } }}
+            <button
+              key={f.id}
+              onClick={() => { setFunilId(f.id); setErro('') }}
+              aria-current={ativo ? 'true' : undefined}
+              className={`px-3.5 py-2 rounded-lg t-sm font-medium border transition-colors duration-[180ms] ease-bp ${
+                ativo ? 'border-accent/40 bg-accent/10 text-accent-soft' : 'border-line text-muted hover:border-line-2 hover:text-fg'
+              }`}
             >
-              <div className={`border-t-2 ${STAGE_ACCENT[stage]} bg-surface border-x border-line rounded-t-xl px-3 py-2.5 flex items-center justify-between`}>
-                <div className="flex items-center gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${DOT[stage]}`} />
-                  <span className="text-xs font-semibold text-fg">{DEAL_STAGE_LABELS[stage]}</span>
-                  <span className="text-xs bg-surface-2 text-subtle px-1.5 py-0.5 rounded-full">{stageDeals.length}</span>
-                </div>
-                <span className="text-xs text-subtle">{formatCurrency(stageTotal)}</span>
-              </div>
-
-              <div className="bg-surface border-x border-b border-line rounded-b-xl p-2 space-y-2 min-h-20">
-                {stageDeals.map(deal => (
-                  <div key={deal.id} draggable onDragStart={() => setDragging(deal.id)}
-                    className={`bg-surface-2 border border-line-2 border-l-2 ${CARD_BORDER[deal.stage]} rounded-lg p-3 cursor-grab active:cursor-grabbing hover:bg-surface-2 transition-colors group`}
-                  >
-                    <div className="flex items-start justify-between gap-1">
-                      <p className="text-xs font-medium text-fg leading-tight flex-1">{deal.title}</p>
-                      {(role === 'ADMIN') && (
-                        <button onClick={() => deleteDeal(deal.id)}
-                          className="opacity-0 group-hover:opacity-100 text-subtle hover:text-neg text-xs transition-opacity flex-shrink-0">✕</button>
-                      )}
-                    </div>
-                    {deal.lead && (
-                      <p className="text-xs text-subtle mt-0.5 truncate">{deal.lead.company || deal.lead.name}</p>
-                    )}
-                    <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-xs font-bold text-pos">{formatCurrency(deal.value)}</span>
-                      <span className="text-xs text-subtle">{deal.probability}%</span>
-                    </div>
-                    <p className="text-xs text-subtle mt-0.5">{deal.owner.name}</p>
-                  </div>
-                ))}
-
-                {isAdding ? (
-                  <div className="bg-surface-2 border border-line-2 rounded-lg p-2.5 space-y-2">
-                    <input autoFocus value={form.title}
-                      onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-                      placeholder="Título *"
-                      className="bp-field w-full text-xs" />
-                    <input type="number" value={form.value}
-                      onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
-                      placeholder="Valor R$ *"
-                      className="bp-field w-full text-xs" />
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <input type="number" min="0" max="100" value={form.probability}
-                        onChange={e => setForm(p => ({ ...p, probability: e.target.value }))}
-                        placeholder="% prob."
-                        className="bp-field w-full text-xs" />
-                      <select value={form.leadId}
-                        onChange={e => setForm(p => ({ ...p, leadId: e.target.value }))}
-                        className="bp-field w-full text-xs">
-                        <option value="">Lead opt.</option>
-                        {leads.map(l => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => { setAddingTo(null); setForm(emptyForm) }}
-                        className="flex-1 py-1.5 text-xs text-subtle border border-line-2 rounded hover:bg-surface-2">
-                        Cancelar
-                      </button>
-                      <button onClick={() => handleCreate(stage)} disabled={saving || !form.title || !form.value}
-                        className="bp-btn-primary flex-1 py-1.5 text-xs font-medium rounded">
-                        {saving ? '...' : 'Criar'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button onClick={() => { setAddingTo(stage); setForm(emptyForm) }}
-                    className="w-full py-2 text-xs text-subtle hover:text-muted hover:bg-surface-2 rounded-lg transition-colors flex items-center justify-center gap-1">
-                    + Adicionar
-                  </button>
-                )}
-              </div>
-            </div>
+              {f.nome}
+              {f.area && <span className="ml-2 t-label text-subtle">{f.area}</span>}
+            </button>
           )
         })}
       </div>
+
+      {erro && (
+        <div className="bg-neg/10 border border-neg/25 text-neg px-3 py-2 rounded-lg t-sm">{erro}</div>
+      )}
+
+      {etapas.length === 0 ? (
+        <Panel padded={false}>
+          <EmptyState
+            title="Este funil ainda não tem etapas ativas"
+            description="Crie etapas na administração do funil para começar a usar o quadro."
+          />
+        </Panel>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-4 items-start">
+          {etapas.map((etapa) => {
+            const daEtapa = cards.filter((c) => c.etapaId === etapa.id)
+            const total = daEtapa.reduce((s, c) => s + c.value, 0)
+            const criando = criandoEm === etapa.id
+
+            return (
+              <div
+                key={etapa.id}
+                className="flex-shrink-0 w-64"
+                onDragOver={(e) => { if (acesso?.mover) e.preventDefault() }}
+                onDrop={() => { if (arrastando && acesso?.mover) { mover(arrastando, etapa.id); setArrastando(null) } }}
+              >
+                <div className="bg-surface border border-line rounded-t-xl px-3 py-2.5 flex items-center justify-between border-t-2"
+                  style={etapa.cor ? { borderTopColor: etapa.cor } : undefined}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="t-label font-semibold text-fg truncate">{etapa.nome}</span>
+                    <span className="t-label bg-white/[0.06] text-subtle px-1.5 py-0.5 rounded-full">{daEtapa.length}</span>
+                  </div>
+                  <span className="t-label text-subtle">{formatCurrency(total)}</span>
+                </div>
+
+                <div className="bg-surface border-x border-b border-line rounded-b-xl p-2 space-y-2 min-h-20">
+                  {daEtapa.map((card) => (
+                    <div
+                      key={card.id}
+                      draggable={acesso?.mover}
+                      onDragStart={() => setArrastando(card.id)}
+                      className={`bg-surface-2 border border-line rounded-lg p-3 group transition-colors duration-[180ms] ease-bp hover:border-line-2 ${
+                        acesso?.mover ? 'cursor-grab active:cursor-grabbing' : ''
+                      }`}
+                    >
+                      <p className="t-sm font-medium text-fg leading-tight">{card.title}</p>
+                      {(card.cliente || card.lead) && (
+                        <p className="t-label text-subtle mt-0.5 truncate">
+                          {card.cliente?.nome ?? card.lead?.company ?? card.lead?.name}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="t-sm font-semibold text-pos">{formatCurrency(card.value)}</span>
+                        <span className="t-label text-subtle">{card.probability}%</span>
+                      </div>
+                      <p className="t-label text-subtle mt-0.5">{card.owner.name}</p>
+
+                      <div className="flex gap-1.5 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-[180ms]">
+                        {acesso?.transferir && (
+                          <button onClick={() => setTransferir(card)}
+                            className="t-label text-muted hover:text-accent-soft">Transferir</button>
+                        )}
+                        <button onClick={() => setHistorico(card)}
+                          className="t-label text-muted hover:text-fg">Histórico</button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {acesso?.criar && (criando ? (
+                    <div className="bg-surface-2 border border-line rounded-lg p-2.5 space-y-2">
+                      <input autoFocus value={form.title} placeholder="Título *"
+                        onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                        className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
+                      <input type="number" value={form.value} placeholder="Valor R$ *"
+                        onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
+                        className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input type="number" min="0" max="100" value={form.probability} placeholder="% prob."
+                          onChange={(e) => setForm((p) => ({ ...p, probability: e.target.value }))}
+                          className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
+                        <select value={form.leadId}
+                          onChange={(e) => setForm((p) => ({ ...p, leadId: e.target.value }))}
+                          className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent">
+                          <option value="">Lead opc.</option>
+                          {leads.map((l) => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="flex-1" onClick={() => { setCriandoEm(null); setForm(FORM_VAZIO) }}>Cancelar</Button>
+                        <Button size="sm" variant="primary" className="flex-1"
+                          disabled={salvando || !form.title || !form.value}
+                          onClick={() => criar(etapa.id)}>
+                          {salvando ? '...' : 'Criar'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setCriandoEm(etapa.id); setForm(FORM_VAZIO) }}
+                      className="w-full py-2 t-sm text-subtle hover:text-muted hover:bg-white/[0.03] rounded-lg transition-colors duration-[180ms]">
+                      + Adicionar
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {funil && !acesso?.mover && (
+        <Badge tone="neutral">Você tem acesso somente de leitura a este funil</Badge>
+      )}
+
+      {transferir && funil && (
+        <TransferirModal
+          card={transferir}
+          funilAtual={funil}
+          onFechar={() => setTransferir(null)}
+          onTransferido={() => { setTransferir(null); recarregar() }}
+        />
+      )}
+
+      {historico && (
+        <HistoricoModal card={historico} onFechar={() => setHistorico(null)} />
+      )}
     </div>
   )
 }

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Bass Pago">
+  <!-- Marca oficial Bass Pago — versao para FUNDO ESCURO.
+       Mesma geometria da versao clara; o no de accent usa o tom "accent soft"
+       (#6b8cff), como manda a regra `.dark .bmark .bm-a` do site institucional. -->
+  <rect x="2.9" y="2.9" width="18.2" height="18.2" rx="5.2" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <path d="M8 15.6 16 8.4" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="8" cy="15.6" r="2.15" fill="#ffffff"/>
+  <circle cx="16" cy="8.4" r="2.15" fill="#6b8cff"/>
+</svg>

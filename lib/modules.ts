@@ -16,7 +16,7 @@
  * Desabilitar uma FUNÇÃO desliga apenas ela.
  */
 
-export type Role = 'ADMIN' | 'OPERACIONAL' | 'COMERCIAL'
+export type Role = 'ADMIN' | 'OPERACIONAL' | 'COMERCIAL' | 'GESTOR'
 
 export interface Feature {
   /** Identificador estável. Usado por `isFeatureEnabled()` e pelos ícones da sidebar. */
@@ -45,7 +45,11 @@ export interface Module {
  * Rotas que nunca são bloqueadas por este registro — autenticação, perfil do
  * próprio usuário e os dados do cockpit. Desligá-las quebraria o login.
  */
-export const ALWAYS_ON = ['/api/auth', '/api/perfil', '/dashboard/perfil']
+export const ALWAYS_ON = [
+  '/api/auth', '/api/perfil', '/dashboard/perfil',
+  // Cada usuario ve as SUAS notificacoes; nao ha o que autorizar por modulo.
+  '/api/notificacoes', '/dashboard/notificacoes',
+]
 
 export const MODULES: Module[] = [
   {
@@ -75,6 +79,8 @@ export const MODULES: Module[] = [
       { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
       { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
       { key: 'carteira.alertas', label: 'Alertas', route: '/dashboard/alertas', enabled: true },
+      { key: 'carteira.documentos', label: 'Documentos', route: '/dashboard/documentos', api: ['/api/documentos'], enabled: true },
+      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
     ],
   },
   {
@@ -85,6 +91,7 @@ export const MODULES: Module[] = [
       { key: 'operacoes.incidentes', label: 'Incidentes', route: '/dashboard/incidentes', api: ['/api/incidentes'], enabled: true },
       { key: 'operacoes.tarefas', label: 'Tarefas', route: '/dashboard/tarefas', api: ['/api/tarefas'], enabled: true },
       { key: 'operacoes.metricas', label: 'Métricas Op.', route: '/dashboard/metricas-op', enabled: true },
+      { key: 'operacoes.compliance', label: 'Compliance', route: '/dashboard/compliance', api: ['/api/compliance'], enabled: true },
     ],
   },
   {
@@ -92,9 +99,15 @@ export const MODULES: Module[] = [
     label: 'COMERCIAL',
     enabled: true,
     features: [
-      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals'], enabled: true },
+      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline'], enabled: true },
+      // Ambiente administrativo dos funis. Fica sob /dashboard/pipeline, que o
+      // `checkAccess` casa por prefixo — por isso o proxy NAO consegue separar as
+      // duas rotas, e o `administrar` e verificado na pagina e em cada API.
+      { key: 'comercial.funis', label: 'Funis', route: '/dashboard/pipeline/funis', enabled: true, roles: ['ADMIN'] },
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.followup', label: 'Follow-up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
+      { key: 'comercial.crm', label: 'CRM', route: '/dashboard/crm', api: ['/api/crm'], enabled: true },
+      { key: 'comercial.formularios', label: 'Formulários', route: '/dashboard/formularios', api: ['/api/formularios'], enabled: true },
     ],
   },
   {
@@ -114,6 +127,7 @@ export const MODULES: Module[] = [
       { key: 'admin.usuarios', label: 'Usuários', route: '/dashboard/usuarios', api: ['/api/users'], enabled: true },
       { key: 'admin.parametros', label: 'Parâmetros', route: '/dashboard/parametros', api: ['/api/parametros', '/api/float-config'], enabled: true },
       { key: 'admin.auditoria', label: 'Auditoria', route: '/dashboard/auditoria', api: ['/api/auditoria'], enabled: true },
+      { key: 'admin.automacoes', label: 'Automações', route: '/dashboard/automacoes', api: ['/api/automacoes'], enabled: true },
     ],
   },
 ]

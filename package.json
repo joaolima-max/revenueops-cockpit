@@ -9,7 +9,9 @@
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
-    "limpar-demo": "tsx prisma/limpar-dados-demo.ts"
+    "limpar-demo": "tsx prisma/limpar-dados-demo.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "setup:storage": "tsx scripts/setup-storage.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

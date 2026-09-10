@@ -12,6 +12,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     where: { id },
     include: {
       owner: { select: { name: true } },
+      gestor: { select: { id: true, name: true } },
     },
   })
 
@@ -31,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     mensalidadeApi, sustentacaoWhiteLabel, setup,
     tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
     receitaPrevistaMensal, volumeMinimo, descontoPercent, overpricePercent,
-    dataFechamento, dataEncerramento, notas, ownerId,
+    dataFechamento, dataEncerramento, notas, ownerId, gestorId,
   } = body
 
   const cliente = await prisma.cliente.update({
@@ -57,6 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       dataEncerramento: dataEncerramento ? new Date(dataEncerramento) : undefined,
       notas: notas ?? undefined,
       ...(ownerId ? { ownerId } : {}),
+      ...(gestorId !== undefined ? { gestorId: gestorId || null } : {}),
     },
   })
 

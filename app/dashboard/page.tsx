@@ -181,7 +181,13 @@ export default async function DashboardPage() {
 
           {volumetria && (
             <Panel className="flex flex-col justify-between gap-4">
-              <PanelHeader title="Volumetria mínima" sub={`Contratada · ${formatMesRef(periodo)}`} />
+              {/* De onde vem o mínimo: soma dos contratos por cliente ou contrato geral. */}
+              <PanelHeader
+                title="Volumetria mínima"
+                sub={volumetria.origem === 'CLIENTES'
+                  ? `Soma de ${volumetria.clientes} ${volumetria.clientes === 1 ? 'cliente' : 'clientes'} · ${formatMesRef(periodo)}`
+                  : `Contrato geral · ${formatMesRef(periodo)}`}
+              />
               <div>
                 <Figure figura={volumetria.realizado === null ? null : figuraQuantidade(volumetria.realizado)} />
                 <Contexto className="block mt-2">

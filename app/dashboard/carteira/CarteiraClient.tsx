@@ -15,6 +15,8 @@ import {
   SCORE_RISCO_LABELS, SCORE_RISCO_COLORS,
   OPERACAO_LABELS,
 } from '@/lib/utils'
+import MovimentoDias from '@/components/carteira/MovimentoDias'
+import { serieDoCliente, type EstadoDia } from '@/lib/carteira'
 
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null
@@ -25,6 +27,7 @@ interface Cliente {
   descontoPercent: number | null; overpricePercent: number | null
   notas: string | null
   owner: { name: string }
+  gestor: { id: string; name: string } | null
 }
 
 function getSegmentLabel(segmento: string | null, notas: string | null): string {
@@ -60,6 +63,10 @@ function loadLocalArray(key: string): string[] {
 
 export default function CarteiraClient({ role }: { role: string }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
+  // Indicador operacional dos ultimos 5 dias. Carregado a parte para nao
+  // atrasar a lista de clientes, que e o conteudo principal da tela.
+  const [dias, setDias] = useState<string[]>([])
+  const [movimentos, setMovimentos] = useState<Array<{ clienteId: string; data: string; movimentou: boolean }>>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -141,6 +148,30 @@ export default function CarteiraClient({ role }: { role: string }) {
     if (res.ok) { const data = await res.json(); setClientes(data.clientes) }
     setLoading(false)
   }, [search, statusFilter, modeloFilter, segFilter])
+
+  useEffect(() => {
+    let vivo = true
+    fetch('/api/clientes/movimento?dias=5')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!vivo || !d) return
+        setDias(d.dias ?? [])
+        setMovimentos(d.registros ?? [])
+      })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [])
+
+  async function marcarDia(clienteId: string, data: string, movimentou: boolean) {
+    setMovimentos((p) => [
+      ...p.filter((m) => !(m.clienteId === clienteId && m.data === data)),
+      { clienteId, data, movimentou },
+    ])
+    await fetch('/api/clientes/movimento', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clienteId, data, movimentou }),
+    }).catch(() => {})
+  }
 
   useEffect(() => { fetchClientes() }, [fetchClientes])
 
@@ -265,14 +296,15 @@ export default function CarteiraClient({ role }: { role: string }) {
               <Th>Status</Th>
               <Th align="right">TPV Esperado</Th>
               <Th align="right">Receita Prevista</Th>
-              <Th>Responsável</Th>
+              <Th>Gestor</Th>
+              <Th>Últimos 5 dias</Th>
             </HeadRow>
           </THead>
           <tbody>
             {loading ? (
-              <EmptyRow colSpan={8}>Carregando…</EmptyRow>
+              <EmptyRow colSpan={9}>Carregando…</EmptyRow>
             ) : clientes.length === 0 ? (
-              <EmptyRow colSpan={8}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
+              <EmptyRow colSpan={9}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
             ) : clientes.map(c => (
               <Row key={c.id}>
                 <Td className="pl-5">
@@ -296,7 +328,16 @@ export default function CarteiraClient({ role }: { role: string }) {
                 <Td><Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{CLIENTE_STATUS_LABELS[c.status]}</Badge></Td>
                 <Td align="right" numeric className="text-fg">{c.tpvEsperado ? formatTPV(c.tpvEsperado) : <span className="text-subtle">—</span>}</Td>
                 <Td align="right" numeric className="text-fg">{c.receitaPrevistaMensal ? formatCurrency(c.receitaPrevistaMensal) : <span className="text-subtle">—</span>}</Td>
-                <Td className="text-subtle">{c.owner.name}</Td>
+                <Td className="text-subtle">
+                  {c.gestor?.name ?? <span className="text-subtle">{c.owner.name}</span>}
+                </Td>
+                <Td>
+                  {dias.length > 0
+                    ? <MovimentoDias
+                        serie={serieDoCliente(c.id, movimentos, dias) as Array<{ data: string; estado: EstadoDia }>}
+                        onToggle={(data, proximo) => marcarDia(c.id, data, proximo)} />
+                    : <span className="text-subtle">—</span>}
+                </Td>
               </Row>
             ))}
           </tbody>

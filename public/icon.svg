@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#2563EB"/>
-      <stop offset="100%" stop-color="#00E5A0"/>
-    </linearGradient>
-  </defs>
-  <path d="M 4 14 Q 16 26 28 14" fill="none" stroke="url(#g)" stroke-width="4.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Bass Pago">
+  <!-- Favicon oficial — identico ao declarado em basspago-site/index.html.
+       Substitui o "swoosh" com gradiente que estava aqui: era outro logo,
+       com uma cor que nao existe na paleta da marca. -->
+  <rect x="2.9" y="2.9" width="18.2" height="18.2" rx="5.2" fill="none" stroke="#0b0d10" stroke-width="1.5"/>
+  <path d="M8 15.6 16 8.4" stroke="#0b0d10" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="8" cy="15.6" r="2.15" fill="#0b0d10"/>
+  <circle cx="16" cy="8.4" r="2.15" fill="#2f6bff"/>
 </svg>

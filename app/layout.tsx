@@ -25,7 +25,10 @@ const interTight = Inter_Tight({
 export const metadata: Metadata = {
   title: 'Bass Pago · RevOps',
   description: 'Revenue Operations Platform — Bass Pago',
-  icons: { icon: '/icon.svg' },
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    apple: '/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

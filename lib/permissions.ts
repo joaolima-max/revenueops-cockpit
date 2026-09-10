@@ -28,11 +28,29 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_leads',     label: 'Gerenciar Leads',          group: 'CRM' },
   { key: 'view_pipeline',    label: 'Ver Pipeline',             group: 'CRM' },
   { key: 'manage_pipeline',  label: 'Gerenciar Pipeline',       group: 'CRM' },
+  { key: 'admin_funis',      label: 'Administrar Funis',        group: 'CRM' },
   { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
   { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
+  // CRM
+  { key: 'view_crm',         label: 'Ver CRM',                  group: 'CRM' },
+  // Documentos
+  { key: 'view_documents',   label: 'Ver Documentos',           group: 'Documentos' },
+  { key: 'download_documents', label: 'Baixar Documentos',      group: 'Documentos' },
+  { key: 'manage_documents', label: 'Gerenciar Documentos',     group: 'Documentos' },
+  // Certificados
+  { key: 'view_certificates',   label: 'Ver Certificados',      group: 'Certificados' },
+  { key: 'manage_certificates', label: 'Gerenciar Certificados', group: 'Certificados' },
+  { key: 'reveal_certificate_password', label: 'Revelar Senha de Certificado', group: 'Certificados' },
+  // Compliance
+  { key: 'view_compliance',  label: 'Ver Compliance',           group: 'Compliance' },
+  { key: 'manage_compliance',label: 'Gerenciar Compliance',     group: 'Compliance' },
+  // Formulários
+  { key: 'view_forms',       label: 'Ver Formulários',          group: 'Formulários' },
+  { key: 'manage_forms',     label: 'Gerenciar Formulários',    group: 'Formulários' },
   // Admin
   { key: 'view_alertas',     label: 'Ver Alertas',              group: 'Admin' },
   { key: 'manage_parametros',label: 'Gerenciar Parâmetros',     group: 'Admin' },
+  { key: 'manage_automations', label: 'Gerenciar Automações',   group: 'Admin' },
 ]
 
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
@@ -43,12 +61,23 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
     'view_metricas_op', 'view_volumetria', 'view_alertas',
     'view_followup',
+    // Compliance é operação: quem trata a pendência é o time operacional.
+    'view_compliance', 'manage_compliance',
   ],
   COMERCIAL: [
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_metas', 'view_pedidos',
     'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
     'view_followup', 'manage_followup',
+  ],
+  // Gestor de carteira: comercial + leitura do que cerca o cliente.
+  // Sem administração de estrutura (funis, automações, parâmetros).
+  GESTOR: [
+    'view_dashboard', 'view_carteira', 'manage_carteira', 'view_forecast',
+    'view_metas', 'view_pedidos', 'view_relatorios',
+    'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
+    'view_followup', 'manage_followup',
+    'view_crm', 'view_volumetria', 'view_documents', 'view_compliance',
   ],
 }
 

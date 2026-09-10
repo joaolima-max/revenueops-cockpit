@@ -10,6 +10,9 @@ enum Role {
   ADMIN
   OPERACIONAL
   COMERCIAL
+  /// Gestor de carteira. Entra ao lado de COMERCIAL, que permanece porque ha
+  /// usuarios em Production com ela e o seed do funil de Vendas a referencia.
+  GESTOR
 }
 
 enum LeadStatus {
@@ -42,6 +45,7 @@ enum ClienteStatus {
   INATIVO
   PROSPECCAO
   ENCERRADO
+  STANDBY
 }
 
 enum MetaTipo {
@@ -59,15 +63,32 @@ enum MetaTipo {
   CLIENTES_ATIVOS
 }
 
+/// Taxonomia comercial. Os quatro primeiros valores sao os da revisao atual;
+/// os demais sao legado e continuam sendo lidos, mas nao sao mais oferecidos
+/// na criacao de Leads.
 enum Segmento {
-  IGAMING
-  ECOMMERCE
-  SAAS
-  ERP
+  CRYPTO_EXCHANGES
+  REMESSA_FX
+  GATEWAY_PAGAMENTOS
+  BAAS
+
   TELECOM
+  ERP
+  IGAMING
+  SAAS
+
+  ECOMMERCE
   CRIPTOMOEDAS
   VAREJO
   OUTROS
+}
+
+enum Canal {
+  OUTBOUND
+  INDICACAO
+  INBOUND
+  EVENTOS
+  OUTRO
 }
 
 enum OperacaoCom {
@@ -105,6 +126,114 @@ enum IncidenteCriticidade {
   CRITICA
 }
 
+/// Comportamento da etapa. GANHO e PERDIDO encerram o card: saem das colunas
+/// ativas do quadro e gravam `closedAt` no Deal.
+enum EtapaTipo {
+  NORMAL
+  GANHO
+  PERDIDO
+}
+
+enum MovimentacaoTipo {
+  CRIACAO
+  MOVIMENTO_ETAPA
+  TRANSFERENCIA_FUNIL
+}
+
+enum NotificacaoOrigem {
+  PIPELINE
+  AUTOMACAO
+  COMPLIANCE
+  FORMULARIO
+  CERTIFICADO
+  SISTEMA
+}
+
+enum DocumentoCategoria {
+  CONTRATO
+  KYC_KYB
+  CERTIFICADO
+  COMPROVANTE
+  COMERCIAL
+  FINANCEIRO
+  OUTROS
+}
+
+enum DocumentoOrigem {
+  UPLOAD_MANUAL
+  CERTIFICADO
+  FORMULARIO
+  COMPLIANCE
+}
+
+enum CertificadoVersaoStatus {
+  ATIVA
+  ESGOTADA
+  SUBSTITUIDA
+  CANCELADA
+}
+
+enum CertificadoStatus {
+  DISPONIVEL
+  ENVIADO
+  REVOGADO
+  EXPIRADO
+}
+
+enum CertificadoEnvioTipo {
+  UNICO
+  LOTE
+}
+
+enum CertificadoEnvioStatus {
+  ENVIADO
+  CANCELADO
+}
+
+enum PendenciaMotivo {
+  ATUALIZACAO_CADASTRAL
+  EXPLICACAO_MOVIMENTACAO
+  EXPLICACAO_DENUNCIA
+  REGULARIZACAO_DOCUMENTO
+  OUTRO
+}
+
+enum PendenciaStatus {
+  ABERTA
+  EM_ANALISE
+  AGUARDANDO_CLIENTE
+  RESOLVIDA
+  CANCELADA
+}
+
+enum AutomacaoGatilho {
+  CARD_CRIADO
+  ETAPA_CONCLUIDA
+  CARD_TRANSFERIDO
+  FORMULARIO_ENVIADO
+}
+
+enum AutomacaoAcao {
+  TRANSFERIR_FUNIL
+  NOTIFICAR
+  CRIAR_TAREFA
+  ABRIR_PENDENCIA
+}
+
+enum AutomacaoExecucaoStatus {
+  SUCESSO
+  FALHA
+  IGNORADA
+}
+
+enum FormularioRespostaStatus {
+  RASCUNHO
+  ENVIADA
+  EM_ANALISE
+  CONCLUIDA
+}
+
+
 
 model User {
   id        String   @id @default(cuid())
@@ -125,6 +254,21 @@ model User {
   tarefasCriadas Tarefa[]        @relation("TarefaCriador")
   tarefasAssign  Tarefa[]        @relation("TarefaResponsavel")
   auditorias     Auditoria[]
+  pipelinePermissoes PipelinePermissao[]
+  movimentacoes      PipelineMovimentacao[]
+
+  clientesGeridos    Cliente[]              @relation("ClienteGestor")
+  notificacoes       Notificacao[]
+  documentos         Documento[]
+  diasRegistrados    ClienteDiaMovimento[]
+  versoesCriadas     CertificadoVersao[]
+  enviosCertificado  CertificadoEnvio[]
+  pendencias         PendenciaCompliance[]  @relation("PendenciaResponsavel")
+  pendenciaEventos   PendenciaEvento[]
+  automacoes         Automacao[]            @relation("AutomacaoDestinatario")
+  formularios        Formulario[]
+  respostasFormulario FormularioResposta[]  @relation("RespostaResponsavel")
+  comentariosLead    LeadComentario[]
 }
 
 model Lead {
@@ -140,13 +284,31 @@ model Lead {
   notes     String?
   segmento  Segmento?
   operacao  OperacaoCom?
+  /// Cadastro revisado (CRM): CNPJ e canal de origem.
+  cnpj      String?
+  canal     Canal?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  ownerId    String
-  owner      User       @relation("LeadOwner", fields: [ownerId], references: [id])
-  deals      Deal[]
-  activities Activity[]
+  ownerId     String
+  owner       User       @relation("LeadOwner", fields: [ownerId], references: [id])
+  deals       Deal[]
+  activities  Activity[]
+  comentarios LeadComentario[]
+}
+
+/// Comentario de Lead com autor e data/hora. Separado de `Lead.notes`, que e o
+/// campo de observacoes livre do cadastro.
+model LeadComentario {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  autorId   String
+  autor     User     @relation(fields: [autorId], references: [id])
+  texto     String
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
 }
 
 model Deal {
@@ -168,6 +330,20 @@ model Deal {
   leadId     String?
   lead       Lead?      @relation(fields: [leadId], references: [id])
   activities Activity[]
+
+  /// Funil e etapa em que o card esta AGORA. Nulos apenas ate o backfill da
+  /// migration v11 rodar; depois disso todo Deal mora em algum funil.
+  funilId    String?
+  funil      PipelineFunil? @relation(fields: [funilId], references: [id], onDelete: Restrict)
+  etapaId    String?
+  etapa      PipelineEtapa? @relation(fields: [etapaId], references: [id], onDelete: Restrict)
+  /// Preenchido quando o card passa para um funil de pos-venda.
+  clienteId  String?
+  cliente    Cliente?   @relation(fields: [clienteId], references: [id])
+
+  movimentacoes PipelineMovimentacao[]
+
+  @@index([funilId, etapaId])
 }
 
 model Activity {
@@ -212,9 +388,23 @@ model Cliente {
 
   ownerId        String
   owner          User            @relation(fields: [ownerId], references: [id])
+  /// Gestor responsavel pela carteira. Nulo nos clientes anteriores a v12.
+  /// NAO substitui `ownerId`, que segue como vinculo legado.
+  gestorId       String?
+  gestor         User?           @relation("ClienteGestor", fields: [gestorId], references: [id])
   tarefas        Tarefa[]
   contasReceber  ContaReceber[]
   followUps      FollowUp[]
+  volumetrias    VolumetriaMinima[]
+  deals          Deal[]
+  documentos     Documento[]
+  diasMovimento  ClienteDiaMovimento[]
+  enviosCertificado CertificadoEnvio[]
+  pendencias     PendenciaCompliance[]
+  respostasFormulario FormularioResposta[]
+  linksFormulario FormularioLink[]
+
+  @@index([gestorId])
 }
 
 
@@ -372,13 +562,508 @@ model FloatConfig {
   createdAt      DateTime @default(now())
 }
 
-/// Volumetria minima CONTRATADA GERAL da empresa por periodo (YYYY-MM).
-/// O realizado vem de LancamentoDiario; o atingimento e derivado, nunca gravado.
+/// Exigencia CONTRATUAL de quantidade minima de transacoes de UM cliente,
+/// vigente de `periodo` (YYYY-MM, inicio) ate `vigenciaFim` (inclusive) ou por
+/// prazo indeterminado.
+///
+/// Nao e TPV nem realizado por cliente: o realizado continua vindo, sempre e
+/// somente, de LancamentoDiario, que e global por data. O minimo consolidado
+/// de um mes e a SOMA dos contratos vigentes naquele mes.
+///
+/// Linhas com `clienteId` nulo sao contratos GERAIS legados, anteriores a
+/// vinculacao por cliente. Preservadas para leitura e para que os alertas de
+/// meses ja fechados nao mudem de resultado; a aplicacao nao cria mais linhas
+/// assim.
 model VolumetriaMinima {
-  id        String   @id @default(cuid())
-  periodo   String   @unique
-  qtdMinima Int
-  notas     String?
+  id          String   @id @default(cuid())
+  clienteId   String?
+  cliente     Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// Inicio da vigencia, "YYYY-MM". Mantem o nome original da coluna.
+  periodo     String
+  /// Fim da vigencia, "YYYY-MM" inclusive. Nulo = prazo indeterminado.
+  vigenciaFim String?
+  qtdMinima   Int
+  ativo       Boolean  @default(true)
+  notas       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clienteId, periodo])
+  @@index([clienteId, ativo])
+}
+
+
+/// PIPELINE MULTI-FUNIL
+///
+/// O card NAO e um modelo novo: e o proprio Deal, que ganhou funilId/etapaId.
+/// Um unico Deal atravessa Vendas -> Onboarding -> Operacoes, e por isso lead,
+/// cliente, dono e atividades continuam associados sem nenhuma copia.
+
+model PipelineFunil {
+  id           String   @id @default(cuid())
+  nome         String   @unique
+  descricao    String?
+  /// Area/departamento dono do funil. Rotulo descritivo: quem pode o que fica
+  /// em PipelinePermissao, nao aqui.
+  area         String?
+  ordem        Int      @default(0)
+  ativo        Boolean  @default(true)
+  /// Funis de pos-venda exigem um Cliente vinculado ao receber o card.
+  exigeCliente Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  etapas     PipelineEtapa[]
+  permissoes PipelinePermissao[]
+  deals      Deal[]
+  movOrigem  PipelineMovimentacao[] @relation("MovFunilOrigem")
+  movDestino PipelineMovimentacao[] @relation("MovFunilDestino")
+  automacoesGatilho Automacao[]     @relation("AutomacaoFunilGatilho")
+  automacoesDestino Automacao[]     @relation("AutomacaoFunilDestino")
+
+  @@index([ativo, ordem])
+}
+
+model PipelineEtapa {
+  id        String        @id @default(cuid())
+  funilId   String
+  funil     PipelineFunil @relation(fields: [funilId], references: [id], onDelete: Cascade)
+  nome      String
+  descricao String?
+  /// Posicao da coluna. Indice NAO unico de proposito: um unique quebraria
+  /// qualquer troca de posicao entre duas etapas.
+  ordem     Int           @default(0)
+  cor       String?
+  ativo     Boolean       @default(true)
+  tipo      EtapaTipo     @default(NORMAL)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  deals      Deal[]
+  movOrigem  PipelineMovimentacao[] @relation("MovEtapaOrigem")
+  movDestino PipelineMovimentacao[] @relation("MovEtapaDestino")
+  automacoesGatilho Automacao[]     @relation("AutomacaoEtapaGatilho")
+  automacoesDestino Automacao[]     @relation("AutomacaoEtapaDestino")
+
+  @@unique([funilId, nome])
+  @@index([funilId, ordem])
+}
+
+/// Alcada de UM funil para UMA role ou UM usuario — nunca os dois na mesma
+/// linha. Nao substitui o sistema de permissoes: refina, dentro do modulo,
+/// o que `view_pipeline`/`manage_pipeline` ja liberaram.
+model PipelinePermissao {
+  id      String        @id @default(cuid())
+  funilId String
+  funil   PipelineFunil @relation(fields: [funilId], references: [id], onDelete: Cascade)
+  role    Role?
+  userId  String?
+  user    User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ver         Boolean @default(true)
+  editar      Boolean @default(false)
+  mover       Boolean @default(false)
+  criar       Boolean @default(false)
+  transferir  Boolean @default(false)
+  administrar Boolean @default(false)
+  /// Preserva a regra que hoje esta embutida no codigo: o COMERCIAL so
+  /// enxerga os proprios negocios.
+  apenasProprios Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([funilId, role])
+  @@unique([funilId, userId])
+  @@index([funilId])
+}
+
+/// Historico do card. Coexiste com Auditoria: o `detalhes` da Auditoria e
+/// texto livre e nao permite montar uma linha do tempo com origem e destino,
+/// nem filtrar por funil.
+model PipelineMovimentacao {
+  id     String           @id @default(cuid())
+  dealId String
+  deal   Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  tipo   MovimentacaoTipo
+
+  funilOrigemId  String?
+  funilOrigem    PipelineFunil? @relation("MovFunilOrigem", fields: [funilOrigemId], references: [id], onDelete: Restrict)
+  etapaOrigemId  String?
+  etapaOrigem    PipelineEtapa? @relation("MovEtapaOrigem", fields: [etapaOrigemId], references: [id], onDelete: Restrict)
+  funilDestinoId String
+  funilDestino   PipelineFunil  @relation("MovFunilDestino", fields: [funilDestinoId], references: [id])
+  etapaDestinoId String
+  etapaDestino   PipelineEtapa  @relation("MovEtapaDestino", fields: [etapaDestinoId], references: [id])
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  observacao String?
+  createdAt  DateTime @default(now())
+
+  @@index([dealId, createdAt])
+  @@index([funilDestinoId, createdAt])
+}
+
+
+// ===========================================================================
+// FUNDACAO — Notificacoes, Documentos e movimento diario do cliente (v12)
+// ===========================================================================
+
+/// Mensagem dirigida a UM usuario. Nao se confunde com o mecanismo de Alertas,
+/// que e operacional e derivado; notificacao tem destinatario, leitura e
+/// contexto para onde voltar.
+///
+/// Nao tem chave de permissao: cada usuario ve as suas, filtradas por
+/// `destinatarioId`. Uma chave aqui so criaria a chance de configurar errado.
+model Notificacao {
+  id            String            @id @default(cuid())
+  destinatarioId String
+  destinatario  User              @relation(fields: [destinatarioId], references: [id], onDelete: Cascade)
+  titulo        String
+  mensagem      String
+  origem        NotificacaoOrigem @default(SISTEMA)
+  /// Contexto polimorfico leve: aponta para sete modelos diferentes, entao nao
+  /// ha FK. `href` e o link que a central abre.
+  entidade      String?
+  entidadeId    String?
+  href          String?
+  lidaEm        DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@index([destinatarioId, lidaEm])
+  @@index([destinatarioId, createdAt])
+}
+
+/// Metadados do arquivo. Os bytes vivem no Supabase Storage, bucket privado
+/// `cliente-arquivos`; aqui fica so a chave. Download sempre por signed URL de
+/// curta duracao, emitida por rota que checa permissao e grava Auditoria.
+model Documento {
+  id          String             @id @default(cuid())
+  clienteId   String
+  cliente     Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nome        String
+  categoria   DocumentoCategoria @default(OUTROS)
+  origem      DocumentoOrigem    @default(UPLOAD_MANUAL)
+  mime        String
+  tamanho     Int
+  /// Caminho no bucket. Nunca uma URL publica.
+  storageKey  String             @unique
+  descricao   String?
+  ativo       Boolean            @default(true)
+  enviadoPorId String
+  enviadoPor  User               @relation(fields: [enviadoPorId], references: [id])
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  certificadoVersao CertificadoVersao?
+  anexoFormulario   FormularioAnexo?
+
+  @@index([clienteId, ativo])
+  @@index([categoria])
+}
+
+/// Indicador operacional diario: o cliente movimentou conosco naquele dia?
+///
+/// NAO e TPV por cliente e NAO guarda valor nenhum — so o booleano. A ausencia
+/// de linha significa "sem registro", o que da tres estados com um unico campo
+/// e evita que um dia nao preenchido vire um "nao" falso.
+model ClienteDiaMovimento {
+  id              String   @id @default(cuid())
+  clienteId       String
+  cliente         Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  data            DateTime @db.Date
+  movimentou      Boolean
+  registradoPorId String
+  registradoPor   User     @relation(fields: [registradoPorId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([clienteId, data])
+  @@index([data])
+}
+
+
+// ===========================================================================
+// CERTIFICADOS — estoque global (v13)
+// ===========================================================================
+
+/// UM ZIP = exatamente 50 certificados. E estoque GLOBAL: nao tem clienteId.
+/// O vinculo comercial acontece so em CertificadoEnvio.
+model CertificadoVersao {
+  id            String                  @id @default(cuid())
+  identificacao String                  @unique
+  descricao     String?
+  quantidade    Int                     @default(50)
+  status        CertificadoVersaoStatus @default(ATIVA)
+  /// O proprio ZIP, guardado como Documento no bucket privado.
+  documentoId   String?                 @unique
+  documento     Documento?              @relation(fields: [documentoId], references: [id])
+  substituiId   String?                 @unique
+  substitui     CertificadoVersao?      @relation("VersaoSubstituicao", fields: [substituiId], references: [id])
+  substituidaPor CertificadoVersao?     @relation("VersaoSubstituicao")
+  criadoPorId   String
+  criadoPor     User                    @relation(fields: [criadoPorId], references: [id])
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  certificados Certificado[]
+  envios       CertificadoEnvio[]
+
+  @@index([status])
+}
+
+/// Uma unidade do ZIP. A numeracao e RELATIVA a versao: 1..50 em cada uma,
+/// nunca uma sequencia global. Por isso a unicidade e (versaoId, numero) e um
+/// intervalo so faz sentido citado junto da versao.
+model Certificado {
+  id        String            @id @default(cuid())
+  versaoId  String
+  versao    CertificadoVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
+  numero    Int
+  /// AES-256-GCM. Nunca entra em select de listagem, nunca vai para log, e so
+  /// a rota de revelar a le — depois de checar permissao e gravar Auditoria.
+  senhaCifrada String
+  status    CertificadoStatus @default(DISPONIVEL)
+  /// Nulo = ainda em estoque. E esta coluna que separa estoque de distribuicao.
+  envioId   String?
+  envio     CertificadoEnvio? @relation(fields: [envioId], references: [id])
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([versaoId, numero])
+  @@index([versaoId, status])
+  @@index([envioId])
+}
+
+/// Distribuicao ao cliente: UNICO = 1 certificado, LOTE = 10.
+model CertificadoEnvio {
+  id            String                 @id @default(cuid())
+  clienteId     String
+  cliente       Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  versaoId      String
+  versao        CertificadoVersao      @relation(fields: [versaoId], references: [id])
+  tipo          CertificadoEnvioTipo
+  quantidade    Int
+  numeroInicial Int
+  numeroFinal   Int
+  status        CertificadoEnvioStatus @default(ENVIADO)
+  observacao    String?
+  enviadoPorId  String
+  enviadoPor    User                   @relation(fields: [enviadoPorId], references: [id])
+  enviadoEm     DateTime               @default(now())
+  canceladoEm   DateTime?
+
+  certificados Certificado[]
+
+  @@index([clienteId, enviadoEm])
+  @@index([versaoId])
+}
+
+
+// ===========================================================================
+// COMPLIANCE (v13)
+// ===========================================================================
+
+model PendenciaCompliance {
+  id            String               @id @default(cuid())
+  clienteId     String
+  cliente       Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  motivo        PendenciaMotivo
+  /// Reusa a escala que ja existe no sistema em vez de criar outra igual.
+  criticidade   IncidenteCriticidade @default(MEDIA)
+  titulo        String
+  observacoes   String?
+  prazo         DateTime?
+  status        PendenciaStatus      @default(ABERTA)
+  responsavelId String
+  responsavel   User                 @relation("PendenciaResponsavel", fields: [responsavelId], references: [id])
+  resolvidaEm   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  eventos PendenciaEvento[]
+
+  @@index([clienteId, status])
+  @@index([status, prazo])
+}
+
+/// Linha do tempo da pendencia. Tabela propria pela mesma razao de
+/// PipelineMovimentacao: `Auditoria.detalhes` e texto livre e nao permite
+/// montar timeline nem filtrar por cliente.
+model PendenciaEvento {
+  id          String              @id @default(cuid())
+  pendenciaId String
+  pendencia   PendenciaCompliance @relation(fields: [pendenciaId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                @relation(fields: [userId], references: [id])
+  statusDe    PendenciaStatus?
+  statusPara  PendenciaStatus?
+  comentario  String?
+  createdAt   DateTime            @default(now())
+
+  @@index([pendenciaId, createdAt])
+}
+
+
+// ===========================================================================
+// AUTOMACOES (v14)
+// ===========================================================================
+
+/// Regra no-code: QUANDO gatilho [E condicao] ENTAO acao.
+///
+/// Nao e um motor generico de workflow. Sao quatro gatilhos e quatro acoes,
+/// todas reaproveitando servico que ja existe.
+model Automacao {
+  id      String           @id @default(cuid())
+  nome    String
+  ativo   Boolean          @default(true)
+  gatilho AutomacaoGatilho
+
+  /// Escopo do gatilho. Nulo = qualquer funil / qualquer etapa.
+  funilId String?
+  funil   PipelineFunil?   @relation("AutomacaoFunilGatilho", fields: [funilId], references: [id], onDelete: Cascade)
+  etapaId String?
+  etapa   PipelineEtapa?   @relation("AutomacaoEtapaGatilho", fields: [etapaId], references: [id], onDelete: Cascade)
+
+  acao           AutomacaoAcao
+  funilDestinoId String?
+  funilDestino   PipelineFunil? @relation("AutomacaoFunilDestino", fields: [funilDestinoId], references: [id])
+  etapaDestinoId String?
+  etapaDestino   PipelineEtapa? @relation("AutomacaoEtapaDestino", fields: [etapaDestinoId], references: [id])
+
+  /// Destinatario da notificacao ou responsavel pela tarefa/pendencia.
+  destinatarioRole   Role?
+  destinatarioUserId String?
+  destinatario       User?   @relation("AutomacaoDestinatario", fields: [destinatarioUserId], references: [id])
+
+  /// Condicoes simples e extensiveis, avaliadas por lib/automacoes.ts.
+  /// Formato: { "todas": [{ "campo": "...", "operador": "...", "valor": ... }] }
+  condicao Json?
+
+  titulo    String?
+  mensagem  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  execucoes AutomacaoExecucao[]
+
+  @@index([ativo, gatilho])
+}
+
+/// Log de disparo. Roda DEPOIS da transacao principal: uma automacao com
+/// defeito nunca pode desfazer a movimentacao de card que ja aconteceu.
+model AutomacaoExecucao {
+  id          String                  @id @default(cuid())
+  automacaoId String
+  automacao   Automacao               @relation(fields: [automacaoId], references: [id], onDelete: Cascade)
+  status      AutomacaoExecucaoStatus
+  dealId      String?
+  respostaId  String?
+  contexto    Json?
+  resultado   String?
+  erro        String?
+  createdAt   DateTime                @default(now())
+
+  @@index([automacaoId, createdAt])
+}
+
+
+// ===========================================================================
+// FORMULARIOS (v14)
+// ===========================================================================
+
+model Formulario {
+  id          String   @id @default(cuid())
+  nome        String
+  descricao   String?
+  ativo       Boolean  @default(true)
+  criadoPorId String
+  criadoPor   User     @relation(fields: [criadoPorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versoes FormularioVersao[]
+
+  @@index([ativo])
+}
+
+/// Snapshot IMUTAVEL da estrutura. Publicada uma versao, ela nao muda mais:
+/// editar cria a proxima. E o que impede uma alteracao futura de reescrever o
+/// significado de respostas ja coletadas.
+///
+/// `definicao` guarda secoes, campos, ordem, validacoes, layout e aparencia.
+/// O construtor visual gera e interpreta esse JSON — o usuario nunca o ve.
+model FormularioVersao {
+  id           String     @id @default(cuid())
+  formularioId String
+  formulario   Formulario @relation(fields: [formularioId], references: [id], onDelete: Cascade)
+  versao       Int
+  definicao    Json
+  publicadaEm  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  respostas FormularioResposta[]
+  links     FormularioLink[]
+
+  @@unique([formularioId, versao])
+  @@index([formularioId, publicadaEm])
+}
+
+/// Link publico. O token e aleatorio e NUNCA o id interno — um id em URL
+/// publica vaza a existencia e a ordem dos registros.
+model FormularioLink {
+  id         String           @id @default(cuid())
+  versaoId   String
+  versao     FormularioVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
+  token      String           @unique
+  clienteId  String?
+  cliente    Cliente?         @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  expiraEm   DateTime?
+  usosMax    Int?
+  usos       Int              @default(0)
+  revogadoEm DateTime?
+  createdAt  DateTime         @default(now())
+
+  respostas FormularioResposta[]
+
+  @@index([versaoId])
+}
+
+model FormularioResposta {
+  id            String                   @id @default(cuid())
+  versaoId      String
+  versao        FormularioVersao         @relation(fields: [versaoId], references: [id])
+  linkId        String?
+  link          FormularioLink?          @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  clienteId     String?
+  cliente       Cliente?                 @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  responsavelId String?
+  responsavel   User?                    @relation("RespostaResponsavel", fields: [responsavelId], references: [id])
+  status        FormularioRespostaStatus @default(ENVIADA)
+  valores       Json
+  /// Aceite de termos e assinatura, quando a definicao os exige.
+  aceiteEm      DateTime?
+  assinatura    String?
+  ip            String?
+  enviadaEm     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  anexos FormularioAnexo[]
+
+  @@index([versaoId, enviadaEm])
+  @@index([clienteId])
+}
+
+model FormularioAnexo {
+  id          String             @id @default(cuid())
+  respostaId  String
+  resposta    FormularioResposta @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  documentoId String             @unique
+  documento   Documento          @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  campo       String
+  createdAt   DateTime           @default(now())
+
+  @@index([respostaId])
 }

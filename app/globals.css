@@ -55,6 +55,11 @@
   --bp-t-med: 380ms;
   --bp-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* Nó de accent da marca. O site institucional troca esta cor por tema:
+     `.bmark .bm-a { fill: var(--accent) }` e
+     `.dark .bmark .bm-a { fill: var(--accent-soft) }`. */
+  --bp-brand-node: #6b8cff;
+
   --bp-accent-wash: rgba(47, 107, 255, 0.10);
   --bp-hover: rgba(255, 255, 255, 0.04);
   --bp-selected: rgba(47, 107, 255, 0.12);
@@ -105,6 +110,8 @@
   --color-neg: #d0323f;
 
   --color-on-accent: #ffffff;
+
+  --bp-brand-node: #2f6bff;
 
   --bp-accent-wash: rgba(47, 107, 255, 0.07);
   --bp-hover: rgba(11, 13, 16, 0.035);
