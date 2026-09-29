@@ -6,7 +6,9 @@ import { formatCurrency, formatPercent, getCurrentMonth, META_TIPO_LABELS } from
 interface Meta { id: string; tipo: string; valor: number; periodo: string; realizado: number | null }
 
 const TIPOS = ['RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS']
-const emptyForm = { tipo: 'RECEITA_TARIFARIA', valor: '', periodo: getCurrentMonth(), realizado: '' }
+// A meta é só o ESPERADO. O realizado vem do Lançamento Diário e nunca é
+// digitado aqui — por isso o formulário não tem campo para ele.
+const emptyForm = { tipo: 'RECEITA_TARIFARIA', valor: '', periodo: getCurrentMonth() }
 
 function formatVal(tipo: string, val: number) {
   if (tipo === 'CLIENTES_ATIVOS' || tipo === 'TRANSACOES') return val.toLocaleString('pt-BR')
@@ -20,7 +22,7 @@ export default function MetasClient() {
   const [showModal, setShowModal] = useState(false)
   const [editModal, setEditModal] = useState<Meta | null>(null)
   const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({ valor: '', realizado: '' })
+  const [editForm, setEditForm] = useState({ valor: '' })
   const [form, setForm] = useState(emptyForm)
 
   async function fetchData(p: string) {
@@ -39,7 +41,6 @@ export default function MetasClient() {
       body: JSON.stringify({
         tipo: form.tipo, valor: parseFloat(form.valor) || 0,
         periodo: form.periodo,
-        realizado: form.realizado ? parseFloat(form.realizado) : null,
       }),
     })
     setShowModal(false); setForm(emptyForm); fetchData(periodo); setSaving(false)
@@ -47,7 +48,7 @@ export default function MetasClient() {
 
   function openEdit(meta: Meta) {
     setEditModal(meta)
-    setEditForm({ valor: String(meta.valor), realizado: meta.realizado !== null ? String(meta.realizado) : '' })
+    setEditForm({ valor: String(meta.valor) })
   }
 
   async function handleEdit(e: React.FormEvent) {
@@ -58,7 +59,6 @@ export default function MetasClient() {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         valor: editForm.valor ? parseFloat(editForm.valor) : undefined,
-        realizado: editForm.realizado !== '' ? parseFloat(editForm.realizado) : null,
       }),
     })
     setEditModal(null); fetchData(periodo); setSaving(false)
@@ -176,10 +176,9 @@ export default function MetasClient() {
                 <label className={lbl}>Valor da Meta *</label>
                 <input required type="number" step="0.01" value={form.valor} onChange={e => setForm(p => ({ ...p, valor: e.target.value }))} className={inp} />
               </div>
-              <div>
-                <label className={lbl}>Valor Realizado (opcional)</label>
-                <input type="number" step="0.01" value={form.realizado} onChange={e => setForm(p => ({ ...p, realizado: e.target.value }))} className={inp} />
-              </div>
+              <p className="t-sm text-subtle">
+                O realizado é apurado automaticamente do Lançamento Diário.
+              </p>
               <div className="flex justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
@@ -202,10 +201,9 @@ export default function MetasClient() {
                 <label className={lbl}>Valor da Meta</label>
                 <input type="number" step="0.01" value={editForm.valor} onChange={e => setEditForm(p => ({ ...p, valor: e.target.value }))} className={inp} />
               </div>
-              <div>
-                <label className={lbl}>Valor Realizado</label>
-                <input type="number" step="0.01" value={editForm.realizado} onChange={e => setEditForm(p => ({ ...p, realizado: e.target.value }))} className={inp} placeholder="Deixe vazio para limpar" />
-              </div>
+              <p className="t-sm text-subtle">
+                O realizado é apurado automaticamente do Lançamento Diário.
+              </p>
               <div className="flex justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setEditModal(null)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>

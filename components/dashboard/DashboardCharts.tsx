@@ -13,7 +13,7 @@ import {
 } from '@/lib/chart-theme'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { makeTooltip } from '@/components/ui/ChartTooltip'
-import { moedaCompacta, moedaCheia, quantidadeCompacta, percentual, variacao } from '@/lib/format-financeiro'
+import { eixoMoeda as fmtEixoMoeda, moedaCheia, quantidadeCompacta, percentual, variacao } from '@/lib/format-financeiro'
 import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 import { Delta } from '@/components/ui/Figure'
@@ -137,7 +137,8 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
     return <Delta v={variacao(vals[vals.length - 1], vals[vals.length - 2])} sufixo="no mês" />
   }
 
-  const eixoMoeda = (v: number) => moedaCompacta(v)
+  // Eixo sem centavos; tooltip e cards seguem com o valor cheio.
+  const eixoMoeda = (v: number) => fmtEixoMoeda(v)
   const eixoQtd = (v: number) => quantidadeCompacta(v)
   const eixoPct = (v: number) => `${v.toFixed(v < 1 ? 2 : 1)}%`
 
@@ -149,7 +150,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
         <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={64} />
+          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
           <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
             [{ key: 'receitaTarifaria', nome: 'Tarifária', cor: p.s1 }, { key: 'floating', nome: 'Float', cor: p.s2 }],
             moedaCheia)} />
@@ -181,7 +182,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
               </defs>
               <CartesianGrid {...grid} />
               <XAxis dataKey="mes" {...eixo} />
-              <YAxis {...eixo} tickFormatter={eixoMoeda} width={64} />
+              <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
               <Tooltip cursor={cursorLinha(p)} content={makeTooltip(mrr, 'mes',
                 [{ key: 'mrr', nome: 'MRR', cor: p.s1 }], moedaCheia)} />
               <Area type="monotone" dataKey="mrr" stroke={p.s1} fill="url(#mrrG)" {...linha} />
@@ -194,7 +195,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={64} />
+          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
           <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
             [{ key: 'faturamentoPrevisto', nome: 'Previsto', cor: p.s3 },
              { key: 'faturamentoRealizado', nome: 'Realizado', cor: p.s1 }], moedaCheia)} />
@@ -210,7 +211,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={64} />
+          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
           <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
             [{ key: 'tpvPrevisto', nome: 'Previsto', cor: p.s3 },
              { key: 'tpvRealizado', nome: 'Liquidado', cor: p.s1 }], moedaCheia)} />
@@ -232,7 +233,7 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
           </defs>
           <CartesianGrid {...grid} />
           <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={64} />
+          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
           <Tooltip cursor={cursorLinha(p)} content={makeTooltip(data, 'mes',
             [{ key: 'tpv', nome: 'TPV', cor: p.s1 }], moedaCheia)} />
           <Area type="monotone" dataKey="tpv" stroke={p.s1} fill="url(#tpvG)" {...linha} />

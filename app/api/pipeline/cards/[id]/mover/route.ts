@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { validarMovimento } from '@/lib/pipeline'
 import { acessoAoCard, registrarMovimentacao, stageLegado, auditarPipeline, INCLUDE_CARD } from '@/lib/pipeline-db'
-import { dispararAutomacoes } from '@/lib/automacoes-db'
 
 /** Move o card para outra etapa do MESMO funil. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       data: {
         etapaId: destino.id,
         funilId: destino.funilId,
-        // `stage` continua alimentando app/api/relatorios. Só é tocado quando
+        // `stage` é o campo legado do Deal, anterior aos funis. Só é tocado quando
         // a etapa de destino tem um valor legado correspondente (funil Vendas).
         ...(stage ? { stage: stage as never } : {}),
         closedAt: encerra ? new Date() : null,
@@ -62,22 +61,5 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     `${ctx.deal.title} → etapa ${destino.nome}`,
   )
 
-  // Depois do commit, sempre. Uma automação com defeito não pode desfazer um
-  // movimento de card que já aconteceu.
-  const automacoes = await dispararAutomacoes({
-    gatilho: 'ETAPA_CONCLUIDA',
-    userId: session.userId,
-    dealId: id,
-    funilId: destino.funilId,
-    etapaId: destino.id,
-    valor: card.value,
-    probabilidade: card.probability,
-    segmento: card.segmento,
-    operacao: card.operacao,
-    titulo: card.title,
-    clienteId: card.clienteId,
-    ownerId: card.ownerId,
-  })
-
-  return NextResponse.json({ card, automacoes })
+  return NextResponse.json({ card })
 }

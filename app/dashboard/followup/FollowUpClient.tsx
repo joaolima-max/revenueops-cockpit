@@ -21,7 +21,7 @@ interface FollowUp {
   dataInicio: string | null
   dataFim: string | null
   notas: string | null
-  frequenciaDias: number | null
+  picoIntervaloDias: number | null
   ultimoContato: string | null
   proximoContato: string | null
   cliente: { id: string; nome: string; segmento: string | null; modeloOperacional: string }
@@ -34,7 +34,7 @@ const DIAS_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', '
 const WEEK_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
 const TIPO_LABELS: Record<string, string> = {
-  PICO_OPERACIONAL: 'Pico Operacional',
+  PICO_TRANSACIONAL: 'Pico transacional',
   REUNIAO: 'Reunião',
   MONITORAMENTO: 'Monitoramento',
   FOLLOW_UP: 'Follow-up',
@@ -43,7 +43,7 @@ const TIPO_LABELS: Record<string, string> = {
 }
 
 const TIPO_COLORS: Record<string, string> = {
-  PICO_OPERACIONAL: 'bg-warn/15 text-warn border border-warn/20',
+  PICO_TRANSACIONAL: 'bg-warn/15 text-warn border border-warn/20',
   REUNIAO: 'bg-accent/15 text-accent-soft border border-accent/20',
   MONITORAMENTO: 'bg-accent/15 text-accent-soft border border-accent/20',
   FOLLOW_UP: 'bg-pos/15 text-pos border border-pos/20',
@@ -52,7 +52,7 @@ const TIPO_COLORS: Record<string, string> = {
 }
 
 const TIPO_BG: Record<string, string> = {
-  PICO_OPERACIONAL: 'bg-warn/10 border-l-2 border-warn',
+  PICO_TRANSACIONAL: 'bg-warn/10 border-l-2 border-warn',
   REUNIAO: 'bg-accent/10 border-l-2 border-accent',
   MONITORAMENTO: 'bg-accent/10 border-l-2 border-accent',
   FOLLOW_UP: 'bg-pos/10 border-l-2 border-pos',
@@ -63,11 +63,11 @@ const TIPO_BG: Record<string, string> = {
 const emptyForm = {
   clienteId: '', titulo: '', descricao: '', tipo: 'FOLLOW_UP',
   recorrente: false, diaSemana: '1', horaInicio: '', horaFim: '',
-  dataInicio: '', dataFim: '', notas: '', frequenciaDias: '',
+  dataInicio: '', dataFim: '', notas: '', picoIntervaloDias: '',
 }
 
-const emptyFreqForm = {
-  titulo: '', tipo: 'FOLLOW_UP', frequenciaDias: '',
+const emptyPicoForm = {
+  titulo: '', tipo: 'FOLLOW_UP', picoIntervaloDias: '',
 }
 
 function getMondayOfWeek(offset = 0): Date {
@@ -205,7 +205,7 @@ export default function FollowUpClient({ clientes }: Props) {
 
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'calendario' | 'frequencia' | 'lista'>('calendario')
+  const [tab, setTab] = useState<'calendario' | 'picos' | 'lista'>('calendario')
   const [weekOffset, setWeekOffset] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -215,7 +215,7 @@ export default function FollowUpClient({ clientes }: Props) {
   const [saving, setSaving] = useState(false)
 
   // Frequency form state
-  const [freqForm, setFreqForm] = useState(emptyFreqForm)
+  const [picoForm, setPicoForm] = useState(emptyPicoForm)
   const [freqSelectedClientes, setFreqSelectedClientes] = useState<string[]>([])
   const [savingFreq, setSavingFreq] = useState(false)
   const [freqSaveProgress, setFreqSaveProgress] = useState<{ done: number; total: number } | null>(null)
@@ -237,7 +237,7 @@ export default function FollowUpClient({ clientes }: Props) {
 
   const ff = (field: string) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => setFreqForm(p => ({ ...p, [field]: e.target.value }))
+  ) => setPicoForm(p => ({ ...p, [field]: e.target.value }))
 
   function openNew() {
     setEditingId(null); setForm(emptyForm); setEventoScope('especifico'); setShowModal(true)
@@ -253,28 +253,28 @@ export default function FollowUpClient({ clientes }: Props) {
       dataInicio: fu.dataInicio ? fu.dataInicio.slice(0, 16) : '',
       dataFim: fu.dataFim ? fu.dataFim.slice(0, 16) : '',
       notas: fu.notas || '',
-      frequenciaDias: fu.frequenciaDias != null ? String(fu.frequenciaDias) : '',
+      picoIntervaloDias: fu.picoIntervaloDias != null ? String(fu.picoIntervaloDias) : '',
     })
     setShowModal(true)
   }
 
-  const isFrequencyMode = parseInt(form.frequenciaDias) > 0
+  const modoPico = parseInt(form.picoIntervaloDias) > 0
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
-    const freqDias = form.frequenciaDias ? parseInt(form.frequenciaDias) : null
+    const intervaloPico = form.picoIntervaloDias ? parseInt(form.picoIntervaloDias) : null
     const resolvedClienteId = eventoScope === 'carteira' ? 'CARTEIRA_GERAL' : form.clienteId
     const payload = {
       clienteId: resolvedClienteId, titulo: form.titulo, descricao: form.descricao,
       tipo: form.tipo,
-      recorrente: freqDias ? false : form.recorrente,
-      diaSemana: (!freqDias && form.recorrente) ? form.diaSemana : null,
-      horaInicio: freqDias ? null : (form.horaInicio || null),
-      horaFim: freqDias ? null : (form.horaFim || null),
-      dataInicio: (!freqDias && !form.recorrente && form.dataInicio) ? form.dataInicio : null,
-      dataFim: (!freqDias && !form.recorrente && form.dataFim) ? form.dataFim : null,
+      recorrente: intervaloPico ? false : form.recorrente,
+      diaSemana: (!intervaloPico && form.recorrente) ? form.diaSemana : null,
+      horaInicio: intervaloPico ? null : (form.horaInicio || null),
+      horaFim: intervaloPico ? null : (form.horaFim || null),
+      dataInicio: (!intervaloPico && !form.recorrente && form.dataInicio) ? form.dataInicio : null,
+      dataFim: (!intervaloPico && !form.recorrente && form.dataFim) ? form.dataFim : null,
       notas: form.notas || null,
-      frequenciaDias: freqDias,
+      picoIntervaloDias: intervaloPico,
     }
     if (editingId) {
       const res = await fetch(`/api/followup/${editingId}`, {
@@ -298,11 +298,11 @@ export default function FollowUpClient({ clientes }: Props) {
     if (res.ok) setFollowUps(p => p.filter(fu => fu.id !== id))
   }
 
-  async function registrarContato(id: string, frequenciaDias: number) {
+  async function registrarContato(id: string, picoIntervaloDias: number) {
     setRegistrandoId(id)
     const now = new Date()
     const proximo = new Date(now)
-    proximo.setDate(proximo.getDate() + frequenciaDias)
+    proximo.setDate(proximo.getDate() + picoIntervaloDias)
     const res = await fetch(`/api/followup/${id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ultimoContato: now.toISOString(), proximoContato: proximo.toISOString() }),
@@ -322,9 +322,9 @@ export default function FollowUpClient({ clientes }: Props) {
       const clienteId = freqSelectedClientes[i]
       const payload = {
         clienteId,
-        titulo: freqForm.titulo,
-        tipo: freqForm.tipo,
-        frequenciaDias: freqForm.frequenciaDias ? parseInt(freqForm.frequenciaDias) : null,
+        titulo: picoForm.titulo,
+        tipo: picoForm.tipo,
+        picoIntervaloDias: picoForm.picoIntervaloDias ? parseInt(picoForm.picoIntervaloDias) : null,
         recorrente: false,
       }
       const res = await fetch('/api/followup', {
@@ -338,7 +338,7 @@ export default function FollowUpClient({ clientes }: Props) {
     if (newFollowUps.length > 0) {
       setFollowUps(p => [...p, ...newFollowUps])
     }
-    setFreqForm(emptyFreqForm)
+    setPicoForm(emptyPicoForm)
     setFreqSelectedClientes([])
     setFreqSaveProgress(null)
     setSavingFreq(false)
@@ -368,29 +368,30 @@ export default function FollowUpClient({ clientes }: Props) {
   // Upcoming one-time events (next 14 days)
   const nowTs = new Date()
   const upcoming = followUps
-    .filter(fu => !fu.recorrente && !fu.frequenciaDias && fu.dataInicio && new Date(fu.dataInicio) >= nowTs)
+    .filter(fu => !fu.recorrente && !fu.picoIntervaloDias && fu.dataInicio && new Date(fu.dataInicio) >= nowTs)
     .sort((a, b) => new Date(a.dataInicio!).getTime() - new Date(b.dataInicio!).getTime())
     .slice(0, 10)
 
-  // Frequency rules: follow-ups with frequenciaDias set
-  const freqRules = followUps.filter(fu => fu.frequenciaDias != null && fu.frequenciaDias > 0)
+  // Regras de pico transacional: follow-ups com intervalo de pico definido.
+  // É a MESMA mecânica de cadência de antes, com o nome que o negócio usa.
+  const regrasPico = followUps.filter(fu => fu.picoIntervaloDias != null && fu.picoIntervaloDias > 0)
 
   // Weekly chart data
   const weekChartData = WEEK_LABELS.map((label, i) => {
     const dayNum = weekDayNums[i]
     const dayDate = weekDays[i]
     const recorrentes = followUps.filter(fu =>
-      (fu.recorrente && !fu.frequenciaDias) && fu.diaSemana === dayNum
+      (fu.recorrente && !fu.picoIntervaloDias) && fu.diaSemana === dayNum
     ).length
     // frequency-rule follow-ups due on this day (proximoContato falls on this day)
-    const frequencia = freqRules.filter(fu => {
+    const picos = regrasPico.filter(fu => {
       if (!fu.proximoContato) return false
       const d = new Date(fu.proximoContato)
       return d.getFullYear() === dayDate.getFullYear() &&
         d.getMonth() === dayDate.getMonth() &&
         d.getDate() === dayDate.getDate()
     }).length
-    return { label, Recorrentes: recorrentes, Frequência: frequencia }
+    return { label, Recorrentes: recorrentes, Picos: picos }
   })
 
   const inp = 'bp-field'
@@ -427,10 +428,10 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 w-fit">
-        {(['calendario', 'frequencia', 'lista'] as const).map(t => (
+        {(['calendario', 'picos', 'lista'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-surface-2 text-fg' : 'text-subtle hover:text-muted'}`}>
-            {t === 'calendario' ? 'Calendário Semanal' : t === 'frequencia' ? 'Frequência de Follow-up' : 'Todos os Eventos'}
+            {t === 'calendario' ? 'Calendário Semanal' : t === 'picos' ? 'Picos transacionais' : 'Todos os Eventos'}
           </button>
         ))}
       </div>
@@ -541,8 +542,8 @@ export default function FollowUpClient({ clientes }: Props) {
         </div>
       )}
 
-      {/* FREQUENCY TAB */}
-      {tab === 'frequencia' && (
+      {/* PICOS TRANSACIONAIS */}
+      {tab === 'picos' && (
         <div className="space-y-6">
           {/* Chart: Agenda de Follow-ups da Semana */}
           <div className="bg-surface border border-line rounded-xl p-5">
@@ -563,21 +564,21 @@ export default function FollowUpClient({ clientes }: Props) {
                 />
                 <Legend {...legendProps(chartPal)} />
                 <Bar dataKey="Recorrentes" stackId="a" fill={chartPal.s1} maxBarSize={BAR.maxBarSize} />
-                <Bar dataKey="Frequência" stackId="a" fill={chartPal.s2} radius={[3, 3, 0, 0]} maxBarSize={BAR.maxBarSize} />
+                <Bar dataKey="Picos" stackId="a" fill={chartPal.s2} radius={[3, 3, 0, 0]} maxBarSize={BAR.maxBarSize} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Section A: Regras de Frequência */}
+          {/* Regras de pico transacional */}
           <div className="bg-surface border border-line rounded-xl p-5">
-            <h3 className="t-h3 text-fg mb-4">Regras de Frequência</h3>
+            <h3 className="t-h3 text-fg mb-4">Picos transacionais</h3>
             {loading ? (
               <p className="text-subtle text-sm py-6 text-center">Carregando...</p>
-            ) : freqRules.length === 0 ? (
-              <p className="text-subtle text-sm py-6 text-center">Nenhuma regra de frequência cadastrada</p>
+            ) : regrasPico.length === 0 ? (
+              <p className="text-subtle text-sm py-6 text-center">Nenhum pico transacional cadastrado</p>
             ) : (
               <div className="space-y-3">
-                {freqRules.map(fu => {
+                {regrasPico.map(fu => {
                   const pcColor = proximoContatoColor(fu.proximoContato)
                   return (
                     <div key={fu.id} className="bg-surface-2 border border-line-2 rounded-xl px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -594,7 +595,7 @@ export default function FollowUpClient({ clientes }: Props) {
                         </div>
                         <p className="text-xs text-muted truncate">{fu.titulo}</p>
                         <div className="flex flex-wrap gap-4 text-xs">
-                          <span className="text-pos font-medium">A cada {fu.frequenciaDias} dias</span>
+                          <span className="text-pos font-medium">Pico a cada {fu.picoIntervaloDias} dias</span>
                           <span className="text-subtle">
                             Último contato: {fu.ultimoContato ? fmtDateFull(fu.ultimoContato) : '—'}
                           </span>
@@ -605,7 +606,7 @@ export default function FollowUpClient({ clientes }: Props) {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
-                          onClick={() => registrarContato(fu.id, fu.frequenciaDias!)}
+                          onClick={() => registrarContato(fu.id, fu.picoIntervaloDias!)}
                           disabled={registrandoId === fu.id}
                           className="bp-btn-primary text-xs px-3 py-1.5 rounded-lg font-medium">
                           {registrandoId === fu.id ? 'Registrando...' : 'Registrar Contato'}
@@ -626,9 +627,9 @@ export default function FollowUpClient({ clientes }: Props) {
             )}
           </div>
 
-          {/* Section B: Adicionar Regra de Frequência */}
+          {/* Novo pico transacional */}
           <div className="bg-surface border border-line rounded-xl p-5">
-            <h3 className="t-h3 text-fg mb-4">Adicionar Regra de Frequência</h3>
+            <h3 className="t-h3 text-fg mb-4">Adicionar pico transacional</h3>
             <form onSubmit={handleFreqSubmit} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
               <div>
                 <label className={lbl}>Clientes * ({freqSelectedClientes.length} selecionados)</label>
@@ -640,18 +641,18 @@ export default function FollowUpClient({ clientes }: Props) {
               </div>
               <div className="sm:col-span-1">
                 <label className={lbl}>Título *</label>
-                <input required type="text" value={freqForm.titulo} onChange={ff('titulo')} className={inp}
+                <input required type="text" value={picoForm.titulo} onChange={ff('titulo')} className={inp}
                   placeholder="Ex: Follow-up BaaS a cada 2 dias" />
               </div>
               <div>
                 <label className={lbl}>Tipo</label>
-                <select value={freqForm.tipo} onChange={ff('tipo')} className={inp}>
+                <select value={picoForm.tipo} onChange={ff('tipo')} className={inp}>
                   {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
               <div>
-                <label className={lbl}>Repetir a cada (dias) *</label>
-                <input required type="number" min="1" value={freqForm.frequenciaDias} onChange={ff('frequenciaDias')} className={inp}
+                <label className={lbl}>Pico a cada (dias) *</label>
+                <input required type="number" min="1" value={picoForm.picoIntervaloDias} onChange={ff('picoIntervaloDias')} className={inp}
                   placeholder="Ex: 7" />
               </div>
               <div className="col-span-2 sm:col-span-4 flex items-center justify-between gap-4">
@@ -717,8 +718,8 @@ export default function FollowUpClient({ clientes }: Props) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-muted text-xs">
-                    {fu.frequenciaDias
-                      ? `A cada ${fu.frequenciaDias}d`
+                    {fu.picoIntervaloDias
+                      ? `Pico a cada ${fu.picoIntervaloDias}d`
                       : fu.recorrente
                         ? DIAS_FULL[fu.diaSemana ?? 0]
                         : fu.dataInicio ? fmtDateFull(fu.dataInicio) : '—'}
@@ -727,8 +728,8 @@ export default function FollowUpClient({ clientes }: Props) {
                     {fu.horaInicio ? `${fu.horaInicio}${fu.horaFim ? `–${fu.horaFim}` : ''}` : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {fu.frequenciaDias
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-warn/10 text-warn">Frequência</span>
+                    {fu.picoIntervaloDias
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-warn/10 text-warn">Pico</span>
                       : fu.recorrente
                         ? <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent-soft">Semanal</span>
                         : <span className="text-xs text-subtle">Único</span>}
@@ -812,14 +813,14 @@ export default function FollowUpClient({ clientes }: Props) {
                 <input required type="text" value={form.titulo} onChange={f('titulo')} className={inp}
                   placeholder="Ex: Horário de pico operacional" />
               </div>
-              <div className={`grid gap-4 ${isFrequencyMode ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              <div className={`grid gap-4 ${modoPico ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label className={lbl}>Tipo</label>
                   <select value={form.tipo} onChange={f('tipo')} className={inp}>
                     {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
-                {!isFrequencyMode && (
+                {!modoPico && (
                   <div className="flex items-end pb-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={form.recorrente}
@@ -832,15 +833,15 @@ export default function FollowUpClient({ clientes }: Props) {
               </div>
 
               <div>
-                <label className={lbl}>Frequência de contato (dias)</label>
-                <input type="number" min="0" value={form.frequenciaDias} onChange={f('frequenciaDias')} className={inp}
-                  placeholder="Ex: 7 — preencha para criar uma regra de frequência" />
-                {isFrequencyMode && (
-                  <p className="text-xs text-warn mt-1">Modo frequência ativo — campos de data/hora ocultos.</p>
+                <label className={lbl}>Picos transacionais (dias)</label>
+                <input type="number" min="0" value={form.picoIntervaloDias} onChange={f('picoIntervaloDias')} className={inp}
+                  placeholder="Ex: 7 — intervalo esperado entre picos do cliente" />
+                {modoPico && (
+                  <p className="text-xs text-warn mt-1">Acompanhamento por pico transacional — campos de data/hora ocultos.</p>
                 )}
               </div>
 
-              {!isFrequencyMode && (
+              {!modoPico && (
                 <>
                   {form.recorrente ? (
                     <div>

@@ -35,6 +35,7 @@ export default async function ForecastPage({
         saldoEmConta: l.saldoEmConta,
         qtdTransacoes: l.qtdTransacoes,
         qtdMed: l.qtdMed,
+        clientesAtivos: l.clientesAtivos,
         notas: l.notas,
       }))}
       kpis={{
@@ -48,6 +49,7 @@ export default async function ForecastPage({
         float: kpis.float,
         takeRate: kpis.takeRate,
         percentMed: kpis.percentMed,
+        clientesAtivos: kpis.clientesAtivos,
       }}
     />
   )

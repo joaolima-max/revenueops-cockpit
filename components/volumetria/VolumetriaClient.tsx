@@ -166,6 +166,28 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
     carregar()
   }
 
+  /**
+   * Exclusão definitiva. Pede confirmação nomeando o que some — inclusive o
+   * efeito nos meses já apurados, que é o que diferencia excluir de inativar.
+   */
+  async function excluir(c: Contrato) {
+    const ok = confirm(
+      `Excluir definitivamente a volumetria de ${c.clienteNome}?\n\n` +
+      `Mínimo de ${c.qtdMinima.toLocaleString('pt-BR')} transações, vigência a partir de ` +
+      `${formatMesRef(c.vigenciaInicio)}${c.vigenciaFim ? ` até ${formatMesRef(c.vigenciaFim)}` : ' por prazo indeterminado'}.\n\n` +
+      `O contrato deixa de compor o mínimo consolidado dos meses que ele cobria, inclusive os já fechados. ` +
+      `Para tirá-lo do futuro preservando o passado, use Inativar.`
+    )
+    if (!ok) return
+    const res = await fetch(`/api/volumetria/${c.id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      alert(d.error ?? 'Não foi possível excluir.')
+      return
+    }
+    carregar()
+  }
+
   const inp = 'w-full bg-bg border border-line rounded-lg px-3 py-2 t-body text-fg focus:outline-none focus:border-accent'
   const lbl = 'block t-label text-subtle mb-1.5'
 
@@ -276,6 +298,7 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
                           <Button size="sm" variant={c.ativo ? 'danger' : 'subtle'} onClick={() => alternarAtivo(c)}>
                             {c.ativo ? 'Inativar' : 'Reativar'}
                           </Button>
+                          <Button size="sm" variant="danger" onClick={() => excluir(c)}>Excluir</Button>
                         </div>
                       )}
                     </Td>

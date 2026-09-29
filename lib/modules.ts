@@ -29,7 +29,10 @@ export interface Feature {
   enabled: boolean
   /** Perfis com acesso. Ausente = todos os perfis autenticados. */
   roles?: Role[]
-  /** Casa a rota exatamente, sem subcaminhos. Usado só pelo Cockpit (`/dashboard`). */
+  /** Casa a rota exatamente, sem subcaminhos. Usado pelas funções que moram na
+   * raiz de um ambiente — o Cockpit (`/dashboard`) e a Visão Geral do
+   * Financeiro (`/dashboard/financeiro`) — para que não engulam os menus que
+   * ficam abaixo delas. */
   exact?: boolean
 }
 
@@ -68,7 +71,6 @@ export const MODULES: Module[] = [
     features: [
       { key: 'receita.forecast', label: 'Lançamento Diário', route: '/dashboard/forecast', api: ['/api/forecast'], enabled: true },
       { key: 'receita.metas', label: 'Metas', route: '/dashboard/metas', api: ['/api/metas'], enabled: true },
-      { key: 'receita.relatorios', label: 'Relatórios', route: '/dashboard/relatorios', api: ['/api/relatorios'], enabled: true },
     ],
   },
   {
@@ -78,8 +80,6 @@ export const MODULES: Module[] = [
     features: [
       { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
       { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
-      { key: 'carteira.alertas', label: 'Alertas', route: '/dashboard/alertas', enabled: true },
-      { key: 'carteira.documentos', label: 'Documentos', route: '/dashboard/documentos', api: ['/api/documentos'], enabled: true },
       { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
     ],
   },
@@ -99,15 +99,18 @@ export const MODULES: Module[] = [
     label: 'COMERCIAL',
     enabled: true,
     features: [
-      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline'], enabled: true },
-      // Ambiente administrativo dos funis. Fica sob /dashboard/pipeline, que o
-      // `checkAccess` casa por prefixo — por isso o proxy NAO consegue separar as
-      // duas rotas, e o `administrar` e verificado na pagina e em cada API.
-      { key: 'comercial.funis', label: 'Funis', route: '/dashboard/pipeline/funis', enabled: true, roles: ['ADMIN'] },
+      // Pipeline e Funis sao ambientes DISTINTOS e moram em rotas IRMAS.
+      //
+      // Enquanto Funis vivia em /dashboard/pipeline/funis, o casamento por
+      // prefixo fazia a rota de Funis responder tambem como Pipeline: na
+      // sidebar os dois itens acendiam juntos, abrir Funis marcava Pipeline
+      // como ambiente corrente, e o proxy nao conseguia aplicar a restricao de
+      // ADMIN so ao segundo. Rotas irmas resolvem os tres de uma vez.
+      { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline/board', '/api/pipeline/cards'], enabled: true },
+      { key: 'comercial.funis', label: 'Funis', route: '/dashboard/funis', api: ['/api/pipeline/funis', '/api/pipeline/etapas'], enabled: true, roles: ['ADMIN'] },
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.followup', label: 'Follow-up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
       { key: 'comercial.crm', label: 'CRM', route: '/dashboard/crm', api: ['/api/crm'], enabled: true },
-      { key: 'comercial.formularios', label: 'Formulários', route: '/dashboard/formularios', api: ['/api/formularios'], enabled: true },
     ],
   },
   {
@@ -115,7 +118,14 @@ export const MODULES: Module[] = [
     label: 'FINANCEIRO',
     enabled: true,
     features: [
-      { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro', api: ['/api/financeiro'], enabled: true },
+      // `exact` na Visao Geral pelo mesmo motivo do Cockpit: ela mora na raiz
+      // do ambiente, e sem isso casaria por prefixo com todos os menus abaixo.
+      { key: 'financeiro.visao', label: 'Visão Geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
+      { key: 'financeiro.lancamentos', label: 'Lançamentos', route: '/dashboard/financeiro/lancamentos', api: ['/api/financeiro/lancamentos'], enabled: true },
+      { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
+      { key: 'financeiro.categorias', label: 'Categorias', route: '/dashboard/financeiro/categorias', api: ['/api/financeiro/categorias'], enabled: true },
+      { key: 'financeiro.fornecedores', label: 'Fornecedores', route: '/dashboard/financeiro/fornecedores', api: ['/api/financeiro/fornecedores'], enabled: true },
+      { key: 'financeiro.condicoes', label: 'Condições Comerciais BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },
     ],
   },
   {
@@ -125,9 +135,7 @@ export const MODULES: Module[] = [
     roles: ['ADMIN'],
     features: [
       { key: 'admin.usuarios', label: 'Usuários', route: '/dashboard/usuarios', api: ['/api/users'], enabled: true },
-      { key: 'admin.parametros', label: 'Parâmetros', route: '/dashboard/parametros', api: ['/api/parametros', '/api/float-config'], enabled: true },
       { key: 'admin.auditoria', label: 'Auditoria', route: '/dashboard/auditoria', api: ['/api/auditoria'], enabled: true },
-      { key: 'admin.automacoes', label: 'Automações', route: '/dashboard/automacoes', api: ['/api/automacoes'], enabled: true },
     ],
   },
 ]

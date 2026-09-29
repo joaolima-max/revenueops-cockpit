@@ -3,7 +3,7 @@
 import { useState, useMemo, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { figuraMoeda, figuraQuantidade, figuraPercentual, moedaCompacta } from '@/lib/format-financeiro'
+import { figuraMoeda, figuraQuantidade, figuraPercentual, eixoMoeda } from '@/lib/format-financeiro'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import HairlineGrid from '@/components/ui/HairlineGrid'
@@ -18,6 +18,8 @@ export interface LancamentoDTO {
   saldoEmConta: number
   qtdTransacoes: number
   qtdMed: number
+  /** Fotografia do dia. null = não informado, que não é o mesmo que zero. */
+  clientesAtivos: number | null
   notas: string | null
 }
 
@@ -32,6 +34,7 @@ export interface KpisDTO {
   float: number | null
   takeRate: number | null
   percentMed: number | null
+  clientesAtivos: number | null
 }
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -44,6 +47,9 @@ const CAMPOS = [
   { nome: 'saldoEmConta', label: 'Saldo em Conta', prefixo: 'R$', decimal: true },
   { nome: 'qtdTransacoes', label: 'Qtd. Transações', prefixo: '', decimal: false },
   { nome: 'qtdMed', label: 'Qtd. MEDs', prefixo: '', decimal: false },
+  // Alimenta "Clientes ativos" no Cockpit e no Conselho. Fica aqui, e em
+  // nenhuma outra tela, para não existirem duas contagens do mesmo número.
+  { nome: 'clientesAtivos', label: 'Clientes Ativos', prefixo: '', decimal: false },
 ] as const
 
 function deslocaPeriodo(periodo: string, meses: number): string {
@@ -145,6 +151,7 @@ export default function CalendarioLancamentos({
     { label: 'Receita Tarifária', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria) },
     { label: 'Float (derivado)', fig: kpis.float === null ? null : figuraMoeda(kpis.float) },
     { label: 'Saldo Médio', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio) },
+    { label: 'Clientes Ativos', fig: kpis.clientesAtivos === null ? null : figuraQuantidade(kpis.clientesAtivos) },
     { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes) },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3) },
   ]
@@ -232,7 +239,7 @@ export default function CalendarioLancamentos({
                 </span>
                 {l && (
                   <span className="hidden sm:block text-[0.625rem] text-muted leading-tight truncate tabular-nums">
-                    {moedaCompacta(l.tpv)}
+                    {eixoMoeda(l.tpv)}
                   </span>
                 )}
               </button>

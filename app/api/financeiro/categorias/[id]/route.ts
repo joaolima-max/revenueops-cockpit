@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { getSession, type TokenPayload } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
+import { hasPermission } from '@/lib/permissions'
+
+function podeGerenciar(session: TokenPayload): boolean {
+  return hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
+}
+
+/** Renomeia ou ativa/inativa. O tipo é imutável: mudá-lo reclassificaria
+ *  lançamentos já feitos de receita para despesa. */
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+
+  const { id } = await params
+  const { nome, ativo } = await request.json()
+
+  const atual = await prisma.categoriaFinanceira.findUnique({ where: { id } })
+  if (!atual) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 })
+
+  const n = nome === undefined ? undefined : String(nome).trim()
+  if (n !== undefined && !n) {
+    return NextResponse.json({ error: 'Informe o nome da categoria.' }, { status: 400 })
+  }
+  if (n && n !== atual.nome) {
+    const conflito = await prisma.categoriaFinanceira.findFirst({ where: { nome: n, tipo: atual.tipo } })
+    if (conflito) return NextResponse.json({ error: `Já existe uma categoria ${n} desse tipo.` }, { status: 409 })
+  }
+
+  const categoria = await prisma.categoriaFinanceira.update({
+    where: { id },
+    data: { ...(n ? { nome: n } : {}), ...(typeof ativo === 'boolean' ? { ativo } : {}) },
+  })
+
+  await logAudit(session.userId, 'EDITOU_CATEGORIA_FINANCEIRA', 'CategoriaFinanceira', id, categoria.nome)
+  return NextResponse.json({ categoria })
+}
+
+/** Só exclui categoria sem lançamento. Com lançamento, inative pelo PUT —
+ *  apagar reescreveria a classificação do que já foi lançado. */
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+
+  const { id } = await params
+  const atual = await prisma.categoriaFinanceira.findUnique({ where: { id } })
+  if (!atual) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 })
+
+  const emUso = await prisma.lancamentoFinanceiro.count({ where: { categoriaId: id } })
+  if (emUso > 0) {
+    return NextResponse.json({
+      error: `A categoria ${atual.nome} tem ${emUso} lançamento${emUso === 1 ? '' : 's'}. Inative-a em vez de excluir.`,
+    }, { status: 409 })
+  }
+
+  await prisma.categoriaFinanceira.delete({ where: { id } })
+  await logAudit(session.userId, 'EXCLUIU_CATEGORIA_FINANCEIRA', 'CategoriaFinanceira', id, atual.nome)
+  return NextResponse.json({ ok: true })
+}

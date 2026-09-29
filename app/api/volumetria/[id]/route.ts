@@ -116,3 +116,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   return NextResponse.json({ contrato })
 }
+
+/**
+ * Exclui o contrato de volumetria.
+ *
+ * VolumetriaMinima não tem filhos: nada aponta para ela, então excluir não
+ * arrasta histórico de nenhum outro modelo. O que a exclusão muda é o mínimo
+ * consolidado dos meses que a vigência cobria — por isso a interface pede
+ * confirmação e oferece inativar (PATCH) como alternativa, que preserva a
+ * linha e o efeito nos meses já fechados.
+ *
+ * Contratos gerais legados (clienteId nulo) continuam somente leitura: são a
+ * base dos alertas de meses antigos e não são recriáveis pela aplicação.
+ */
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!podeGerenciar(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+
+  const { id } = await params
+  const atual = await prisma.volumetriaMinima.findUnique({
+    where: { id }, include: { cliente: { select: { nome: true } } },
+  })
+  if (!atual) return NextResponse.json({ error: 'Configuração não encontrada.' }, { status: 404 })
+  if (atual.clienteId === null) {
+    return NextResponse.json({ error: 'Contrato geral legado é somente leitura.' }, { status: 409 })
+  }
+
+  await prisma.volumetriaMinima.delete({ where: { id } })
+
+  await logAudit(
+    session.userId, 'EXCLUIU_VOLUMETRIA', 'VolumetriaMinima', id,
+    `${atual.cliente?.nome ?? '—'}: mínimo ${atual.qtdMinima} a partir de ${atual.periodo}` +
+      `${atual.vigenciaFim ? ` até ${atual.vigenciaFim}` : ''}`,
+  )
+
+  return NextResponse.json({ ok: true })
+}

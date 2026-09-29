@@ -1,10 +1,10 @@
 /**
  * ARQUIVOS — formatos, limites e sanitizacao de nome. Sem Prisma, sem SDK.
  *
- * Vive separado de lib/storage.ts porque o construtor e a pagina publica de
- * formularios precisam destas regras no NAVEGADOR. Importar lib/storage la
- * arrastaria o SDK do Supabase — e a service role key junto — para o bundle
- * do cliente.
+ * Vive separado de lib/storage.ts porque telas de CLIENTE precisam destas
+ * regras no navegador (hoje, a de anexo de lancamento financeiro, que valida
+ * antes de subir). Importar lib/storage la arrastaria o SDK do Supabase — e a
+ * service role key junto — para o bundle do cliente.
  */
 
 /** 25 MB. Vercel Functions aceitam ate 100 MB de corpo; o limite aqui e de produto. */
@@ -71,4 +71,14 @@ export function nomeSeguro(nome: string): string {
 
 export function chaveDocumento(clienteId: string, documentoId: string, nome: string): string {
   return `clientes/${clienteId}/${documentoId}/${nomeSeguro(nome)}`
+}
+
+/**
+ * Chave do anexo de um lancamento financeiro (nota fiscal, comprovante, print).
+ *
+ * Prefixo proprio porque o arquivo nao pertence a um cliente: mistura-lo em
+ * `clientes/` obrigaria a inventar um clienteId para algo que nao tem.
+ */
+export function chaveLancamento(lancamentoId: string, documentoId: string, nome: string): string {
+  return `financeiro/lancamentos/${lancamentoId}/${documentoId}/${nomeSeguro(nome)}`
 }

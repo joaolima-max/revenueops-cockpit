@@ -1,11 +1,12 @@
 /**
  * REGISTRO DE KPIs — cada indicador tem UMA fonte oficial.
  *
- *   LancamentoDiario → TPV, Receita Tarifária, Saldo em Conta, Transações, MEDs
- *   FloatConfig      → multiplicador do Float (derivado, nunca lançado)
- *   Cliente          → MRR, WL Ativos, Contas Ativas, BaaS Ativos
- *   ContaReceber     → Setup e Serviços
- *   Meta             → objetivos (somente o alvo)
+ *   LancamentoDiario  → TPV, Receita Tarifária, Saldo em Conta, Transações,
+ *                       MEDs e Clientes Ativos
+ *   FloatConfig       → multiplicador do Float (derivado, nunca lançado)
+ *   CondicaoComercial → Sustentação, MRR, BaaS ativos, White Labels ativos
+ *   ContaReceber      → Setup
+ *   Meta              → objetivos (somente o alvo; o realizado nunca vem daqui)
  *
  * Regra que substitui os 36 fallbacks anteriores: quando não há dado, o valor é
  * `null` e a tela mostra estado vazio. Zero é usado apenas quando é o resultado
@@ -15,26 +16,12 @@
 import { prisma } from '@/lib/prisma'
 import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/float'
 import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
+import { calcularMrr, contagensParceiros, type Mrr, type ContagensParceiros } from '@/lib/financeiro'
+import { intervaloMes, periodoAtual, ultimosPeriodos } from '@/lib/periodo'
 
-/** Primeiro instante do mês e o primeiro do mês seguinte, para "YYYY-MM". */
-export function intervaloMes(periodo: string): { inicio: Date; fim: Date } {
-  const [ano, mes] = periodo.split('-').map(Number)
-  return { inicio: new Date(Date.UTC(ano, mes - 1, 1)), fim: new Date(Date.UTC(ano, mes, 1)) }
-}
-
-export function periodoAtual(): string {
-  const h = new Date()
-  return `${h.getUTCFullYear()}-${String(h.getUTCMonth() + 1).padStart(2, '0')}`
-}
-
-/** Os N períodos "YYYY-MM" terminando no mês corrente. */
-export function ultimosPeriodos(n: number): string[] {
-  const h = new Date()
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - (n - 1 - i), 1))
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-  })
-}
+// Reexportados porque muitas telas já os importavam daqui. A implementação
+// mora em lib/periodo.ts, para que lib/financeiro.ts possa usá-la sem ciclo.
+export { intervaloMes, periodoAtual, ultimosPeriodos }
 
 export interface KpisPeriodo {
   periodo: string
@@ -49,6 +36,34 @@ export interface KpisPeriodo {
   float: number | null
   takeRate: number | null
   percentMed: number | null
+  /**
+   * Clientes ativos do mês. É FOTOGRAFIA: o valor do último dia lançado que
+   * informou o número, nunca a soma dos dias. null quando nenhum dia do mês
+   * informou.
+   */
+  clientesAtivos: number | null
+}
+
+/**
+ * Clientes ativos do mês a partir dos lançamentos do período.
+ *
+ * É ESTOQUE, não fluxo: vale o valor do último dia que informou o número.
+ * Somar os dias contaria o mesmo cliente uma vez por dia; pegar o primeiro
+ * ignoraria o que aconteceu no mês. Dias sem informação são pulados, e a
+ * ausência total devolve null — nunca zero, que seria "nenhum cliente ativo".
+ *
+ * Função pura para poder ser exercitada sem banco (mesma razão de
+ * `consolidarMinimo` em lib/volumetria.ts).
+ */
+export function clientesAtivosDoMes(
+  dias: Array<{ data: Date; clientesAtivos: number | null }>,
+): number | null {
+  let escolhido: { data: Date; clientesAtivos: number | null } | null = null
+  for (const d of dias) {
+    if (d.clientesAtivos === null) continue
+    if (!escolhido || d.data.getTime() >= escolhido.data.getTime()) escolhido = d
+  }
+  return escolhido?.clientesAtivos ?? null
 }
 
 /** Vigências do multiplicador, ordenadas. Uma consulta serve todos os períodos. */
@@ -82,6 +97,7 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
       periodo, temDados: false, diasLancados: 0,
       tpv: null, receitaTarifaria: null, qtdTransacoes: null, qtdMed: null,
       saldoMedio: null, float: null, takeRate: null, percentMed: null,
+      clientesAtivos: null,
     }
   }
 
@@ -90,6 +106,8 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
   const qtdTransacoes = doMes.reduce((a, l) => a + l.qtdTransacoes, 0)
   const qtdMed = doMes.reduce((a, l) => a + l.qtdMed, 0)
   const saldoMedio = doMes.reduce((a, l) => a + l.saldoEmConta, 0) / doMes.length
+
+  const clientesAtivos = clientesAtivosDoMes(doMes)
 
   // Inclui a virada do último dia do mês para a primeira madrugada do seguinte.
   const saldos: SaldoDia[] = lancamentos.map((l) => ({ data: l.data, saldoEmConta: l.saldoEmConta }))
@@ -106,6 +124,7 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
     float: calcularFloat(saldos, vigencias),
     takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : null,
     percentMed: qtdTransacoes > 0 ? (qtdMed / qtdTransacoes) * 100 : null,
+    clientesAtivos,
   }
 }
 
@@ -114,22 +133,29 @@ export interface LinhasReceita {
   float: number
   sustentacao: number
   setup: number
-  servicos: number
   total: number
 }
 
 /**
- * As cinco linhas de receita do Conselho. Cada uma tem origem única, e a soma
- * é o faturamento do período — não há nenhuma linha lançada em dois lugares.
+ * As QUATRO linhas de receita. Cada uma tem origem única, e a soma é o
+ * faturamento do período — não há nenhuma linha lançada em dois lugares.
+ *
+ * A vertical "Serviços" saiu da composição e nada entrou no lugar dela. Ela
+ * vinha de `ContaReceber.tipo = 'OUTROS'`, que é um balde por definição: não
+ * dava para dizer que receita era aquela. Os títulos com esse tipo continuam
+ * existindo em Contas a Receber; só não formam mais uma vertical de receita.
+ *
+ * `sustentacao` passou a vir de CondicaoComercial — mesma fonte do MRR — e não
+ * mais de campos do cadastro de Cliente, que deixaram de existir.
  */
 export async function linhasReceita(periodo: string): Promise<LinhasReceita | null> {
   const { inicio, fim } = intervaloMes(periodo)
   const kpis = await kpisDoPeriodo(periodo)
 
-  const [mrrAgg, contas] = await Promise.all([
-    prisma.cliente.aggregate({
-      where: { status: 'ATIVO' },
-      _sum: { mensalidadeApi: true, sustentacaoWhiteLabel: true },
+  const [condicoes, contas] = await Promise.all([
+    prisma.condicaoComercial.aggregate({
+      where: { ativo: true },
+      _sum: { sustentacao: true },
     }),
     prisma.contaReceber.groupBy({
       by: ['tipo'],
@@ -142,47 +168,57 @@ export async function linhasReceita(periodo: string): Promise<LinhasReceita | nu
 
   const tarifario = kpis.receitaTarifaria ?? 0
   const flt = kpis.float ?? 0
-  const sustentacao = (mrrAgg._sum.mensalidadeApi ?? 0) + (mrrAgg._sum.sustentacaoWhiteLabel ?? 0)
+  const sustentacao = condicoes._sum.sustentacao ?? 0
   const setup = porTipo('SETUP')
-  const servicos = porTipo('OUTROS')
-  const total = tarifario + flt + sustentacao + setup + servicos
+  const total = tarifario + flt + sustentacao + setup
 
   if (!kpis.temDados && total === 0) return null
 
-  return { tarifario, float: flt, sustentacao, setup, servicos, total }
+  return { tarifario, float: flt, sustentacao, setup, total }
 }
 
-export interface ContagensClientes {
-  contasAtivas: number
-  wlAtivos: number
+export interface IndicadoresEstrutura {
+  /**
+   * Clientes ativos do mês — vem do LANÇAMENTO DIÁRIO, não de contagem de
+   * linhas de Cliente. É o número que a operação lança, e é o mesmo no Cockpit
+   * e no Conselho. null quando o mês não teve nenhum dia informando.
+   */
+  clientesAtivos: number | null
+  /** BaaS ativos — Condições Comerciais BaaS, tipo BAAS. */
   baasAtivos: number
-  apiAtivos: number
-  mrr: number
+  /** White Labels ativos — Condições Comerciais BaaS, tipo WHITE_LABEL. */
+  whiteLabelsAtivos: number
+  /** MRR aberto nas quatro parcelas. Mesma função que o Financeiro usa. */
+  mrr: Mrr
 }
 
 /**
- * Contagens derivadas de Cliente — sem tabela nova.
- * "Conta ativa" = cliente com status ATIVO (contrato vigente).
+ * Os indicadores de estrutura do negócio, com UMA fonte cada.
+ *
+ * Antes os três saíam de contagem sobre `Cliente` (status ATIVO agrupado por
+ * modeloOperacional). Não servia: um BaaS parceiro não é necessariamente um
+ * registro na carteira, e o número de clientes ativos que a operação reporta
+ * não é o número de linhas cadastradas. Agora cada um vem de onde é lançado.
+ *
+ * Cockpit, Conselho e Financeiro chamam esta função — não existe uma segunda
+ * consulta equivalente em nenhum deles.
  */
-export async function contagensClientes(): Promise<ContagensClientes> {
-  const [porModelo, mrrAgg] = await Promise.all([
-    prisma.cliente.groupBy({ by: ['modeloOperacional'], where: { status: 'ATIVO' }, _count: true }),
-    prisma.cliente.aggregate({
-      where: { status: 'ATIVO' },
-      _sum: { mensalidadeApi: true, sustentacaoWhiteLabel: true },
-    }),
+export async function indicadoresEstrutura(periodo: string): Promise<IndicadoresEstrutura> {
+  const [kpis, parceiros, mrr] = await Promise.all([
+    kpisDoPeriodo(periodo),
+    contagensParceiros(),
+    calcularMrr(),
   ])
 
-  const conta = (m: string) => porModelo.find((p) => p.modeloOperacional === m)?._count ?? 0
-
   return {
-    contasAtivas: porModelo.reduce((a, p) => a + p._count, 0),
-    apiAtivos: conta('API'),
-    wlAtivos: conta('WHITE_LABEL'),
-    baasAtivos: conta('BAAS'),
-    mrr: (mrrAgg._sum.mensalidadeApi ?? 0) + (mrrAgg._sum.sustentacaoWhiteLabel ?? 0),
+    clientesAtivos: kpis.clientesAtivos,
+    baasAtivos: parceiros.baasAtivos,
+    whiteLabelsAtivos: parceiros.whiteLabelsAtivos,
+    mrr,
   }
 }
+
+export type { ContagensParceiros }
 
 export interface MetaVsRealizado {
   tipo: string

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { formatDate, ROLE_LABELS } from '@/lib/utils'
+import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '@/lib/permissions'
 
 interface User {
   id: string
@@ -22,61 +23,14 @@ const ROLE_BADGE: Record<string, string> = {
 }
 
 // Permissions data inlined for client component use
-const ALL_PERMISSIONS_CLIENT = [
-  // Cockpit
-  { key: 'view_dashboard',   label: 'Ver Dashboard',           group: 'Cockpit' },
-  { key: 'view_carteira',    label: 'Ver Carteira',             group: 'Cockpit' },
-  { key: 'manage_carteira',  label: 'Gerenciar Clientes',       group: 'Cockpit' },
-  { key: 'view_forecast',    label: 'Ver Forecast',             group: 'Cockpit' },
-  { key: 'manage_forecast',  label: 'Editar Forecast',          group: 'Cockpit' },
-  // Financeiro
-  { key: 'view_financeiro',  label: 'Ver Financeiro',           group: 'Financeiro' },
-  { key: 'manage_financeiro',label: 'Gerenciar Financeiro',     group: 'Financeiro' },
-  { key: 'view_receita',     label: 'Ver Receita',              group: 'Financeiro' },
-  { key: 'manage_receita',   label: 'Editar Receita',           group: 'Financeiro' },
-  { key: 'view_metas',       label: 'Ver Metas',                group: 'Financeiro' },
-  { key: 'manage_metas',     label: 'Editar Metas',             group: 'Financeiro' },
-  { key: 'view_pedidos',     label: 'Ver Pedidos',              group: 'Financeiro' },
-  { key: 'manage_pedidos',   label: 'Gerenciar Pedidos',        group: 'Financeiro' },
-  { key: 'view_relatorios',  label: 'Ver Relatórios',           group: 'Financeiro' },
-  { key: 'view_metricas',    label: 'Ver Métricas',             group: 'Financeiro' },
-  // Operacional
-  { key: 'view_incidentes',  label: 'Ver Incidentes',           group: 'Operacional' },
-  { key: 'manage_incidentes',label: 'Gerenciar Incidentes',     group: 'Operacional' },
-  { key: 'view_tarefas',     label: 'Ver Tarefas',              group: 'Operacional' },
-  { key: 'manage_tarefas',   label: 'Gerenciar Tarefas',        group: 'Operacional' },
-  { key: 'view_metricas_op', label: 'Ver Métricas Operacionais',group: 'Operacional' },
-  { key: 'view_volumetria',  label: 'Ver Volumetria',           group: 'Operacional' },
-  // CRM
-  { key: 'view_leads',       label: 'Ver Leads',                group: 'CRM' },
-  { key: 'manage_leads',     label: 'Gerenciar Leads',          group: 'CRM' },
-  { key: 'view_pipeline',    label: 'Ver Pipeline',             group: 'CRM' },
-  { key: 'manage_pipeline',  label: 'Gerenciar Pipeline',       group: 'CRM' },
-  { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
-  { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
-  // Admin
-  { key: 'view_alertas',     label: 'Ver Alertas',              group: 'Admin' },
-  { key: 'manage_parametros',label: 'Gerenciar Parâmetros',     group: 'Admin' },
-]
+/**
+ * A tela de Usuários lia uma CÓPIA da lista de permissões, mantida à mão aqui.
+ * Como toda cópia, ela divergiu: mostrava chaves que o servidor não conhecia
+ * mais e escondia outras que ele conhecia. Agora usa a mesma lista de
+ * lib/permissions.ts — é um módulo sem Prisma, então roda no cliente.
+ */
+const PERM_GROUPS = Array.from(new Set(ALL_PERMISSIONS.map(p => p.group)))
 
-const DEFAULT_PERMISSIONS_CLIENT: Record<string, string[]> = {
-  ADMIN: ALL_PERMISSIONS_CLIENT.map(p => p.key),
-  OPERACIONAL: [
-    'view_dashboard', 'view_carteira', 'view_forecast',
-    'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
-    'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
-    'view_metricas_op', 'view_volumetria', 'view_alertas',
-    'view_followup',
-  ],
-  COMERCIAL: [
-    'view_dashboard', 'view_carteira', 'view_forecast',
-    'view_metas', 'view_pedidos',
-    'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
-    'view_followup', 'manage_followup',
-  ],
-}
-
-const PERM_GROUPS = Array.from(new Set(ALL_PERMISSIONS_CLIENT.map(p => p.group)))
 
 interface PermModal {
   userId: string
@@ -94,7 +48,7 @@ function parsePermissoes(raw: string | null | undefined, role: string): string[]
       // fallback to defaults
     }
   }
-  return DEFAULT_PERMISSIONS_CLIENT[role] || []
+  return DEFAULT_PERMISSIONS[role] || []
 }
 
 export default function UsersClient({ users: initialUsers }: { users: User[] }) {
@@ -181,7 +135,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
   }
 
   function toggleGroup(group: string) {
-    const groupKeys = ALL_PERMISSIONS_CLIENT.filter(p => p.group === group).map(p => p.key)
+    const groupKeys = ALL_PERMISSIONS.filter(p => p.group === group).map(p => p.key)
     const allChecked = groupKeys.every(k => permChecked.includes(k))
     if (allChecked) {
       setPermChecked(prev => prev.filter(k => !groupKeys.includes(k)))
@@ -442,7 +396,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               )}
 
               {PERM_GROUPS.map(group => {
-                const groupPerms = ALL_PERMISSIONS_CLIENT.filter(p => p.group === group)
+                const groupPerms = ALL_PERMISSIONS.filter(p => p.group === group)
                 const groupKeys = groupPerms.map(p => p.key)
                 const allChecked = groupKeys.every(k => permChecked.includes(k))
                 const someChecked = groupKeys.some(k => permChecked.includes(k))

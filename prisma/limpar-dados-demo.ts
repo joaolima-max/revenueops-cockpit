@@ -56,8 +56,9 @@ async function main() {
 
   const mantidos = {
     usuarios: await prisma.user.count(),
-    parametros: await prisma.parametro.count(),
     floatConfig: await prisma.floatConfig.count(),
+    categoriasFinanceiras: await prisma.categoriaFinanceira.count(),
+    condicoesComerciais: await prisma.condicaoComercial.count(),
   }
   console.log('\n✓ Dados operacionais removidos.')
   console.log('Mantidos (estruturais):', mantidos)

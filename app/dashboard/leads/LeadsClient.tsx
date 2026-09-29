@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatDate, LEAD_STATUS_LABELS, cn } from '@/lib/utils'
+import { formatDate, LEAD_STATUS_LABELS, SEGMENTO_CRM_LABELS, CANAL_LABELS, cn } from '@/lib/utils'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
@@ -11,7 +11,8 @@ import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/comp
 interface Lead {
   id: string; name: string; email: string | null; phone: string | null
   company: string | null; source: string | null; status: string
-  value: number | null; createdAt: Date; owner: { id: string; name: string }
+  cnpj: string | null; canal: string | null; segmento: string | null
+  createdAt: Date; owner: { id: string; name: string }
 }
 
 const STATUSES = ['', 'NOVO', 'QUALIFICADO', 'PROPOSTA', 'NEGOCIACAO', 'GANHO', 'PERDIDO']
@@ -33,15 +34,14 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
   const [statusFilter, setStatusFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', position: '', source: '', value: '', notes: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', position: '', cnpj: '', canal: '', segmento: '', notes: '' })
 
   const filtered = leads.filter(l => {
-    const matchSearch = !search || [l.name, l.email, l.company].some(f => f?.toLowerCase().includes(search.toLowerCase()))
+    const matchSearch = !search || [l.name, l.email, l.company, l.cnpj].some(f => f?.toLowerCase().includes(search.toLowerCase()))
     return matchSearch && (!statusFilter || l.status === statusFilter)
   })
 
   const ganhos = leads.filter(l => l.status === 'GANHO').length
-  const potencial = filtered.reduce((s, l) => s + (l.value || 0), 0)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setLoading(true)
@@ -54,7 +54,7 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
         const lead = await res.json()
         setLeads([lead, ...leads])
         setShowModal(false)
-        setForm({ name: '', email: '', phone: '', company: '', position: '', source: '', value: '', notes: '' })
+        setForm({ name: '', email: '', phone: '', company: '', position: '', cnpj: '', canal: '', segmento: '', notes: '' })
       }
     } finally { setLoading(false) }
   }
@@ -66,7 +66,7 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
     <div className="space-y-8">
       <PageHeader
         title="Leads"
-        sub={`${filtered.length} leads · ${ganhos} ganhos · Potencial ${formatCurrency(potencial)}`}
+        sub={`${filtered.length} leads · ${ganhos} ganhos`}
         actions={<Button variant="primary" onClick={() => setShowModal(true)}>Novo lead</Button>}
       />
 
@@ -92,9 +92,9 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
             <HeadRow>
               <Th className="pl-5">Nome</Th>
               <Th>Empresa</Th>
-              <Th>Origem</Th>
+              <Th>Segmento</Th>
               <Th>Status</Th>
-              <Th align="right">Valor Potencial</Th>
+              <Th>Canal</Th>
               <Th>Responsável</Th>
               <Th>Criado</Th>
             </HeadRow>
@@ -111,7 +111,9 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
                   {lead.email && <span className="block t-mono text-subtle mt-1">{lead.email}</span>}
                 </Td>
                 <Td>{lead.company || <span className="text-subtle">—</span>}</Td>
-                <Td className="text-subtle">{lead.source || '—'}</Td>
+                <Td className="t-sm text-muted">
+                  {lead.segmento ? (SEGMENTO_CRM_LABELS[lead.segmento] ?? lead.segmento) : <span className="text-subtle">—</span>}
+                </Td>
                 {/* Funil lido por intensidade do accent, não por arco-íris de matizes. */}
                 <Td>
                   <span className={cn(
@@ -122,8 +124,8 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
                     {LEAD_STATUS_LABELS[lead.status]}
                   </span>
                 </Td>
-                <Td align="right" numeric className="text-fg font-medium">
-                  {lead.value ? formatCurrency(lead.value) : <span className="text-subtle font-normal">—</span>}
+                <Td className="text-subtle">
+                  {lead.canal ? (CANAL_LABELS[lead.canal] ?? lead.canal) : '—'}
                 </Td>
                 <Td className="text-subtle">{lead.owner.name}</Td>
                 <Td className="text-subtle t-num">{formatDate(lead.createdAt)}</Td>
@@ -145,14 +147,27 @@ export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead
             </div>
             <form onSubmit={handleCreate} className="p-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="col-span-2"><label className={lbl}>Nome *</label><input required value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inp} /></div>
-                <div><label className={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className={inp} /></div>
-                <div><label className={lbl}>Telefone</label><input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} className={inp} /></div>
-                <div><label className={lbl}>Empresa</label><input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} className={inp} /></div>
+                <div className="col-span-2"><label className={lbl}>Empresa</label><input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} className={inp} /></div>
+                <div className="col-span-2"><label className={lbl}>Nome do executivo *</label><input required value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inp} /></div>
+                <div><label className={lbl}>CNPJ</label><input value={form.cnpj} onChange={e => setForm(p => ({ ...p, cnpj: e.target.value }))} className={inp} /></div>
+                <div><label className={lbl}>Celular</label><input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} className={inp} /></div>
+                <div><label className={lbl}>E-mail</label><input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className={inp} /></div>
                 <div><label className={lbl}>Cargo</label><input value={form.position} onChange={e => setForm(p => ({ ...p, position: e.target.value }))} className={inp} /></div>
-                <div><label className={lbl}>Origem</label><input placeholder="LinkedIn, Indicação..." value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} className={inp} /></div>
-                <div><label className={lbl}>Valor Potencial (R$)</label><input type="number" min="0" step="0.01" value={form.value} onChange={e => setForm(p => ({ ...p, value: e.target.value }))} className={inp} /></div>
-                <div className="col-span-2"><label className={lbl}>Notas</label><textarea rows={2} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className={inp + ' resize-none'} /></div>
+                <div>
+                  <label className={lbl}>Segmento</label>
+                  <select value={form.segmento} onChange={e => setForm(p => ({ ...p, segmento: e.target.value }))} className={inp}>
+                    <option value="">Selecione…</option>
+                    {Object.entries(SEGMENTO_CRM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>Canal</label>
+                  <select value={form.canal} onChange={e => setForm(p => ({ ...p, canal: e.target.value }))} className={inp}>
+                    <option value="">Selecione…</option>
+                    {Object.entries(CANAL_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2"><label className={lbl}>Observações</label><textarea rows={2} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className={inp + ' resize-none'} /></div>
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border border-line-2 text-subtle hover:text-fg text-sm rounded-lg">Cancelar</button>

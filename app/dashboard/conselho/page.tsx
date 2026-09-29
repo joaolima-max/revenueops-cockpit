@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { formatMesRef } from '@/lib/utils'
 import {
-  kpisDoPeriodo, linhasReceita, contagensClientes,
+  kpisDoPeriodo, linhasReceita, indicadoresEstrutura,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import {
@@ -20,10 +20,12 @@ export default async function ConselhoPage() {
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(24)
 
-  const [kpis, receita, clientes, serie] = await Promise.all([
+  // MESMA função que o Cockpit e o Financeiro usam para estes três números.
+  // Nenhuma consulta equivalente é repetida aqui.
+  const [kpis, receita, estrutura, serie] = await Promise.all([
     kpisDoPeriodo(periodo),
     linhasReceita(periodo),
-    contagensClientes(),
+    indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
   ])
 
@@ -43,21 +45,21 @@ export default async function ConselhoPage() {
     { label: 'TPV do mês', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv), delta: varDe(k => k.tpv) },
     { label: 'Faturamento', fig: receita ? figuraMoeda(receita.total) : null },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3), delta: varDe(k => k.takeRate) },
-    { label: 'MRR', fig: figuraMoeda(clientes.mrr) },
+    { label: 'MRR', fig: figuraMoeda(estrutura.mrr.total) },
     { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes), delta: varDe(k => k.qtdTransacoes) },
     { label: '% de MEDs', fig: kpis.percentMed === null ? null : figuraPercentual(kpis.percentMed, 2), delta: varDe(k => k.percentMed) },
   ]
 
   /* NÍVEL 5 — a carteira em números inteiros. */
   const carteira = [
-    { label: 'Contas ativas', v: clientes.contasAtivas },
-    { label: 'White Label ativos', v: clientes.wlAtivos },
-    { label: 'BaaS ativos', v: clientes.baasAtivos },
+    { label: 'Clientes ativos', v: estrutura.clientesAtivos },
+    { label: 'White Labels ativos', v: estrutura.whiteLabelsAtivos },
+    { label: 'BaaS ativos', v: estrutura.baasAtivos },
   ]
 
   const linhas = receita ? ([
     ['Tarifário', receita.tarifario], ['Float', receita.float],
-    ['Sustentação', receita.sustentacao], ['Setup', receita.setup], ['Serviços', receita.servicos],
+    ['Sustentação', receita.sustentacao], ['Setup', receita.setup],
   ] as const) : []
 
   /** Maior linha de receita — responde "onde está a receita" sem o executivo somar. */
@@ -184,12 +186,17 @@ export default async function ConselhoPage() {
 
       {/* ── NÍVEL 5 · DETALHE DA CARTEIRA ────────────────────────────────── */}
       <section className="space-y-4">
-        <PanelHeader title="Carteira" sub="Contas ativas por modelo operacional." />
+        <PanelHeader
+          title="Carteira"
+          sub="Clientes ativos do lançamento diário; BaaS e White Labels das condições comerciais."
+        />
         <HairlineGrid cols={3}>
           {carteira.map((c) => (
             <HairlineCell key={c.label} className="gap-2.5">
               <p className="t-label text-subtle">{c.label}</p>
-              <Figure figura={figuraContagem(c.v)} size="sm" />
+              {/* null só acontece em Clientes ativos, quando nenhum dia do mês
+                  informou o número. Zero seria uma afirmação falsa. */}
+              {c.v === null ? <NoData /> : <Figure figura={figuraContagem(c.v)} size="sm" />}
             </HairlineCell>
           ))}
         </HairlineGrid>

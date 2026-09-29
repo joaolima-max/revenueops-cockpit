@@ -121,7 +121,7 @@ export async function registrarMovimentacao(
 }
 
 /**
- * `Deal.stage` continua sendo a fonte que app/api/relatorios usa. Mantemos o
+ * `Deal.stage` é o campo legado, anterior aos funis. Mantemos o
  * campo em dia enquanto o card estiver no funil de Vendas, cujas etapas nasceram
  * dos proprios valores do enum. Fora de Vendas o stage nao e mexido: o card ja
  * nao pertence ao relatorio comercial.

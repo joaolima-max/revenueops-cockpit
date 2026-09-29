@@ -55,12 +55,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não é possível lançar data futura.' }, { status: 400 })
   }
 
+  // `clientesAtivos` é FOTOGRAFIA do dia, como saldoEmConta. Aceita nulo — que
+  // é "não informado", diferente de zero cliente ativo. Por isso não passa por
+  // `numero()`, que converteria ausência em 0.
+  const clientesAtivosBruto = body.clientesAtivos
+  const clientesAtivos =
+    clientesAtivosBruto === null || clientesAtivosBruto === undefined || clientesAtivosBruto === ''
+      ? null
+      : Math.round(numero(clientesAtivosBruto))
+
   const valores = {
     receitaTarifaria: numero(body.receitaTarifaria),
     tpv: numero(body.tpv),
     saldoEmConta: numero(body.saldoEmConta),
     qtdTransacoes: Math.round(numero(body.qtdTransacoes)),
     qtdMed: Math.round(numero(body.qtdMed)),
+    clientesAtivos,
     notas: body.notas ? String(body.notas).slice(0, 500) : null,
   }
 

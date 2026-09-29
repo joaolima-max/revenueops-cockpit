@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const body = await request.json()
-  const { clienteId, titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, frequenciaDias } = body
+  const { clienteId, titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, picoIntervaloDias } = body
 
   if (!clienteId || !titulo) return NextResponse.json({ error: 'Cliente e título obrigatórios' }, { status: 400 })
 
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       dataInicio: !recorrente && dataInicio ? new Date(dataInicio) : null,
       dataFim: !recorrente && dataFim ? new Date(dataFim) : null,
       notas: notas || null,
-      frequenciaDias: frequenciaDias ? parseInt(frequenciaDias) : null,
+      picoIntervaloDias: picoIntervaloDias ? parseInt(picoIntervaloDias) : null,
     },
     include: { cliente: { select: { id: true, nome: true, segmento: true, modeloOperacional: true } } },
   })

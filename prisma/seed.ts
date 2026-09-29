@@ -13,17 +13,11 @@ import bcrypt from 'bcryptjs'
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 1 })
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
 
+// Só o administrador. As contas de equipe "Comercial" e "Operacional" saíram
+// do sistema; os PAPÉIS COMERCIAL e OPERACIONAL continuam existindo e são
+// atribuídos a pessoas reais em Usuários.
 const USUARIOS = [
   { email: 'admin@revenueops.com.br', name: 'Administrador', role: 'ADMIN' as const },
-  { email: 'operacional@revenueops.com.br', name: 'Operacional', role: 'OPERACIONAL' as const },
-  { email: 'comercial@revenueops.com.br', name: 'Comercial', role: 'COMERCIAL' as const },
-]
-
-const PARAMETROS = [
-  { chave: 'CAC', valor: '0', label: 'Custo de Aquisição de Cliente', grupo: 'COMERCIAL', tipo: 'NUMBER',
-    descricao: 'Usado no cálculo de payback da carteira.' },
-  { chave: 'LTV_MESES', valor: '24', label: 'Horizonte de LTV (meses)', grupo: 'COMERCIAL', tipo: 'NUMBER',
-    descricao: 'Quantidade de meses considerada no LTV do cliente.' },
 ]
 
 async function main() {
@@ -39,13 +33,9 @@ async function main() {
   }
   console.log(`✓ ${USUARIOS.length} usuários`)
 
-  for (const p of PARAMETROS) {
-    await prisma.parametro.upsert({ where: { chave: p.chave }, update: {}, create: p })
-  }
-  console.log(`✓ ${PARAMETROS.length} parâmetros`)
-
-  // Multiplicador do Float: sem uma vigência, o Float não é calculado.
-  // Entra zerado de propósito — o valor real é definido em Parâmetros.
+  // Multiplicador do Float: sem uma vigência, o Float não é calculado. Entra
+  // zerado de propósito. O ambiente "Parâmetros" saiu do produto, então o
+  // valor real é definido direto em FloatConfig por quem opera o banco.
   const jaTemFloat = await prisma.floatConfig.count()
   if (jaTemFloat === 0) {
     const inicioDoAno = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1))

@@ -1,3 +1,15 @@
+/**
+ * CHAVES DE PERMISSÃO DO PRODUTO.
+ *
+ * Saíram nesta rodada, junto com os ambientes que eram os únicos a usá-las:
+ * `view_relatorios`, `view_documents`, `download_documents`,
+ * `manage_documents`, `view_forms`, `manage_forms`, `view_alertas`,
+ * `manage_parametros` e `manage_automations`.
+ *
+ * Anexar arquivo continua existindo — em Lançamentos —, mas é autorizado por
+ * `view_financeiro` / `manage_financeiro`: o anexo pertence ao lançamento, e
+ * quem pode o lançamento pode o comprovante dele.
+ */
 export const ALL_PERMISSIONS = [
   // Cockpit
   { key: 'view_dashboard',   label: 'Ver Dashboard',           group: 'Cockpit' },
@@ -14,7 +26,6 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_metas',     label: 'Editar Metas',             group: 'Financeiro' },
   { key: 'view_pedidos',     label: 'Ver Pedidos',              group: 'Financeiro' },
   { key: 'manage_pedidos',   label: 'Gerenciar Pedidos',        group: 'Financeiro' },
-  { key: 'view_relatorios',  label: 'Ver Relatórios',           group: 'Financeiro' },
   { key: 'view_metricas',    label: 'Ver Métricas',             group: 'Financeiro' },
   // Operacional
   { key: 'view_incidentes',  label: 'Ver Incidentes',           group: 'Operacional' },
@@ -31,12 +42,7 @@ export const ALL_PERMISSIONS = [
   { key: 'admin_funis',      label: 'Administrar Funis',        group: 'CRM' },
   { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
   { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
-  // CRM
   { key: 'view_crm',         label: 'Ver CRM',                  group: 'CRM' },
-  // Documentos
-  { key: 'view_documents',   label: 'Ver Documentos',           group: 'Documentos' },
-  { key: 'download_documents', label: 'Baixar Documentos',      group: 'Documentos' },
-  { key: 'manage_documents', label: 'Gerenciar Documentos',     group: 'Documentos' },
   // Certificados
   { key: 'view_certificates',   label: 'Ver Certificados',      group: 'Certificados' },
   { key: 'manage_certificates', label: 'Gerenciar Certificados', group: 'Certificados' },
@@ -44,13 +50,6 @@ export const ALL_PERMISSIONS = [
   // Compliance
   { key: 'view_compliance',  label: 'Ver Compliance',           group: 'Compliance' },
   { key: 'manage_compliance',label: 'Gerenciar Compliance',     group: 'Compliance' },
-  // Formulários
-  { key: 'view_forms',       label: 'Ver Formulários',          group: 'Formulários' },
-  { key: 'manage_forms',     label: 'Gerenciar Formulários',    group: 'Formulários' },
-  // Admin
-  { key: 'view_alertas',     label: 'Ver Alertas',              group: 'Admin' },
-  { key: 'manage_parametros',label: 'Gerenciar Parâmetros',     group: 'Admin' },
-  { key: 'manage_automations', label: 'Gerenciar Automações',   group: 'Admin' },
 ]
 
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
@@ -59,7 +58,7 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
     'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
-    'view_metricas_op', 'view_volumetria', 'view_alertas',
+    'view_metricas_op', 'view_volumetria',
     'view_followup',
     // Compliance é operação: quem trata a pendência é o time operacional.
     'view_compliance', 'manage_compliance',
@@ -71,13 +70,13 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_followup', 'manage_followup',
   ],
   // Gestor de carteira: comercial + leitura do que cerca o cliente.
-  // Sem administração de estrutura (funis, automações, parâmetros).
+  // Sem administração de estrutura (funis).
   GESTOR: [
     'view_dashboard', 'view_carteira', 'manage_carteira', 'view_forecast',
-    'view_metas', 'view_pedidos', 'view_relatorios',
+    'view_metas', 'view_pedidos',
     'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
     'view_followup', 'manage_followup',
-    'view_crm', 'view_volumetria', 'view_documents', 'view_compliance',
+    'view_crm', 'view_volumetria', 'view_compliance',
   ],
 }
 

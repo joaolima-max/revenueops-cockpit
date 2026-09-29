@@ -26,12 +26,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params
   const body = await request.json()
+  // Mesmo conjunto enxuto do POST. Ver o comentário em ../route.ts.
   const {
     nome, cnpj, email, telefone, modeloOperacional, status,
-    segmento, operacao, scoreRisco,
-    mensalidadeApi, sustentacaoWhiteLabel, setup,
-    tpvEsperado, qtdTransacoesEsperada, qtdMedEsperada,
-    receitaPrevistaMensal, volumeMinimo, descontoPercent, overpricePercent,
+    segmento, mensalidadeApi,
     dataFechamento, dataEncerramento, notas, ownerId, gestorId,
   } = body
 
@@ -43,17 +41,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ...(modeloOperacional ? { modeloOperacional } : {}),
       ...(status ? { status } : {}),
       ...(segmento !== undefined ? { segmento: segmento || null } : {}),
-      ...(operacao !== undefined ? { operacao: operacao || null } : {}),
-      ...(scoreRisco !== undefined ? { scoreRisco: scoreRisco || null } : {}),
       mensalidadeApi: mensalidadeApi ?? undefined,
-      sustentacaoWhiteLabel: sustentacaoWhiteLabel ?? undefined,
-      setup: setup ?? undefined,
-      tpvEsperado: tpvEsperado ?? undefined,
-      qtdTransacoesEsperada: qtdTransacoesEsperada ?? undefined,
-      qtdMedEsperada: qtdMedEsperada ?? undefined,
-      receitaPrevistaMensal: receitaPrevistaMensal ?? undefined,
-      descontoPercent: descontoPercent ?? undefined,
-      overpricePercent: overpricePercent ?? undefined,
       dataFechamento: dataFechamento ? new Date(dataFechamento) : undefined,
       dataEncerramento: dataEncerramento ? new Date(dataEncerramento) : undefined,
       notas: notas ?? undefined,

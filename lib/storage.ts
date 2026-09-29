@@ -15,7 +15,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // Reexportado para quem ja importava daqui; a regra mora em lib/arquivos.ts.
 export {
-  validarArquivo, nomeSeguro, extensaoDe, chaveDocumento,
+  validarArquivo, nomeSeguro, extensaoDe, chaveDocumento, chaveLancamento,
   EXTENSOES_ACEITAS, TAMANHO_MAX,
 } from '@/lib/arquivos'
 

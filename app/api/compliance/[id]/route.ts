@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { hasPermission } from '@/lib/permissions'
 import { notificar } from '@/lib/notificacoes'
+import { PENDENCIA_MOTIVO_LABELS } from '@/lib/utils'
 import { transicaoValida, ehTerminal, STATUS, CRITICIDADES, type Status } from '@/lib/compliance'
 import { PENDENCIA_STATUS_LABELS } from '@/lib/utils'
 
@@ -105,7 +106,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     await notificar({
       destinatarioId: avisar,
       titulo: 'Pendência de compliance atribuída a você',
-      mensagem: `${atual.cliente.nome}: ${atual.titulo}`,
+      mensagem: `${atual.cliente.nome}: ${PENDENCIA_MOTIVO_LABELS[atual.motivo] ?? atual.motivo}`,
       origem: 'COMPLIANCE',
       entidade: 'PendenciaCompliance',
       entidadeId: id,

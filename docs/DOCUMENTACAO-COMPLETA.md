@@ -1,6 +1,18 @@
 # RevenueOps Cockpit — Bass Pago RevOps
 ## Documentação Técnica, Funcional e Executiva
 
+> **⚠️ Atualização v16 — remodelagem de Operações e Financeiro.**
+>
+> Esta rodada removeu seis ambientes (Relatórios, Documentos, Alertas,
+> Parâmetros, Formulários, Automações), reconstruiu o ambiente Financeiro,
+> enxugou o cadastro de Clientes e mudou a origem de MRR, BaaS ativos, White
+> Labels ativos e Clientes ativos.
+>
+> **Leia [`RODADA-V16.md`](./RODADA-V16.md) primeiro.** As seções abaixo que
+> descrevem os ambientes removidos e os campos de Cliente refletem o estado
+> ANTERIOR e estão mantidas como registro histórico. Onde os dois documentos
+> discordarem, vale o RODADA-V16.
+
 | | |
 |---|---|
 | **Versão do documento** | 1.0 |
@@ -96,21 +108,18 @@ tela serve a qual altura:
 Números apurados diretamente do repositório e do banco de Production no commit
 de referência:
 
-| Dimensão | Quantidade |
-|---|---|
-| Modelos Prisma | **35** |
-| Enums Prisma | **30** |
-| Tabelas no banco de Production | **41** (35 do schema + 6 legadas) |
-| Enums no banco de Production | **31** (30 + `PedidoStatus` legado) |
-| Rotas de API (`route.ts`) | **67** |
-| Handlers HTTP | **116** |
-| Páginas | **34** |
-| Componentes React | **29** |
-| Módulos de domínio em `lib/` | **26** |
-| Migrations SQL versionadas | **14** (v1…v15, com saltos históricos) |
-| Testes automatizados | **104**, todos passando |
-| Chaves de permissão | **42** |
-| Linhas em `app/` + `lib/` + `components/` | ~21.300 |
+| Dimensão | Antes da v16 | **Depois da v16** |
+|---|---|---|
+| Modelos Prisma | 35 | **33** |
+| Enums Prisma | 30 | **29** |
+| Rotas de API (`route.ts`) | 67 | **62** |
+| Páginas | 34 | **31** |
+| Componentes React | 29 | **28** |
+| Módulos de domínio em `lib/` | 26 | **24** |
+| Migrations SQL versionadas | 14 (v1…v15) | **15** (v1…v16) |
+| Testes automatizados | 104 | **118**, todos passando |
+| Chaves de permissão | 42 | **33** |
+| Linhas em `app/` + `lib/` + `components/` | ~21.300 | **~19.200** |
 | Chaves estrangeiras em Production | 67 |
 | Índices em Production | 100 (64 únicos) |
 
@@ -637,19 +646,23 @@ notificações.
                                   → FormularioLink
 ```
 
-## 7.2 Classificação das 35 entidades
+## 7.2 Classificação das 33 entidades (v16)
 
 | Classe | Modelos |
 |---|---|
 | **Centrais** | `User`, `Cliente`, `Lead`, `Deal` |
-| **Transacionais** | `LancamentoDiario`, `ContaReceber`, `Tarefa`, `Incidente`, `CertificadoEnvio`, `PendenciaCompliance`, `FormularioResposta`, `ClienteDiaMovimento` |
-| **Configuração** | `PipelineFunil`, `PipelineEtapa`, `Automacao`, `Formulario`, `FormularioVersao`, `Parametro`, `FloatConfig`, `Meta`, `VolumetriaMinima` |
+| **Transacionais** | `LancamentoDiario`, `ContaReceber`, `LancamentoFinanceiro`, `Tarefa`, `Incidente`, `CertificadoEnvio`, `PendenciaCompliance`, `ClienteDiaMovimento` |
+| **Configuração** | `PipelineFunil`, `PipelineEtapa`, `CategoriaFinanceira`, `Fornecedor`, `CondicaoComercial`, `FloatConfig`, `Meta`, `VolumetriaMinima` |
 | **Segurança / alçada** | `PipelinePermissao`, `Certificado` (senha cifrada) |
-| **Histórico** | `PipelineMovimentacao`, `PendenciaEvento`, `AutomacaoExecucao`, `Activity`, `LeadComentario` |
+| **Histórico** | `PipelineMovimentacao`, `PendenciaEvento`, `CondicaoComercialHistorico`, `Activity`, `LeadComentario` |
 | **Auditoria** | `Auditoria` |
 | **Comunicação** | `Notificacao` |
-| **Ativos** | `Documento`, `CertificadoVersao`, `FormularioAnexo`, `FormularioLink` |
+| **Ativos** | `Documento`, `CertificadoVersao`, `LancamentoAnexo` |
 | **Relacionamento** | `FollowUp` |
+
+> Saíram na v16: `Formulario`, `FormularioVersao`, `FormularioLink`,
+> `FormularioResposta`, `FormularioAnexo`, `Automacao`, `AutomacaoExecucao`,
+> `Parametro`. Ver [`RODADA-V16.md`](./RODADA-V16.md) §1.
 
 ## 7.3 Entidades centrais
 

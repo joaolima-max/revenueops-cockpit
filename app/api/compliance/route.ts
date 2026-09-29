@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { hasPermission } from '@/lib/permissions'
 import { notificar } from '@/lib/notificacoes'
+import { PENDENCIA_MOTIVO_LABELS } from '@/lib/utils'
 import { MOTIVOS, STATUS, CRITICIDADES, type Motivo, type Status, type Criticidade } from '@/lib/compliance'
 
 export async function GET(request: NextRequest) {
@@ -43,11 +44,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
-  const { clienteId, motivo, criticidade, titulo, observacoes, prazo, responsavelId } = await request.json()
+  const { clienteId, motivo, criticidade, observacoes, prazo, responsavelId } = await request.json()
 
   if (!clienteId) return NextResponse.json({ error: 'Selecione o cliente.' }, { status: 400 })
   if (!MOTIVOS.includes(motivo)) return NextResponse.json({ error: 'Motivo inválido.' }, { status: 400 })
-  if (!String(titulo ?? '').trim()) return NextResponse.json({ error: 'Informe o título da pendência.' }, { status: 400 })
   if (!responsavelId) return NextResponse.json({ error: 'Escolha o responsável.' }, { status: 400 })
 
   const [cliente, responsavel] = await Promise.all([
@@ -65,7 +65,6 @@ export async function POST(request: NextRequest) {
         clienteId,
         motivo,
         criticidade: crit,
-        titulo: String(titulo).slice(0, 200),
         observacoes: observacoes ? String(observacoes).slice(0, 2000) : null,
         prazo: prazo ? new Date(prazo) : null,
         responsavelId,
@@ -79,14 +78,14 @@ export async function POST(request: NextRequest) {
 
   await logAudit(
     session.userId, 'ABRIU_PENDENCIA_COMPLIANCE', 'PendenciaCompliance', pendencia.id,
-    `${cliente.nome} · ${titulo} (${crit})`,
+    `${cliente.nome} · ${PENDENCIA_MOTIVO_LABELS[motivo] ?? motivo} (${crit})`,
   )
 
   if (responsavelId !== session.userId) {
     await notificar({
       destinatarioId: responsavelId,
       titulo: 'Nova pendência de compliance',
-      mensagem: `${cliente.nome}: ${titulo}`,
+      mensagem: `${cliente.nome}: ${PENDENCIA_MOTIVO_LABELS[motivo] ?? motivo}`,
       origem: 'COMPLIANCE',
       entidade: 'PendenciaCompliance',
       entidadeId: pendencia.id,

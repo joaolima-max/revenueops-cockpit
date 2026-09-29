@@ -1,0 +1,522 @@
+'use client'
+
+import { useState, useCallback, useEffect } from 'react'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import Button from '@/components/ui/Button'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import HairlineGrid from '@/components/ui/HairlineGrid'
+import StatTile from '@/components/ui/StatTile'
+import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
+import { figuraMoeda } from '@/lib/format-financeiro'
+import { formatDate, formatMesRef } from '@/lib/utils'
+import { validarArquivo, EXTENSOES_ACEITAS } from '@/lib/arquivos'
+
+type Tipo = 'RECEITA' | 'DESPESA'
+type Periodicidade = 'UNICA' | 'RECORRENTE' | 'PARCELADA'
+type Status = 'PENDENTE' | 'PAGO' | 'CANCELADO'
+
+interface Categoria { id: string; nome: string; tipo: Tipo; ativo: boolean }
+
+interface Anexo {
+  id: string
+  documento: { id: string; nome: string; mime: string; tamanho: number }
+}
+
+interface Lancamento {
+  id: string
+  tipo: Tipo
+  descricao: string
+  valor: number
+  data: string
+  status: Status
+  observacao: string | null
+  periodicidade: Periodicidade
+  grupoId: string | null
+  parcela: number | null
+  totalParcelas: number | null
+  categoria: Categoria
+  criadoPor: { id: string; name: string }
+  anexos: Anexo[]
+}
+
+interface Resposta {
+  lancamentos: Lancamento[]
+  resultado: { receita: number; despesa: number; resultado: number }
+}
+
+const STATUS_LABEL: Record<Status, string> = {
+  PENDENTE: 'Pendente', PAGO: 'Pago', CANCELADO: 'Cancelado',
+}
+const STATUS_TONE: Record<Status, BadgeTone> = {
+  PENDENTE: 'warn', PAGO: 'pos', CANCELADO: 'neutral',
+}
+const PERIODICIDADE_LABEL: Record<Periodicidade, string> = {
+  UNICA: 'Única', RECORRENTE: 'Recorrente', PARCELADA: 'Parcelada',
+}
+
+function hojeISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+const FORM_VAZIO = {
+  descricao: '', categoriaId: '', valor: '', data: hojeISO(),
+  status: 'PENDENTE' as Status, observacao: '',
+  periodicidade: 'UNICA' as Periodicidade, totalParcelas: '2', meses: '12',
+}
+
+const FILTRO_VAZIO = { descricao: '', categoriaId: '', de: '', ate: '', valorMin: '', valorMax: '' }
+
+/**
+ * LANÇAMENTOS — receita e despesa com os MESMOS campos.
+ *
+ * A criação começa escolhendo RECEITA ou DESPESA, e a partir daí o formulário
+ * é idêntico: descrição, categoria, valor, data, status, observação e período.
+ */
+export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: boolean }) {
+  const [periodo, setPeriodo] = useState(() => hojeISO().slice(0, 7))
+  const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
+  const [resultado, setResultado] = useState({ receita: 0, despesa: 0, resultado: 0 })
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [filtro, setFiltro] = useState(FILTRO_VAZIO)
+  const [carregando, setCarregando] = useState(true)
+
+  const [tipoNovo, setTipoNovo] = useState<Tipo | null>(null)
+  const [form, setForm] = useState(FORM_VAZIO)
+  const [editando, setEditando] = useState<Lancamento | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  const [anexosDe, setAnexosDe] = useState<Lancamento | null>(null)
+  const [enviando, setEnviando] = useState(false)
+
+  // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
+  // `.then`, e `vivo` evita escrever em componente já desmontado.
+  const buscar = useCallback(async (): Promise<Resposta | null> => {
+    const p = new URLSearchParams({ periodo })
+    if (filtro.descricao) p.set('descricao', filtro.descricao)
+    if (filtro.categoriaId) p.set('categoriaId', filtro.categoriaId)
+    if (filtro.de) p.set('de', filtro.de)
+    if (filtro.ate) p.set('ate', filtro.ate)
+    if (filtro.valorMin) p.set('valorMin', filtro.valorMin)
+    if (filtro.valorMax) p.set('valorMax', filtro.valorMax)
+
+    const res = await fetch(`/api/financeiro/lancamentos?${p}`)
+    if (!res.ok) return null
+    return (await res.json()) as Resposta
+  }, [periodo, filtro])
+
+  const aplicar = useCallback((d: Resposta | null) => {
+    if (d) {
+      setLancamentos(d.lancamentos)
+      setResultado(d.resultado)
+    }
+    setCarregando(false)
+  }, [])
+
+  const carregar = useCallback(async () => {
+    aplicar(await buscar())
+  }, [buscar, aplicar])
+
+  useEffect(() => {
+    let vivo = true
+    buscar().then((d) => { if (vivo) aplicar(d) })
+    return () => { vivo = false }
+  }, [buscar, aplicar])
+
+  useEffect(() => {
+    let vivo = true
+    fetch('/api/financeiro/categorias')
+      .then((r) => (r.ok ? r.json() : { categorias: [] }))
+      .then((d) => { if (vivo) setCategorias(d.categorias ?? []) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [])
+
+  // Categoria inativa não é oferecida em lançamento novo, mas continua
+  // classificando os lançamentos que já existem.
+  const categoriasDoTipo = (t: Tipo) => categorias.filter((c) => c.tipo === t && c.ativo)
+
+  function abrirNovo(tipo: Tipo) {
+    setForm(FORM_VAZIO); setErro(''); setEditando(null); setTipoNovo(tipo)
+  }
+
+  function abrirEdicao(l: Lancamento) {
+    setForm({
+      descricao: l.descricao,
+      categoriaId: l.categoria.id,
+      valor: String(l.valor),
+      data: l.data.slice(0, 10),
+      status: l.status,
+      observacao: l.observacao ?? '',
+      periodicidade: l.periodicidade,
+      totalParcelas: String(l.totalParcelas ?? 2),
+      meses: '12',
+    })
+    setErro(''); setTipoNovo(l.tipo); setEditando(l)
+  }
+
+  function fecharForm() {
+    setTipoNovo(null); setEditando(null); setForm(FORM_VAZIO); setErro('')
+  }
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!tipoNovo) return
+    setSalvando(true); setErro('')
+
+    const corpo = {
+      tipo: tipoNovo,
+      descricao: form.descricao,
+      categoriaId: form.categoriaId,
+      valor: form.valor,
+      data: form.data,
+      status: form.status,
+      observacao: form.observacao,
+      periodicidade: form.periodicidade,
+      totalParcelas: form.periodicidade === 'PARCELADA' ? Number(form.totalParcelas) : undefined,
+      meses: form.periodicidade === 'RECORRENTE' ? Number(form.meses) : undefined,
+    }
+
+    const res = await fetch(
+      editando ? `/api/financeiro/lancamentos/${editando.id}` : '/api/financeiro/lancamentos',
+      {
+        method: editando ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+      },
+    )
+
+    if (res.ok) {
+      fecharForm(); carregar()
+    } else {
+      const d = await res.json().catch(() => ({}))
+      setErro(d.error ?? 'Não foi possível salvar o lançamento.')
+    }
+    setSalvando(false)
+  }
+
+  async function excluir(l: Lancamento) {
+    const emGrupo = !!l.grupoId
+    const mensagem = emGrupo
+      ? `Excluir TODAS as linhas de "${l.descricao}"?\n\nO lançamento foi cadastrado como ${PERIODICIDADE_LABEL[l.periodicidade].toLowerCase()} e gerou várias linhas. Os anexos vão junto.`
+      : `Excluir o lançamento "${l.descricao}"?\n\nOs anexos vão junto.`
+    if (!confirm(mensagem)) return
+
+    const res = await fetch(
+      `/api/financeiro/lancamentos/${l.id}${emGrupo ? '?grupo=1' : ''}`,
+      { method: 'DELETE' },
+    )
+    if (res.ok) { carregar(); return }
+    const d = await res.json().catch(() => ({}))
+    alert(d.error ?? 'Não foi possível excluir.')
+  }
+
+  async function anexar(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0]
+    if (!arquivo || !anexosDe) return
+
+    const problema = validarArquivo(arquivo.name, arquivo.type, arquivo.size)
+    if (problema) { alert(problema); e.target.value = ''; return }
+
+    setEnviando(true)
+    const fd = new FormData()
+    fd.append('arquivo', arquivo)
+    const res = await fetch(`/api/financeiro/lancamentos/${anexosDe.id}/anexos`, {
+      method: 'POST', body: fd,
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      alert(d.error ?? 'Não foi possível anexar o arquivo.')
+    } else {
+      await carregar()
+      const atualizado = await fetch(`/api/financeiro/lancamentos/${anexosDe.id}/anexos`)
+      if (atualizado.ok) {
+        const d = await atualizado.json()
+        setAnexosDe((p) => (p ? { ...p, anexos: d.anexos } : p))
+      }
+    }
+    setEnviando(false)
+    e.target.value = ''
+  }
+
+  async function baixar(lancamentoId: string, anexoId: string) {
+    const res = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/anexos/${anexoId}`)
+    if (!res.ok) { alert('Não foi possível gerar o link.'); return }
+    const d = await res.json()
+    window.open(d.url, '_blank', 'noopener')
+  }
+
+  async function removerAnexo(lancamentoId: string, anexo: Anexo) {
+    if (!confirm(`Remover o anexo ${anexo.documento.nome}?`)) return
+    const res = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/anexos/${anexo.id}`, {
+      method: 'DELETE',
+    })
+    if (res.ok) {
+      setAnexosDe((p) => (p ? { ...p, anexos: p.anexos.filter((a) => a.id !== anexo.id) } : p))
+      carregar()
+    }
+  }
+
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="Lançamentos"
+        sub={formatMesRef(periodo)}
+        actions={
+          <div className="flex gap-2 items-center">
+            <input type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)}
+              aria-label="Período" className="bp-field w-auto" />
+            {podeGerenciar && (
+              <>
+                <Button onClick={() => abrirNovo('RECEITA')}>+ Receita</Button>
+                <Button variant="primary" onClick={() => abrirNovo('DESPESA')}>+ Despesa</Button>
+              </>
+            )}
+          </div>
+        }
+      />
+
+      {/* Resultado | Receita | Despesa */}
+      <HairlineGrid cols={3}>
+        <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
+          note="Receita − Despesa" />
+        <StatTile label="Receita" figura={figuraMoeda(resultado.receita)} />
+        <StatTile label="Despesa" figura={figuraMoeda(resultado.despesa)} />
+      </HairlineGrid>
+
+      {/* Filtros: descrição, categoria, data e valor. */}
+      <Panel padded={false}>
+        <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <input placeholder="Descrição…" value={filtro.descricao} className={inp + ' lg:col-span-2'}
+            onChange={(e) => setFiltro((p) => ({ ...p, descricao: e.target.value }))} />
+          <select value={filtro.categoriaId} className={inp}
+            onChange={(e) => setFiltro((p) => ({ ...p, categoriaId: e.target.value }))}>
+            <option value="">Todas as categorias</option>
+            {categorias.map((c) => (
+              <option key={c.id} value={c.id}>{c.nome} ({c.tipo === 'RECEITA' ? 'R' : 'D'})</option>
+            ))}
+          </select>
+          <input type="date" value={filtro.de} aria-label="Data inicial" className={inp}
+            onChange={(e) => setFiltro((p) => ({ ...p, de: e.target.value }))} />
+          <input type="date" value={filtro.ate} aria-label="Data final" className={inp}
+            onChange={(e) => setFiltro((p) => ({ ...p, ate: e.target.value }))} />
+          <div className="flex gap-2">
+            <input type="number" placeholder="Valor mín." value={filtro.valorMin} className={inp}
+              onChange={(e) => setFiltro((p) => ({ ...p, valorMin: e.target.value }))} />
+            <input type="number" placeholder="máx." value={filtro.valorMax} className={inp}
+              onChange={(e) => setFiltro((p) => ({ ...p, valorMax: e.target.value }))} />
+          </div>
+        </div>
+      </Panel>
+
+      <TableShell>
+        <Table>
+          <THead>
+            <HeadRow>
+              <Th className="pl-5">Descrição</Th>
+              <Th>Categoria</Th>
+              <Th>Data</Th>
+              <Th>Período</Th>
+              <Th align="center">Status</Th>
+              <Th align="right">Valor</Th>
+              <Th align="right">Ações</Th>
+            </HeadRow>
+          </THead>
+          <tbody>
+            {carregando ? (
+              <EmptyRow colSpan={7}>Carregando…</EmptyRow>
+            ) : lancamentos.length === 0 ? (
+              <EmptyRow colSpan={7}>Nenhum lançamento com esses filtros.</EmptyRow>
+            ) : lancamentos.map((l) => (
+              <Row key={l.id}>
+                <Td className="pl-5">
+                  <span className="block t-body font-medium text-fg">{l.descricao}</span>
+                  <span className="block t-label text-subtle mt-0.5">
+                    {l.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
+                    {l.anexos.length > 0 && ` · ${l.anexos.length} anexo${l.anexos.length === 1 ? '' : 's'}`}
+                  </span>
+                </Td>
+                <Td><Badge>{l.categoria.nome}</Badge></Td>
+                <Td className="text-subtle t-num">{formatDate(l.data)}</Td>
+                <Td className="t-sm text-muted">
+                  {PERIODICIDADE_LABEL[l.periodicidade]}
+                  {l.parcela && l.totalParcelas ? ` ${l.parcela}/${l.totalParcelas}` : ''}
+                </Td>
+                <Td align="center">
+                  <Badge tone={STATUS_TONE[l.status]}>{STATUS_LABEL[l.status]}</Badge>
+                </Td>
+                <Td align="right" numeric className={l.tipo === 'RECEITA' ? 'text-pos font-medium' : 'text-fg font-medium'}>
+                  {l.tipo === 'DESPESA' && '− '}{figuraMoeda(l.valor).completo}
+                </Td>
+                <Td align="right">
+                  <span className="inline-flex gap-2">
+                    <Button size="sm" onClick={() => setAnexosDe(l)}>Anexos</Button>
+                    {podeGerenciar && (
+                      <>
+                        <Button size="sm" onClick={() => abrirEdicao(l)}>Editar</Button>
+                        <Button size="sm" variant="danger" onClick={() => excluir(l)}>Excluir</Button>
+                      </>
+                    )}
+                  </span>
+                </Td>
+              </Row>
+            ))}
+          </tbody>
+        </Table>
+      </TableShell>
+
+      {/* ── Formulário ───────────────────────────────────────────────────── */}
+      {tipoNovo && (
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => e.target === e.currentTarget && fecharForm()}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-line">
+              <h2 className="t-h2 text-fg">
+                {editando ? 'Editar' : 'Novo'} lançamento · {tipoNovo === 'RECEITA' ? 'Receita' : 'Despesa'}
+              </h2>
+              <button onClick={fecharForm} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
+            </div>
+            <form onSubmit={salvar} className="p-5 space-y-4">
+              <div>
+                <label className={lbl} htmlFor="l-desc">Descrição *</label>
+                <input id="l-desc" required value={form.descricao} className={inp}
+                  onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={lbl} htmlFor="l-cat">Categoria *</label>
+                  <select id="l-cat" required value={form.categoriaId} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, categoriaId: e.target.value }))}>
+                    <option value="">Selecione…</option>
+                    {categoriasDoTipo(tipoNovo).map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="l-valor">Valor (R$) *</label>
+                  <input id="l-valor" required type="number" step="0.01" min="0.01" value={form.valor} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="l-data">Data *</label>
+                  <input id="l-data" required type="date" value={form.data} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="l-status">Status *</label>
+                  <select id="l-status" value={form.status} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as Status }))}>
+                    {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
+                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Período só na criação: as linhas já existem depois disso. */}
+              {!editando && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={lbl} htmlFor="l-per">Período *</label>
+                    <select id="l-per" value={form.periodicidade} className={inp}
+                      onChange={(e) => setForm((p) => ({ ...p, periodicidade: e.target.value as Periodicidade }))}>
+                      {(Object.keys(PERIODICIDADE_LABEL) as Periodicidade[]).map((p) => (
+                        <option key={p} value={p}>{PERIODICIDADE_LABEL[p]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {form.periodicidade === 'PARCELADA' && (
+                    <div>
+                      <label className={lbl} htmlFor="l-parcelas">Parcelas *</label>
+                      <input id="l-parcelas" type="number" min="2" max="360" value={form.totalParcelas} className={inp}
+                        onChange={(e) => setForm((p) => ({ ...p, totalParcelas: e.target.value }))} />
+                      <p className="t-label text-subtle mt-1">O valor informado é o da parcela.</p>
+                    </div>
+                  )}
+                  {form.periodicidade === 'RECORRENTE' && (
+                    <div>
+                      <label className={lbl} htmlFor="l-meses">Repetir por (meses) *</label>
+                      <input id="l-meses" type="number" min="1" max="60" value={form.meses} className={inp}
+                        onChange={(e) => setForm((p) => ({ ...p, meses: e.target.value }))} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className={lbl} htmlFor="l-obs">Observação</label>
+                <textarea id="l-obs" rows={2} maxLength={1000} value={form.observacao}
+                  className={inp + ' resize-none'}
+                  onChange={(e) => setForm((p) => ({ ...p, observacao: e.target.value }))} />
+              </div>
+
+              {erro && <p className="t-sm text-neg">{erro}</p>}
+
+              <div className="flex justify-end gap-3 pt-1">
+                <Button type="button" onClick={fecharForm}>Cancelar</Button>
+                <Button type="submit" variant="primary" disabled={salvando}>
+                  {salvando ? 'Salvando…' : 'Salvar'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Anexos ───────────────────────────────────────────────────────── */}
+      {anexosDe && (
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => e.target === e.currentTarget && setAnexosDe(null)}>
+          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-line flex-none">
+              <div className="min-w-0">
+                <h2 className="t-h2 text-fg bp-truncate">{anexosDe.descricao}</h2>
+                <p className="t-sm text-muted mt-0.5">Nota fiscal, comprovante, print.</p>
+              </div>
+              <button onClick={() => setAnexosDe(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
+            </div>
+
+            <div className="p-5 space-y-3 overflow-y-auto">
+              {anexosDe.anexos.length === 0 ? (
+                <p className="t-sm text-subtle">Nenhum arquivo anexado.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {anexosDe.anexos.map((a) => (
+                    <li key={a.id} className="py-2.5 flex items-center gap-3">
+                      <span className="t-sm text-fg flex-1 bp-truncate">{a.documento.nome}</span>
+                      <span className="t-mono text-subtle">
+                        {(a.documento.tamanho / 1024).toFixed(0)} KB
+                      </span>
+                      <Button size="sm" onClick={() => baixar(anexosDe.id, a.id)}>Baixar</Button>
+                      {podeGerenciar && (
+                        <Button size="sm" variant="danger" onClick={() => removerAnexo(anexosDe.id, a)}>
+                          Remover
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {podeGerenciar && (
+                <div className="pt-2">
+                  <label className={lbl} htmlFor="l-arquivo">Anexar arquivo</label>
+                  <input id="l-arquivo" type="file" disabled={enviando} onChange={anexar} className="t-sm text-muted" />
+                  <p className="t-label text-subtle mt-1.5">
+                    Aceitos: {EXTENSOES_ACEITAS.join(', ')}. {enviando && 'Enviando…'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

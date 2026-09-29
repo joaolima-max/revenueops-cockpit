@@ -9,7 +9,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
   const { id } = await params
   const session = await getSession()
 
-  const [cliente, users, parametros] = await Promise.all([
+  const [cliente, users] = await Promise.all([
     prisma.cliente.findUnique({
       where: { id },
       include: {
@@ -30,17 +30,14 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       select: { id: true, name: true, role: true },
       orderBy: { name: 'asc' },
     }),
-    prisma.parametro.findMany({ where: { chave: { in: ['CAC', 'LTV_MESES'] } } }),
   ])
 
   if (!cliente) notFound()
 
-  // LTV a partir do contrato do cliente. TPV é indicador da empresa e não entra
-  // aqui — não existe TPV por cliente nesta arquitetura.
-  const mrr = (cliente.mensalidadeApi ?? 0) + (cliente.sustentacaoWhiteLabel ?? 0)
-  const ltvMeses = Number(parametros.find((p) => p.chave === 'LTV_MESES')?.valor ?? 24)
-  const ltv = mrr * ltvMeses
-  const cac = Number(parametros.find((p) => p.chave === 'CAC')?.valor ?? 0)
+  // LTV e CAC saíram: vinham do ambiente "Parâmetros", que não existe mais, e
+  // já eram props mortas — a tela de detalhe recebia os três valores e não
+  // renderizava nenhum deles.
+  const mrr = cliente.mensalidadeApi ?? 0
 
   // Score de saúde sobre sinais que pertencem ao cliente.
   let healthScore = 40
@@ -49,8 +46,6 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
   if (cliente.dataFechamento) healthScore += 10
   if (cliente.contasReceber.some((c) => c.status === 'INADIMPLENTE')) healthScore -= 30
   if (cliente.contasReceber.some((c) => c.status !== 'PAGO' && c.dataVenc < new Date())) healthScore -= 10
-  if (cliente.scoreRisco === 'ALTO') healthScore -= 10
-  if (cliente.scoreRisco === 'CRITICO') healthScore -= 20
   healthScore = Math.max(0, Math.min(100, healthScore))
 
   return (
@@ -59,9 +54,6 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       users={users}
       role={session?.role || 'OPERACIONAL'}
       currentUserId={session?.userId || ''}
-      ltv={ltv}
-      cac={cac}
-      ltvMeses={ltvMeses}
       healthScore={healthScore}
     />
   )

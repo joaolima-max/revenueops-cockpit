@@ -17,7 +17,6 @@ interface Pendencia {
   id: string
   motivo: string
   criticidade: string
-  titulo: string
   observacoes: string | null
   prazo: string | null
   status: Status
@@ -49,7 +48,7 @@ const TOM_CRIT: Record<string, BadgeTone> = {
 
 const FORM_VAZIO = {
   clienteId: '', motivo: 'ATUALIZACAO_CADASTRAL', criticidade: 'MEDIA',
-  titulo: '', observacoes: '', prazo: '', responsavelId: '',
+  observacoes: '', prazo: '', responsavelId: '',
 }
 
 export default function ComplianceClient({ podeGerenciar }: { podeGerenciar: boolean }) {
@@ -180,21 +179,20 @@ export default function ComplianceClient({ podeGerenciar }: { podeGerenciar: boo
         <TableShell>
           <Table>
             <THead><HeadRow>
-              <Th>Pendência</Th><Th>Cliente</Th><Th>Motivo</Th>
+              <Th>Cliente</Th><Th>Motivo</Th>
               <Th align="center">Criticidade</Th><Th>Prazo</Th>
               <Th align="center">Status</Th><Th align="right">Ações</Th>
             </HeadRow></THead>
             <tbody>
-              {pendencias.length === 0 ? <EmptyRow colSpan={7}>Nenhum resultado.</EmptyRow> : pendencias.map((p) => {
+              {pendencias.length === 0 ? <EmptyRow colSpan={6}>Nenhum resultado.</EmptyRow> : pendencias.map((p) => {
                 const dias = diasParaPrazo(p.prazo)
                 const venceu = estaVencida(p.prazo, p.status)
                 return (
                   <Row key={p.id}>
                     <Td className="text-fg font-medium">
-                      {p.titulo}
+                      {p.cliente.nome}
                       <p className="t-label text-subtle font-normal mt-0.5">{p.responsavel.name}</p>
                     </Td>
-                    <Td>{p.cliente.nome}</Td>
                     <Td className="t-sm">{PENDENCIA_MOTIVO_LABELS[p.motivo] ?? p.motivo}</Td>
                     <Td align="center">
                       <Badge tone={TOM_CRIT[p.criticidade] ?? 'neutral'}>
@@ -238,12 +236,6 @@ export default function ComplianceClient({ podeGerenciar }: { podeGerenciar: boo
                   <option value="">Selecione</option>
                   {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
-              </div>
-
-              <div>
-                <label className={lbl} htmlFor="p-titulo">Título *</label>
-                <input id="p-titulo" required value={form.titulo} className={inp} maxLength={200}
-                  onChange={(e) => setForm((p) => ({ ...p, titulo: e.target.value }))} />
               </div>
 
               <div>
@@ -299,9 +291,9 @@ export default function ComplianceClient({ podeGerenciar }: { podeGerenciar: boo
           <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-line flex-none">
               <div className="min-w-0">
-                <h2 className="t-h2 text-fg">{detalhe.pendencia.titulo}</h2>
+                <h2 className="t-h2 text-fg">{detalhe.pendencia.cliente.nome}</h2>
                 <p className="t-sm text-muted mt-0.5">
-                  {detalhe.pendencia.cliente.nome} · {PENDENCIA_MOTIVO_LABELS[detalhe.pendencia.motivo]}
+                  {PENDENCIA_MOTIVO_LABELS[detalhe.pendencia.motivo]}
                 </p>
               </div>
               <button onClick={() => setDetalhe(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>

@@ -37,7 +37,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       position: data.position,
       source: data.source,
       status: data.status,
-      value: data.value ? parseFloat(data.value) : null,
       notes: data.notes,
       cnpj: data.cnpj ?? undefined,
       canal: data.canal ?? undefined,

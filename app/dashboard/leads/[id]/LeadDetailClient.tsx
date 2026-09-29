@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatDate, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS } from '@/lib/utils'
+import { formatCurrency, formatDate, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SEGMENTO_CRM_LABELS, CANAL_LABELS } from '@/lib/utils'
 
 interface Deal {
   id: string
@@ -21,7 +21,9 @@ interface Lead {
   position: string | null
   source: string | null
   status: string
-  value: number | null
+  cnpj: string | null
+  canal: string | null
+  segmento: string | null
   notes: string | null
   createdAt: Date
   updatedAt: Date
@@ -43,8 +45,10 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
     company: lead.company || '',
     position: lead.position || '',
     source: lead.source || '',
+    cnpj: lead.cnpj || '',
+    canal: lead.canal || '',
+    segmento: lead.segmento || '',
     status: lead.status,
-    value: lead.value?.toString() || '',
     notes: lead.notes || '',
   })
 
@@ -112,13 +116,12 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
-                    { label: 'Nome *', key: 'name', type: 'text' },
-                    { label: 'Email', key: 'email', type: 'email' },
-                    { label: 'Telefone', key: 'phone', type: 'text' },
                     { label: 'Empresa', key: 'company', type: 'text' },
+                    { label: 'Nome do executivo *', key: 'name', type: 'text' },
+                    { label: 'CNPJ', key: 'cnpj', type: 'text' },
+                    { label: 'Celular', key: 'phone', type: 'text' },
+                    { label: 'E-mail', key: 'email', type: 'email' },
                     { label: 'Cargo', key: 'position', type: 'text' },
-                    { label: 'Origem', key: 'source', type: 'text' },
-                    { label: 'Valor', key: 'value', type: 'number' },
                   ].map(({ label, key, type }) => (
                     <div key={key}>
                       <label className="bp-field-label">{label}</label>
@@ -130,6 +133,32 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
                       />
                     </div>
                   ))}
+                  <div>
+                    <label className="bp-field-label">Segmento</label>
+                    <select
+                      value={form.segmento}
+                      onChange={(e) => setForm({ ...form, segmento: e.target.value })}
+                      className="bp-field w-full text-sm"
+                    >
+                      <option value="">Selecione…</option>
+                      {Object.entries(SEGMENTO_CRM_LABELS).map(([v, l]) => (
+                        <option key={v} value={v}>{l}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="bp-field-label">Canal</label>
+                    <select
+                      value={form.canal}
+                      onChange={(e) => setForm({ ...form, canal: e.target.value })}
+                      className="bp-field w-full text-sm"
+                    >
+                      <option value="">Selecione…</option>
+                      {Object.entries(CANAL_LABELS).map(([v, l]) => (
+                        <option key={v} value={v}>{l}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="bp-field-label">Status</label>
                     <select
@@ -175,8 +204,9 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
                   { label: 'Telefone', value: lead.phone },
                   { label: 'Empresa', value: lead.company },
                   { label: 'Cargo', value: lead.position },
-                  { label: 'Origem', value: lead.source },
-                  { label: 'Valor', value: lead.value ? formatCurrency(lead.value) : null },
+                  { label: 'Segmento', value: lead.segmento ? (SEGMENTO_CRM_LABELS[lead.segmento] ?? lead.segmento) : null },
+                  { label: 'Canal', value: lead.canal ? (CANAL_LABELS[lead.canal] ?? lead.canal) : null },
+                  { label: 'CNPJ', value: lead.cnpj },
                   { label: 'Criado', value: formatDate(lead.createdAt) },
                   { label: 'Atualizado', value: formatDate(lead.updatedAt) },
                 ].map(({ label, value }) => (

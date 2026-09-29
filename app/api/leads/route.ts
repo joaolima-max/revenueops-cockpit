@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
       company: data.company,
       position: data.position,
       source: data.source,
-      value: data.value ? parseFloat(data.value) : null,
       notes: data.notes,
       // Cadastro revisado do CRM.
       cnpj: data.cnpj || null,

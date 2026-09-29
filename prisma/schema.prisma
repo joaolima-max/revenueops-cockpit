@@ -98,13 +98,6 @@ enum OperacaoCom {
   WHITE_LABEL
 }
 
-enum ScoreRisco {
-  BAIXO
-  MEDIO
-  ALTO
-  CRITICO
-}
-
 enum TarefaStatus {
   PENDENTE
   EM_ANDAMENTO
@@ -159,11 +152,14 @@ enum DocumentoCategoria {
   OUTROS
 }
 
+/// FORMULARIO permanece: o ambiente saiu do produto, mas ha documentos
+/// historicos gravados com essa origem e reescrever o passado nao e opcao.
 enum DocumentoOrigem {
   UPLOAD_MANUAL
   CERTIFICADO
   FORMULARIO
   COMPLIANCE
+  LANCAMENTO_FINANCEIRO
 }
 
 enum CertificadoVersaoStatus {
@@ -206,92 +202,61 @@ enum PendenciaStatus {
   CANCELADA
 }
 
-enum AutomacaoGatilho {
-  CARD_CRIADO
-  ETAPA_CONCLUIDA
-  CARD_TRANSFERIDO
-  FORMULARIO_ENVIADO
-}
-
-enum AutomacaoAcao {
-  TRANSFERIR_FUNIL
-  NOTIFICAR
-  CRIAR_TAREFA
-  ABRIR_PENDENCIA
-}
-
-enum AutomacaoExecucaoStatus {
-  SUCESSO
-  FALHA
-  IGNORADA
-}
-
-enum FormularioRespostaStatus {
-  RASCUNHO
-  ENVIADA
-  EM_ANALISE
-  CONCLUIDA
-}
-
-
-
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(COMERCIAL)
-  active    Boolean  @default(true)
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  password   String
+  role       Role     @default(COMERCIAL)
+  active     Boolean  @default(true)
   avatar     String?
   permissoes String?
   createdAt  DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt  DateTime @updatedAt
 
-  leads          Lead[]          @relation("LeadOwner")
-  deals          Deal[]          @relation("DealOwner")
-  activities     Activity[]
-  clientes       Cliente[]
-  tarefasCriadas Tarefa[]        @relation("TarefaCriador")
-  tarefasAssign  Tarefa[]        @relation("TarefaResponsavel")
-  auditorias     Auditoria[]
+  leads              Lead[]                 @relation("LeadOwner")
+  deals              Deal[]                 @relation("DealOwner")
+  activities         Activity[]
+  clientes           Cliente[]
+  tarefasCriadas     Tarefa[]               @relation("TarefaCriador")
+  tarefasAssign      Tarefa[]               @relation("TarefaResponsavel")
+  auditorias         Auditoria[]
   pipelinePermissoes PipelinePermissao[]
   movimentacoes      PipelineMovimentacao[]
 
-  clientesGeridos    Cliente[]              @relation("ClienteGestor")
+  clientesGeridos    Cliente[]                    @relation("ClienteGestor")
   notificacoes       Notificacao[]
   documentos         Documento[]
   diasRegistrados    ClienteDiaMovimento[]
   versoesCriadas     CertificadoVersao[]
   enviosCertificado  CertificadoEnvio[]
-  pendencias         PendenciaCompliance[]  @relation("PendenciaResponsavel")
+  pendencias         PendenciaCompliance[]        @relation("PendenciaResponsavel")
   pendenciaEventos   PendenciaEvento[]
-  automacoes         Automacao[]            @relation("AutomacaoDestinatario")
-  formularios        Formulario[]
-  respostasFormulario FormularioResposta[]  @relation("RespostaResponsavel")
   comentariosLead    LeadComentario[]
+  lancamentos        LancamentoFinanceiro[]       @relation("LancamentoCriador")
+  condicoesHistorico CondicaoComercialHistorico[] @relation("CondicaoHistoricoAutor")
 }
 
 model Lead {
-  id        String     @id @default(cuid())
+  id        String       @id @default(cuid())
   name      String
   email     String?
   phone     String?
   company   String?
   position  String?
   source    String?
-  status    LeadStatus @default(NOVO)
-  value     Float?
+  status    LeadStatus   @default(NOVO)
   notes     String?
   segmento  Segmento?
   operacao  OperacaoCom?
   /// Cadastro revisado (CRM): CNPJ e canal de origem.
   cnpj      String?
   canal     Canal?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   ownerId     String
-  owner       User       @relation("LeadOwner", fields: [ownerId], references: [id])
+  owner       User             @relation("LeadOwner", fields: [ownerId], references: [id])
   deals       Deal[]
   activities  Activity[]
   comentarios LeadComentario[]
@@ -312,18 +277,18 @@ model LeadComentario {
 }
 
 model Deal {
-  id          String    @id @default(cuid())
+  id          String       @id @default(cuid())
   title       String
   value       Float
-  stage       DealStage @default(PROSPECCAO)
-  probability Int       @default(0)
+  stage       DealStage    @default(PROSPECCAO)
+  probability Int          @default(0)
   notes       String?
   expectedAt  DateTime?
   closedAt    DateTime?
   segmento    Segmento?
   operacao    OperacaoCom?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   ownerId    String
   owner      User       @relation("DealOwner", fields: [ownerId], references: [id])
@@ -333,13 +298,13 @@ model Deal {
 
   /// Funil e etapa em que o card esta AGORA. Nulos apenas ate o backfill da
   /// migration v11 rodar; depois disso todo Deal mora em algum funil.
-  funilId    String?
-  funil      PipelineFunil? @relation(fields: [funilId], references: [id], onDelete: Restrict)
-  etapaId    String?
-  etapa      PipelineEtapa? @relation(fields: [etapaId], references: [id], onDelete: Restrict)
+  funilId   String?
+  funil     PipelineFunil? @relation(fields: [funilId], references: [id], onDelete: Restrict)
+  etapaId   String?
+  etapa     PipelineEtapa? @relation(fields: [etapaId], references: [id], onDelete: Restrict)
   /// Preenchido quando o card passa para um funil de pos-venda.
-  clienteId  String?
-  cliente    Cliente?   @relation(fields: [clienteId], references: [id])
+  clienteId String?
+  cliente   Cliente?       @relation(fields: [clienteId], references: [id])
 
   movimentacoes PipelineMovimentacao[]
 
@@ -353,62 +318,58 @@ model Activity {
   createdAt   DateTime @default(now())
 
   userId String
-  user   User   @relation(fields: [userId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
   leadId String?
-  lead   Lead?  @relation(fields: [leadId], references: [id])
+  lead   Lead?   @relation(fields: [leadId], references: [id])
   dealId String?
-  deal   Deal?  @relation(fields: [dealId], references: [id])
+  deal   Deal?   @relation(fields: [dealId], references: [id])
 }
 
+/// CADASTRO COMERCIAL DO CLIENTE — so o que o produto realmente usa.
+///
+/// Os campos financeiros de expectativa que existiam aqui (TPV esperado,
+/// receita prevista, desconto, overprice, setup, sustentacao de White Label,
+/// quantidades esperadas) sairam do cadastro: nenhum deles era a fonte de
+/// verdade de nada. O realizado vem de LancamentoDiario, as condicoes
+/// comerciais de BaaS/White Label vem de CondicaoComercial, e o minimo
+/// contratual de transacoes vem de VolumetriaMinima.
+///
+/// `mensalidadeApi` PERMANECE porque e uma das quatro parcelas do MRR
+/// (ver lib/financeiro.ts): a mensalidade de API dos clientes da carteira.
 model Cliente {
-  id                    String            @id @default(cuid())
-  nome                  String
-  cnpj                  String?
-  email                 String?
-  telefone              String?
-  modeloOperacional     ModeloOperacional
-  status                ClienteStatus     @default(PROSPECCAO)
-  segmento              Segmento?
-  operacao              OperacaoCom?
-  scoreRisco            ScoreRisco?
-  dataFechamento        DateTime?
-  dataEncerramento      DateTime?
-  mensalidadeApi        Float?
-  sustentacaoWhiteLabel Float?
-  setup                 Float?
-  tpvEsperado           Float?
-  qtdTransacoesEsperada Int?
-  qtdMedEsperada        Int?
-  receitaPrevistaMensal Float?
-  descontoPercent       Float?
-  overpricePercent      Float?
-  notas                 String?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  id                String            @id @default(cuid())
+  nome              String
+  cnpj              String?
+  email             String?
+  telefone          String?
+  modeloOperacional ModeloOperacional
+  status            ClienteStatus     @default(PROSPECCAO)
+  segmento          Segmento?
+  dataFechamento    DateTime?
+  dataEncerramento  DateTime?
+  mensalidadeApi    Float?
+  notas             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  ownerId        String
-  owner          User            @relation(fields: [ownerId], references: [id])
+  ownerId           String
+  owner             User                  @relation(fields: [ownerId], references: [id])
   /// Gestor responsavel pela carteira. Nulo nos clientes anteriores a v12.
   /// NAO substitui `ownerId`, que segue como vinculo legado.
-  gestorId       String?
-  gestor         User?           @relation("ClienteGestor", fields: [gestorId], references: [id])
-  tarefas        Tarefa[]
-  contasReceber  ContaReceber[]
-  followUps      FollowUp[]
-  volumetrias    VolumetriaMinima[]
-  deals          Deal[]
-  documentos     Documento[]
-  diasMovimento  ClienteDiaMovimento[]
+  gestorId          String?
+  gestor            User?                 @relation("ClienteGestor", fields: [gestorId], references: [id])
+  tarefas           Tarefa[]
+  contasReceber     ContaReceber[]
+  followUps         FollowUp[]
+  volumetrias       VolumetriaMinima[]
+  deals             Deal[]
+  documentos        Documento[]
+  diasMovimento     ClienteDiaMovimento[]
   enviosCertificado CertificadoEnvio[]
-  pendencias     PendenciaCompliance[]
-  respostasFormulario FormularioResposta[]
-  linksFormulario FormularioLink[]
+  pendencias        PendenciaCompliance[]
 
   @@index([gestorId])
 }
-
-
-
 
 model Meta {
   id        String   @id @default(cuid())
@@ -422,37 +383,34 @@ model Meta {
 }
 
 model Tarefa {
-  id          String           @id @default(cuid())
-  titulo      String
-  descricao   String?
-  status      TarefaStatus     @default(PENDENTE)
-  prioridade  TarefaPrioridade @default(MEDIA)
-  dueDate     DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id         String           @id @default(cuid())
+  titulo     String
+  descricao  String?
+  status     TarefaStatus     @default(PENDENTE)
+  prioridade TarefaPrioridade @default(MEDIA)
+  dueDate    DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
-  clienteId      String?
-  cliente        Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  criadoPorId    String
-  criadoPor      User     @relation("TarefaCriador", fields: [criadoPorId], references: [id])
-  responsavelId  String
-  responsavel    User     @relation("TarefaResponsavel", fields: [responsavelId], references: [id])
+  clienteId     String?
+  cliente       Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  criadoPorId   String
+  criadoPor     User     @relation("TarefaCriador", fields: [criadoPorId], references: [id])
+  responsavelId String
+  responsavel   User     @relation("TarefaResponsavel", fields: [responsavelId], references: [id])
 }
 
 model Incidente {
-  id           String              @id @default(cuid())
+  id           String               @id @default(cuid())
   titulo       String
   descricao    String?
   inicio       DateTime
   fim          DateTime?
   downtimeMins Int?
   criticidade  IncidenteCriticidade @default(MEDIA)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
 }
-
-
 
 enum ContaReceberStatus {
   PENDENTE
@@ -462,7 +420,10 @@ enum ContaReceberStatus {
 }
 
 enum FollowUpTipo {
-  PICO_OPERACIONAL
+  /// Pico transacional do cliente. Era PICO_OPERACIONAL; renomeado sem perda
+  /// de dado (ALTER TYPE ... RENAME VALUE) para casar com a nomenclatura de
+  /// produto, que nao usa mais "frequencia" como conceito principal.
+  PICO_TRANSACIONAL
   REUNIAO
   MONITORAMENTO
   FOLLOW_UP
@@ -481,19 +442,6 @@ model Auditoria {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 }
-
-model Parametro {
-  id        String   @id @default(cuid())
-  chave     String   @unique
-  valor     String
-  label     String
-  descricao String?
-  grupo     String   @default("GERAL")
-  tipo      String   @default("NUMBER")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
 
 model ContaReceber {
   id          String             @id @default(cuid())
@@ -514,24 +462,27 @@ model ContaReceber {
 }
 
 model FollowUp {
-  id          String       @id @default(cuid())
-  titulo      String
-  descricao   String?
-  tipo        FollowUpTipo @default(FOLLOW_UP)
-  recorrente  Boolean      @default(false)
-  diaSemana   Int?
-  horaInicio  String?
-  horaFim     String?
-  dataInicio  DateTime?
-  dataFim     DateTime?
-  notas           String?
-  frequenciaDias  Int?
-  ultimoContato   DateTime?
-  proximoContato  DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  clienteId       String
-  cliente         Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  titulo            String
+  descricao         String?
+  tipo              FollowUpTipo @default(FOLLOW_UP)
+  recorrente        Boolean      @default(false)
+  diaSemana         Int?
+  horaInicio        String?
+  horaFim           String?
+  dataInicio        DateTime?
+  dataFim           DateTime?
+  notas             String?
+  /// Intervalo em dias entre picos transacionais esperados do cliente.
+  /// Mesma mecanica da antiga "frequencia de follow up" (coluna renomeada,
+  /// dado preservado): nao existe um segundo sistema de recorrencia.
+  picoIntervaloDias Int?
+  ultimoContato     DateTime?
+  proximoContato    DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  clienteId         String
+  cliente           Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
 /// FONTE OFICIAL dos 5 indicadores realizados. Grão: uma data.
@@ -544,6 +495,11 @@ model LancamentoDiario {
   saldoEmConta     Float    @default(0)
   qtdTransacoes    Int      @default(0)
   qtdMed           Int      @default(0)
+  /// Clientes ativos — FOTOGRAFIA DO DIA, na mesma convencao de `saldoEmConta`:
+  /// e um estoque observado naquela data, nao um fluxo que se acumula. O numero
+  /// mensal e portanto o do ULTIMO dia lancado do mes, nunca a soma dos dias.
+  /// Nulo = nao informado naquele dia (distinto de zero cliente ativo).
+  clientesAtivos   Int?
   notas            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -592,7 +548,6 @@ model VolumetriaMinima {
   @@index([clienteId, ativo])
 }
 
-
 /// PIPELINE MULTI-FUNIL
 ///
 /// O card NAO e um modelo novo: e o proprio Deal, que ganhou funilId/etapaId.
@@ -618,8 +573,6 @@ model PipelineFunil {
   deals      Deal[]
   movOrigem  PipelineMovimentacao[] @relation("MovFunilOrigem")
   movDestino PipelineMovimentacao[] @relation("MovFunilDestino")
-  automacoesGatilho Automacao[]     @relation("AutomacaoFunilGatilho")
-  automacoesDestino Automacao[]     @relation("AutomacaoFunilDestino")
 
   @@index([ativo, ordem])
 }
@@ -642,8 +595,6 @@ model PipelineEtapa {
   deals      Deal[]
   movOrigem  PipelineMovimentacao[] @relation("MovEtapaOrigem")
   movDestino PipelineMovimentacao[] @relation("MovEtapaDestino")
-  automacoesGatilho Automacao[]     @relation("AutomacaoEtapaGatilho")
-  automacoesDestino Automacao[]     @relation("AutomacaoEtapaDestino")
 
   @@unique([funilId, nome])
   @@index([funilId, ordem])
@@ -660,12 +611,12 @@ model PipelinePermissao {
   userId  String?
   user    User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  ver         Boolean @default(true)
-  editar      Boolean @default(false)
-  mover       Boolean @default(false)
-  criar       Boolean @default(false)
-  transferir  Boolean @default(false)
-  administrar Boolean @default(false)
+  ver            Boolean @default(true)
+  editar         Boolean @default(false)
+  mover          Boolean @default(false)
+  criar          Boolean @default(false)
+  transferir     Boolean @default(false)
+  administrar    Boolean @default(false)
   /// Preserva a regra que hoje esta embutida no codigo: o COMERCIAL so
   /// enxerga os proprios negocios.
   apenasProprios Boolean @default(false)
@@ -705,7 +656,6 @@ model PipelineMovimentacao {
   @@index([funilDestinoId, createdAt])
 }
 
-
 // ===========================================================================
 // FUNDACAO — Notificacoes, Documentos e movimento diario do cliente (v12)
 // ===========================================================================
@@ -717,19 +667,19 @@ model PipelineMovimentacao {
 /// Nao tem chave de permissao: cada usuario ve as suas, filtradas por
 /// `destinatarioId`. Uma chave aqui so criaria a chance de configurar errado.
 model Notificacao {
-  id            String            @id @default(cuid())
+  id             String            @id @default(cuid())
   destinatarioId String
-  destinatario  User              @relation(fields: [destinatarioId], references: [id], onDelete: Cascade)
-  titulo        String
-  mensagem      String
-  origem        NotificacaoOrigem @default(SISTEMA)
+  destinatario   User              @relation(fields: [destinatarioId], references: [id], onDelete: Cascade)
+  titulo         String
+  mensagem       String
+  origem         NotificacaoOrigem @default(SISTEMA)
   /// Contexto polimorfico leve: aponta para sete modelos diferentes, entao nao
   /// ha FK. `href` e o link que a central abre.
-  entidade      String?
-  entidadeId    String?
-  href          String?
-  lidaEm        DateTime?
-  createdAt     DateTime          @default(now())
+  entidade       String?
+  entidadeId     String?
+  href           String?
+  lidaEm         DateTime?
+  createdAt      DateTime          @default(now())
 
   @@index([destinatarioId, lidaEm])
   @@index([destinatarioId, createdAt])
@@ -739,25 +689,30 @@ model Notificacao {
 /// `cliente-arquivos`; aqui fica so a chave. Download sempre por signed URL de
 /// curta duracao, emitida por rota que checa permissao e grava Auditoria.
 model Documento {
-  id          String             @id @default(cuid())
-  clienteId   String
-  cliente     Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  nome        String
-  categoria   DocumentoCategoria @default(OUTROS)
-  origem      DocumentoOrigem    @default(UPLOAD_MANUAL)
-  mime        String
-  tamanho     Int
+  id           String             @id @default(cuid())
+  /// Nulo quando o arquivo nao pertence a um cliente — o caso do anexo de
+  /// lancamento financeiro (nota fiscal, comprovante) e do ZIP de
+  /// certificados, que e estoque global. Era obrigatorio porque o unico
+  /// caminho de upload era o ambiente "Documentos", que saiu do produto.
+  clienteId    String?
+  cliente      Cliente?           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nome         String
+  categoria    DocumentoCategoria @default(OUTROS)
+  origem       DocumentoOrigem    @default(UPLOAD_MANUAL)
+  mime         String
+  tamanho      Int
   /// Caminho no bucket. Nunca uma URL publica.
-  storageKey  String             @unique
-  descricao   String?
-  ativo       Boolean            @default(true)
+  storageKey   String             @unique
+  descricao    String?
+  ativo        Boolean            @default(true)
   enviadoPorId String
-  enviadoPor  User               @relation(fields: [enviadoPorId], references: [id])
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  enviadoPor   User               @relation(fields: [enviadoPorId], references: [id])
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   certificadoVersao CertificadoVersao?
-  anexoFormulario   FormularioAnexo?
+  /// Anexo de um lancamento financeiro (nota fiscal, comprovante, print).
+  anexoLancamento   LancamentoAnexo?
 
   @@index([clienteId, ativo])
   @@index([categoria])
@@ -783,7 +738,6 @@ model ClienteDiaMovimento {
   @@index([data])
 }
 
-
 // ===========================================================================
 // CERTIFICADOS — estoque global (v13)
 // ===========================================================================
@@ -791,21 +745,21 @@ model ClienteDiaMovimento {
 /// UM ZIP = exatamente 50 certificados. E estoque GLOBAL: nao tem clienteId.
 /// O vinculo comercial acontece so em CertificadoEnvio.
 model CertificadoVersao {
-  id            String                  @id @default(cuid())
-  identificacao String                  @unique
-  descricao     String?
-  quantidade    Int                     @default(50)
-  status        CertificadoVersaoStatus @default(ATIVA)
+  id             String                  @id @default(cuid())
+  identificacao  String                  @unique
+  descricao      String?
+  quantidade     Int                     @default(50)
+  status         CertificadoVersaoStatus @default(ATIVA)
   /// O proprio ZIP, guardado como Documento no bucket privado.
-  documentoId   String?                 @unique
-  documento     Documento?              @relation(fields: [documentoId], references: [id])
-  substituiId   String?                 @unique
-  substitui     CertificadoVersao?      @relation("VersaoSubstituicao", fields: [substituiId], references: [id])
-  substituidaPor CertificadoVersao?     @relation("VersaoSubstituicao")
-  criadoPorId   String
-  criadoPor     User                    @relation(fields: [criadoPorId], references: [id])
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime                @updatedAt
+  documentoId    String?                 @unique
+  documento      Documento?              @relation(fields: [documentoId], references: [id])
+  substituiId    String?                 @unique
+  substitui      CertificadoVersao?      @relation("VersaoSubstituicao", fields: [substituiId], references: [id])
+  substituidaPor CertificadoVersao?      @relation("VersaoSubstituicao")
+  criadoPorId    String
+  criadoPor      User                    @relation(fields: [criadoPorId], references: [id])
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   certificados Certificado[]
   envios       CertificadoEnvio[]
@@ -817,19 +771,19 @@ model CertificadoVersao {
 /// nunca uma sequencia global. Por isso a unicidade e (versaoId, numero) e um
 /// intervalo so faz sentido citado junto da versao.
 model Certificado {
-  id        String            @id @default(cuid())
-  versaoId  String
-  versao    CertificadoVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
-  numero    Int
+  id           String            @id @default(cuid())
+  versaoId     String
+  versao       CertificadoVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
+  numero       Int
   /// AES-256-GCM. Nunca entra em select de listagem, nunca vai para log, e so
   /// a rota de revelar a le — depois de checar permissao e gravar Auditoria.
   senhaCifrada String
-  status    CertificadoStatus @default(DISPONIVEL)
+  status       CertificadoStatus @default(DISPONIVEL)
   /// Nulo = ainda em estoque. E esta coluna que separa estoque de distribuicao.
-  envioId   String?
-  envio     CertificadoEnvio? @relation(fields: [envioId], references: [id])
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  envioId      String?
+  envio        CertificadoEnvio? @relation(fields: [envioId], references: [id])
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   @@unique([versaoId, numero])
   @@index([versaoId, status])
@@ -860,7 +814,6 @@ model CertificadoEnvio {
   @@index([versaoId])
 }
 
-
 // ===========================================================================
 // COMPLIANCE (v13)
 // ===========================================================================
@@ -872,7 +825,6 @@ model PendenciaCompliance {
   motivo        PendenciaMotivo
   /// Reusa a escala que ja existe no sistema em vez de criar outra igual.
   criticidade   IncidenteCriticidade @default(MEDIA)
-  titulo        String
   observacoes   String?
   prazo         DateTime?
   status        PendenciaStatus      @default(ABERTA)
@@ -905,165 +857,175 @@ model PendenciaEvento {
   @@index([pendenciaId, createdAt])
 }
 
-
 // ===========================================================================
-// AUTOMACOES (v14)
+// FINANCEIRO (v16)
+//
+// Quatro registros, nenhum deles duplicando o que ja existia:
+//
+//   CategoriaFinanceira  -> como a receita/despesa e classificada
+//   Fornecedor           -> quem presta o servico
+//   LancamentoFinanceiro -> a receita/despesa em si (+ anexos)
+//   CondicaoComercial    -> BaaS e White Label, com historico de taxas
+//
+// ContaReceber continua sendo o faturamento do cliente e NAO virou lancamento:
+// sao coisas diferentes (uma tem cliente e vencimento, a outra e caixa).
 // ===========================================================================
 
-/// Regra no-code: QUANDO gatilho [E condicao] ENTAO acao.
+enum TipoLancamento {
+  RECEITA
+  DESPESA
+}
+
+/// Como o lancamento se repete no tempo.
+enum PeriodicidadeLancamento {
+  UNICA
+  RECORRENTE
+  PARCELADA
+}
+
+enum StatusLancamento {
+  PENDENTE
+  PAGO
+  CANCELADO
+}
+
+/// Natureza do parceiro em CondicaoComercial. E o que permite contar
+/// "BaaS ativos" e "White Labels ativos" de uma unica fonte.
+enum TipoParceiro {
+  BAAS
+  WHITE_LABEL
+}
+
+/// Categoria de receita OU de despesa. O `tipo` e o que separa as duas listas
+/// na tela; nao existem duas tabelas para a mesma coisa.
+model CategoriaFinanceira {
+  id        String         @id @default(cuid())
+  nome      String
+  tipo      TipoLancamento
+  ativo     Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  lancamentos  LancamentoFinanceiro[]
+  fornecedores Fornecedor[]
+
+  @@unique([nome, tipo])
+  @@index([tipo, ativo])
+}
+
+model Fornecedor {
+  id               String               @id @default(cuid())
+  razaoSocial      String
+  cnpj             String?
+  chavePix         String?
+  descricaoServico String?
+  categoriaId      String?
+  categoria        CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  ativo            Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([ativo])
+  @@index([categoriaId])
+}
+
+/// UMA linha = UM valor com UMA data. Parcelas e recorrencias sao
+/// MATERIALIZADAS: um cadastro em 6x gera 6 linhas, uma por mes, amarradas por
+/// `grupoId`.
 ///
-/// Nao e um motor generico de workflow. Sao quatro gatilhos e quatro acoes,
-/// todas reaproveitando servico que ja existe.
-model Automacao {
-  id      String           @id @default(cuid())
-  nome    String
-  ativo   Boolean          @default(true)
-  gatilho AutomacaoGatilho
+/// A razao e que assim Receita, Despesa e Resultado de qualquer periodo sao uma
+/// soma direta sobre `data` — sem nenhum motor que "expanda" recorrencia na
+/// leitura, que e onde esse tipo de tela normalmente passa a divergir de si
+/// mesma dependendo do filtro aplicado.
+model LancamentoFinanceiro {
+  id            String                  @id @default(cuid())
+  tipo          TipoLancamento
+  descricao     String
+  categoriaId   String
+  categoria     CategoriaFinanceira     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  valor         Float
+  data          DateTime                @db.Date
+  status        StatusLancamento        @default(PENDENTE)
+  observacao    String?
+  periodicidade PeriodicidadeLancamento @default(UNICA)
+  /// Amarra as linhas nascidas do mesmo cadastro. Nulo em lancamento unico.
+  grupoId       String?
+  parcela       Int?
+  totalParcelas Int?
 
-  /// Escopo do gatilho. Nulo = qualquer funil / qualquer etapa.
-  funilId String?
-  funil   PipelineFunil?   @relation("AutomacaoFunilGatilho", fields: [funilId], references: [id], onDelete: Cascade)
-  etapaId String?
-  etapa   PipelineEtapa?   @relation("AutomacaoEtapaGatilho", fields: [etapaId], references: [id], onDelete: Cascade)
+  criadoPorId String
+  criadoPor   User   @relation("LancamentoCriador", fields: [criadoPorId], references: [id])
 
-  acao           AutomacaoAcao
-  funilDestinoId String?
-  funilDestino   PipelineFunil? @relation("AutomacaoFunilDestino", fields: [funilDestinoId], references: [id])
-  etapaDestinoId String?
-  etapaDestino   PipelineEtapa? @relation("AutomacaoEtapaDestino", fields: [etapaDestinoId], references: [id])
+  anexos LancamentoAnexo[]
 
-  /// Destinatario da notificacao ou responsavel pela tarefa/pendencia.
-  destinatarioRole   Role?
-  destinatarioUserId String?
-  destinatario       User?   @relation("AutomacaoDestinatario", fields: [destinatarioUserId], references: [id])
-
-  /// Condicoes simples e extensiveis, avaliadas por lib/automacoes.ts.
-  /// Formato: { "todas": [{ "campo": "...", "operador": "...", "valor": ... }] }
-  condicao Json?
-
-  titulo    String?
-  mensagem  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  execucoes AutomacaoExecucao[]
-
-  @@index([ativo, gatilho])
+  @@index([data])
+  @@index([tipo, data])
+  @@index([categoriaId])
+  @@index([grupoId])
+  @@index([status])
 }
 
-/// Log de disparo. Roda DEPOIS da transacao principal: uma automacao com
-/// defeito nunca pode desfazer a movimentacao de card que ja aconteceu.
-model AutomacaoExecucao {
-  id          String                  @id @default(cuid())
-  automacaoId String
-  automacao   Automacao               @relation(fields: [automacaoId], references: [id], onDelete: Cascade)
-  status      AutomacaoExecucaoStatus
-  dealId      String?
-  respostaId  String?
-  contexto    Json?
-  resultado   String?
-  erro        String?
-  createdAt   DateTime                @default(now())
+/// Nota fiscal, comprovante de pagamento, print. Os bytes vivem no MESMO
+/// bucket privado que o resto do sistema usa; aqui so o vinculo.
+model LancamentoAnexo {
+  id           String               @id @default(cuid())
+  lancamentoId String
+  lancamento   LancamentoFinanceiro @relation(fields: [lancamentoId], references: [id], onDelete: Cascade)
+  documentoId  String               @unique
+  documento    Documento            @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  createdAt    DateTime             @default(now())
 
-  @@index([automacaoId, createdAt])
+  @@index([lancamentoId])
 }
 
-
-// ===========================================================================
-// FORMULARIOS (v14)
-// ===========================================================================
-
-model Formulario {
-  id          String   @id @default(cuid())
-  nome        String
-  descricao   String?
-  ativo       Boolean  @default(true)
-  criadoPorId String
-  criadoPor   User     @relation(fields: [criadoPorId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  versoes FormularioVersao[]
-
-  @@index([ativo])
-}
-
-/// Snapshot IMUTAVEL da estrutura. Publicada uma versao, ela nao muda mais:
-/// editar cria a proxima. E o que impede uma alteracao futura de reescrever o
-/// significado de respostas ja coletadas.
+/// CONDICOES COMERCIAIS de um BaaS ou White Label — as condicoes ATUAIS.
 ///
-/// `definicao` guarda secoes, campos, ordem, validacoes, layout e aparencia.
-/// O construtor visual gera e interpreta esse JSON — o usuario nunca o ve.
-model FormularioVersao {
-  id           String     @id @default(cuid())
-  formularioId String
-  formulario   Formulario @relation(fields: [formularioId], references: [id], onDelete: Cascade)
-  versao       Int
-  definicao    Json
-  publicadaEm  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+/// Fonte unica para tres numeros que antes sairiam de lugares diferentes:
+///   * MRR            -> sustentacao + apiMensal das linhas ativas
+///   * BaaS ativos    -> contagem de tipo = BAAS, ativo
+///   * White Labels   -> contagem de tipo = WHITE_LABEL, ativo
+///
+/// O passado nao e reescrito aqui: toda alteracao de taxa grava uma linha em
+/// CondicaoComercialHistorico antes de sobrescrever o valor.
+model CondicaoComercial {
+  id               String       @id @default(cuid())
+  nomeFantasia     String
+  /// Numero da conta / identificacao do parceiro.
+  identificacao    String       @unique
+  tipo             TipoParceiro
+  /// Tarifas por transacao.
+  pix              Float?
+  kyc              Float?
+  /// Mensalidades. Sao as duas parcelas do MRR que vem daqui.
+  sustentacao      Float?
+  apiMensal        Float?
+  overpricePercent Float?
+  ativo            Boolean      @default(true)
+  observacao       String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  respostas FormularioResposta[]
-  links     FormularioLink[]
+  historico CondicaoComercialHistorico[]
 
-  @@unique([formularioId, versao])
-  @@index([formularioId, publicadaEm])
+  @@index([tipo, ativo])
 }
 
-/// Link publico. O token e aleatorio e NUNCA o id interno — um id em URL
-/// publica vaza a existencia e a ordem dos registros.
-model FormularioLink {
-  id         String           @id @default(cuid())
-  versaoId   String
-  versao     FormularioVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
-  token      String           @unique
-  clienteId  String?
-  cliente    Cliente?         @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  expiraEm   DateTime?
-  usosMax    Int?
-  usos       Int              @default(0)
-  revogadoEm DateTime?
-  createdAt  DateTime         @default(now())
+/// Uma linha por campo alterado. Guardado como texto porque o historico
+/// registra tambem mudancas de `tipo` e `ativo`, que nao sao numeros — e
+/// porque o que importa aqui e a leitura da auditoria, nao recalcular nada.
+model CondicaoComercialHistorico {
+  id            String            @id @default(cuid())
+  condicaoId    String
+  condicao      CondicaoComercial @relation(fields: [condicaoId], references: [id], onDelete: Cascade)
+  campo         String
+  valorAnterior String?
+  valorNovo     String?
+  userId        String
+  user          User              @relation("CondicaoHistoricoAutor", fields: [userId], references: [id])
+  createdAt     DateTime          @default(now())
 
-  respostas FormularioResposta[]
-
-  @@index([versaoId])
-}
-
-model FormularioResposta {
-  id            String                   @id @default(cuid())
-  versaoId      String
-  versao        FormularioVersao         @relation(fields: [versaoId], references: [id])
-  linkId        String?
-  link          FormularioLink?          @relation(fields: [linkId], references: [id], onDelete: SetNull)
-  clienteId     String?
-  cliente       Cliente?                 @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  responsavelId String?
-  responsavel   User?                    @relation("RespostaResponsavel", fields: [responsavelId], references: [id])
-  status        FormularioRespostaStatus @default(ENVIADA)
-  valores       Json
-  /// Aceite de termos e assinatura, quando a definicao os exige.
-  aceiteEm      DateTime?
-  assinatura    String?
-  ip            String?
-  enviadaEm     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
-
-  anexos FormularioAnexo[]
-
-  @@index([versaoId, enviadaEm])
-  @@index([clienteId])
-}
-
-model FormularioAnexo {
-  id          String             @id @default(cuid())
-  respostaId  String
-  resposta    FormularioResposta @relation(fields: [respostaId], references: [id], onDelete: Cascade)
-  documentoId String             @unique
-  documento   Documento          @relation(fields: [documentoId], references: [id], onDelete: Cascade)
-  campo       String
-  createdAt   DateTime           @default(now())
-
-  @@index([respostaId])
+  @@index([condicaoId, createdAt])
 }

@@ -1,5 +1,8 @@
 # RevenueOps Cockpit — Resumo Executivo
 
+> **Atualizado pela rodada v16.** Seis ambientes removidos, Financeiro
+> reconstruído, Clientes enxugado. Ver [`RODADA-V16.md`](./RODADA-V16.md).
+
 **Bass Pago RevOps** · Versão 1.0 · 10 de setembro de 2026
 Commit `4890630` · Production: `revenueops-cockpit.vercel.app`
 

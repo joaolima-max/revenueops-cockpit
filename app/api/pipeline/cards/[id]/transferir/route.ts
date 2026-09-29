@@ -5,7 +5,6 @@ import { validarTransferencia } from '@/lib/pipeline'
 import {
   acessoAoCard, acessoAoFunil, registrarMovimentacao, stageLegado, auditarPipeline, INCLUDE_CARD,
 } from '@/lib/pipeline-db'
-import { dispararAutomacoes } from '@/lib/automacoes-db'
 import { notificar } from '@/lib/notificacoes'
 
 /**
@@ -127,20 +126,5 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     href: '/dashboard/pipeline',
   })))
 
-  const automacoes = await dispararAutomacoes({
-    gatilho: 'CARD_TRANSFERIDO',
-    userId: session.userId,
-    dealId: id,
-    funilId: destino.id,
-    etapaId: etapa.id,
-    valor: card.value,
-    probabilidade: card.probability,
-    segmento: card.segmento,
-    operacao: card.operacao,
-    titulo: card.title,
-    clienteId: card.clienteId,
-    ownerId: card.ownerId,
-  })
-
-  return NextResponse.json({ card, notificados: destinatarios.length, automacoes })
+  return NextResponse.json({ card, notificados: destinatarios.length })
 }

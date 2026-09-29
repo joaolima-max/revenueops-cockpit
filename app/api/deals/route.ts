@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { acessoAoFunil, registrarMovimentacao, stageLegado } from '@/lib/pipeline-db'
-import { dispararAutomacoes } from '@/lib/automacoes-db'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -41,6 +40,19 @@ export async function POST(request: NextRequest) {
 
   const data = await request.json()
 
+  // O card SEMPRE nasce de um Lead que ja existe (§7). O Pipeline nao cadastra
+  // Lead: sem esta checagem, a API aceitaria um card solto e voltariamos a ter
+  // duas origens para a mesma oportunidade.
+  const leadId = data.leadId ? String(data.leadId) : ''
+  if (!leadId) {
+    return NextResponse.json(
+      { error: 'Selecione um lead existente. O card do pipeline sempre nasce de um lead.' },
+      { status: 400 },
+    )
+  }
+  const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } })
+  if (!lead) return NextResponse.json({ error: 'Lead nao encontrado.' }, { status: 404 })
+
   // Card criado a partir do quadro: nasce numa etapa de um funil. Sem etapa, o
   // comportamento antigo continua valendo, para nao quebrar quem chama a API
   // sem conhecer funis.
@@ -72,7 +84,7 @@ export async function POST(request: NextRequest) {
         stage: (stage ?? data.stage ?? 'PROSPECCAO') as never,
         probability: data.probability || 0,
         notes: data.notes,
-        leadId: data.leadId || null,
+        leadId,
         clienteId: data.clienteId || null,
         funilId: etapa?.funilId ?? null,
         etapaId: etapa?.id ?? null,
@@ -100,23 +112,6 @@ export async function POST(request: NextRequest) {
 
     return criado
   })
-
-  if (etapa) {
-    await dispararAutomacoes({
-      gatilho: 'CARD_CRIADO',
-      userId: session.userId,
-      dealId: deal.id,
-      funilId: etapa.funilId,
-      etapaId: etapa.id,
-      valor: deal.value,
-      probabilidade: deal.probability,
-      segmento: deal.segmento,
-      operacao: deal.operacao,
-      titulo: deal.title,
-      clienteId: deal.clienteId,
-      ownerId: deal.ownerId,
-    })
-  }
 
   return NextResponse.json(deal, { status: 201 })
 }

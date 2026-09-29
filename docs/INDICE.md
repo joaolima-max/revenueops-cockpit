@@ -1,5 +1,10 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
+> **Comece por [`RODADA-V16.md`](./RODADA-V16.md)** — remodelagem de Operações e
+> Financeiro. Os capítulos 15 (Documentos), 18 (Automações) e 19 (Formulários)
+> descrevem ambientes que **não existem mais**, e os capítulos 5, 7, 8 e 11
+> mudaram de conteúdo. Ficam abaixo como registro histórico.
+
 Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 
 | # | Capítulo | Conteúdo |
@@ -8,25 +13,25 @@ Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 | 2 | **Estado real do sistema** | métricas apuradas do repositório e do banco |
 | 3 | **História e evolução** | origem, refatoração dos KPIs, redesign, v10–v15, consolidação |
 | 4 | **Decisões de arquitetura** | os 10 porquês estruturantes |
-| 5 | **Usuários e permissões** | papéis, 42 chaves, matriz, alçada por funil, server-side |
+| 5 | **Usuários e permissões** | papéis, chaves (33 na v16), matriz, alçada por funil, server-side |
 | 6 | **Arquitetura técnica** | stack, fluxo de requisição, fluxo de arquivo, domínio × dados, registro de módulos |
-| 7 | **Catálogo do banco** | visão conceitual, classificação, 35 modelos, enums com regra |
-| 8 | **Dashboard** | KPIs e origens, 5 linhas de faturamento, metas, insights, alertas |
+| 7 | **Catálogo do banco** | visão conceitual, classificação, modelos (33 na v16), enums com regra |
+| 8 | **Dashboard** | KPIs e origens, linhas de faturamento (4 na v16), metas, insights |
 | 9 | **Float** | conceito, fórmula, exemplo numérico, gaps, multiplicador versionado |
 | 10 | **Volumetria** | conceito, volumetria × TPV, consolidação, status, não sobreposição |
 | 11 | **Carteira Comercial** | gestor, expectativa, indicador dos 5 dias, por que não é TPV |
 | 12 | **CRM** | cadastro, por que sem entidade própria, as 7 métricas |
 | 13 | **Pipeline multi-funil** | 3 funis, vocabulário, mover × transferir, passo a passo, administração |
 | 14 | **Notificações** | modelo, produtores, interface, notificação × alerta |
-| 15 | **Documentos** | categorias, upload, validação, signed URL, inativação |
+| 15 | ~~**Documentos**~~ | **ambiente removido na v16**; anexos vivem em Financeiro → Lançamentos |
 | 16 | **Certificados** | estoque × envio, numeração relativa, AES-256-GCM, revelação auditada |
 | 17 | **Compliance** | modelo, máquina de estados, prazo, fluxo operacional |
-| 18 | **Automações** | no-code, por que sem event bus, depois da transação, as 4 ações |
-| 19 | **Formulários** | 5 modelos, 24 tipos de campo, construtor, versionamento, link público, anexos |
+| 18 | ~~**Automações**~~ | **removido na v16** |
+| 19 | ~~**Formulários**~~ | **removido na v16** |
 | 20 | **Auditoria** | o que é auditado, os dois casos sensíveis, o que não é registrado |
 | 21 | **Segurança** | autenticação, 3 camadas de autorização, segredos, storage, criptografia |
 | 22 | **Design System** | filosofia, tipografia, tokens, Light/Dark, componentes |
-| 23 | **Testes** | estratégia, 104 testes por área, o que a suíte não cobre |
+| 23 | **Testes** | estratégia, 118 testes por área (v16), o que a suíte não cobre |
 | 24 | **Deploy e infraestrutura** | ambientes, processo, migrations, conexões, armadilha do alias |
 | 25 | **Manutenção** | como alterar schema, permissão, API, automação, campo; invariantes |
 | 26 | **Limitações e débitos** | CRÍTICO / ALTO / MÉDIO / BAIXO |

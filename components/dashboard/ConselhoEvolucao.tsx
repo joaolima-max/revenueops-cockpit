@@ -7,7 +7,7 @@ import {
 import { paleta, gridProps, axisProps, legendProps, cursorBarra, BAR, LINE } from '@/lib/chart-theme'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { makeTooltip } from '@/components/ui/ChartTooltip'
-import { moedaCompacta, moedaCheia } from '@/lib/format-financeiro'
+import { eixoMoeda, moedaCheia } from '@/lib/format-financeiro'
 
 export interface PontoEvolucao extends Record<string, unknown> {
   mes: string; tpv: number; faturamento: number
@@ -38,8 +38,8 @@ export default function ConselhoEvolucao({ dados }: { dados: PontoEvolucao[] }) 
       <ComposedChart data={serie} margin={{ top: 8, right: 0, bottom: 0, left: -8 }}>
         <CartesianGrid {...gridProps(p)} />
         <XAxis dataKey="mes" {...axisProps(p)} />
-        <YAxis yAxisId="tpv" {...axisProps(p)} tickFormatter={moedaCompacta} width={68} />
-        <YAxis yAxisId="fat" orientation="right" {...axisProps(p)} tickFormatter={moedaCompacta} width={68} />
+        <YAxis yAxisId="tpv" {...axisProps(p)} tickFormatter={eixoMoeda} width={104} />
+        <YAxis yAxisId="fat" orientation="right" {...axisProps(p)} tickFormatter={eixoMoeda} width={104} />
         <Tooltip cursor={cursorBarra(p)} content={makeTooltip(serie, 'mes',
           [{ key: 'tpv', nome: 'TPV', cor: p.s3 }, { key: 'faturamento', nome: 'Faturamento', cor: p.s1 }],
           moedaCheia)} />

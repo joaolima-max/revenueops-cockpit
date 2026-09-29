@@ -1,65 +1,54 @@
 /**
  * APRESENTAÇÃO DE NÚMEROS FINANCEIROS — só formatação, nenhuma regra de negócio.
  *
- * O problema que isto resolve: "R$ 159592207.57" é ilegível num KPI. A leitura
- * executiva quer a ordem de grandeza primeiro ("R$ 159,6 mi") e o valor exato
- * sob demanda (title/tooltip). Nada aqui inventa, arredonda para cima nem
- * esconde dado — apenas escolhe a escala certa e devolve o valor cheio junto.
+ * REGRA GLOBAL: valor monetário é exibido POR EXTENSO, sempre.
+ *
+ *   R$ 4.250.000,00        ← sim
+ *   R$ 4,25 mi / 4,25 MM   ← não
+ *
+ * A abreviação por escala (mil/mi/bi/tri) foi removida em toda a superfície:
+ * Cockpit, Financeiro, Conselho, Carteira, gráficos, tooltips, tabelas e cards.
+ * O motivo é operacional, não estético — quem opera a mesa precisa conferir
+ * centavos, e um KPI que arredonda para "R$ 4,25 mi" esconde exatamente a parte
+ * que está sendo conferida.
+ *
+ * Este é o único formatador financeiro do sistema. Não criar outro local: se um
+ * número aparece diferente em duas telas, é porque alguém formatou por fora.
  */
 
 const NBSP = ' '
 
 export interface Figura {
-  /** Número já formatado, sem unidade. Ex.: "159,6" */
+  /** Número já formatado, sem unidade. Ex.: "4.250.000,00" */
   valor: string
-  /** Sufixo de escala. Ex.: "mi". Vazio quando não há. */
+  /**
+   * Sufixo de escala. Sempre vazio em valores monetários e em quantidades —
+   * o campo continua existindo porque percentuais usam "%".
+   */
   unidade: string
   /** Prefixo. Ex.: "R$". Vazio quando não há. */
   prefixo: string
-  /** Valor por extenso, para title/tooltip. Ex.: "R$ 159.592.207,57" */
+  /** Valor por extenso, para title/tooltip. Ex.: "R$ 4.250.000,00" */
   completo: string
 }
-
-const ESCALAS: Array<{ limite: number; divisor: number; sufixo: string }> = [
-  { limite: 1e12, divisor: 1e12, sufixo: 'tri' },
-  { limite: 1e9, divisor: 1e9, sufixo: 'bi' },
-  { limite: 1e6, divisor: 1e6, sufixo: 'mi' },
-  { limite: 1e3, divisor: 1e3, sufixo: 'mil' },
-]
 
 function br(n: number, min = 0, max = 2): string {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: min, maximumFractionDigits: max })
 }
 
-/** Casas decimais só quando mudam a leitura: 159,6 mi mas 160 mi, não 160,0 mi. */
-function comEscala(n: number, casas = 1): { valor: string; unidade: string } {
-  const abs = Math.abs(n)
-  for (const e of ESCALAS) {
-    if (abs >= e.limite) {
-      const v = n / e.divisor
-      // Acima de 100 na escala, a decimal não acrescenta informação.
-      const d = Math.abs(v) >= 100 ? 0 : casas
-      return { valor: br(v, 0, d), unidade: e.sufixo }
-    }
-  }
-  return { valor: br(n, 0, abs < 10 && !Number.isInteger(n) ? 2 : 0), unidade: '' }
-}
-
-/** Moeda compacta. `R$ 159,6 mi` com o valor cheio disponível. */
+/**
+ * Moeda. Duas casas decimais fixas: em dinheiro, "R$ 1.000" e "R$ 1.000,00"
+ * não são a mesma informação para quem confere.
+ */
 export function figuraMoeda(n: number): Figura {
-  const { valor, unidade } = comEscala(n)
-  return {
-    valor,
-    unidade,
-    prefixo: 'R$',
-    completo: `R$${NBSP}${br(n, 2, 2)}`,
-  }
+  const texto = br(n, 2, 2)
+  return { valor: texto, unidade: '', prefixo: 'R$', completo: `R$${NBSP}${texto}` }
 }
 
-/** Quantidade compacta (transações, MEDs). Sem prefixo. */
+/** Quantidade (transações, MEDs). Inteiro exato, sem escala. */
 export function figuraQuantidade(n: number): Figura {
-  const { valor, unidade } = comEscala(n)
-  return { valor, unidade, prefixo: '', completo: br(n, 0, 0) }
+  const texto = br(n, 0, 0)
+  return { valor: texto, unidade: '', prefixo: '', completo: texto }
 }
 
 /** Percentual. Casas fixas porque take rate precisa de precisão. */
@@ -72,29 +61,34 @@ export function figuraPercentual(n: number, casas = 2): Figura {
   }
 }
 
-/** Contagem simples (contas ativas, WL, BaaS). Nunca compacta. */
+/** Contagem simples (BaaS ativos, White Labels, clientes ativos). */
 export function figuraContagem(n: number): Figura {
   return { valor: br(n, 0, 0), unidade: '', prefixo: '', completo: br(n, 0, 0) }
 }
 
 /* ---------- formatadores de string, para eixos e tooltips ---------------- */
 
-export function moedaCompacta(n: number): string {
-  const f = figuraMoeda(n)
-  return `R$${NBSP}${f.valor}${f.unidade ? NBSP + f.unidade : ''}`
-}
-
 export function moedaCheia(n: number): string {
   return figuraMoeda(n).completo
 }
 
 export function quantidadeCompacta(n: number): string {
-  const f = figuraQuantidade(n)
-  return `${f.valor}${f.unidade ? NBSP + f.unidade : ''}`
+  return figuraQuantidade(n).completo
 }
 
 export function percentual(n: number, casas = 2): string {
   return figuraPercentual(n, casas).completo
+}
+
+/**
+ * Rótulo de eixo de gráfico. Único lugar com concessão de espaço: um eixo Y
+ * com "R$ 4.250.000,00" repetido seis vezes fica ilegível. Ainda assim NÃO
+ * abrevia com letra — corta os centavos e mantém os milhares, que é redução de
+ * precisão visível e não troca de escala silenciosa. Tooltips e cards do mesmo
+ * gráfico continuam mostrando o valor cheio.
+ */
+export function eixoMoeda(n: number): string {
+  return `R$${NBSP}${br(n, 0, 0)}`
 }
 
 /* ---------- variação entre dois pontos ----------------------------------- */

@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, linhasReceita, metasDoPeriodo, contagensClientes,
-  volumetriaDoPeriodo, periodoAtual, ultimosPeriodos, type KpisPeriodo,
+  kpisDoPeriodo, linhasReceita, metasDoPeriodo, indicadoresEstrutura,
+  periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import { formatMesRef } from '@/lib/utils'
 import {
@@ -15,10 +15,11 @@ import DashboardCharts from '@/components/dashboard/DashboardCharts'
 import PageHeader from '@/components/dashboard/PageHeader'
 import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
 import StatTile, { MetaBar } from '@/components/ui/StatTile'
-import Panel, { PanelHeader } from '@/components/ui/Panel'
-import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import Panel from '@/components/ui/Panel'
+import { PanelHeader } from '@/components/ui/Panel'
+import Badge from '@/components/ui/Badge'
 import EmptyState, { NoData } from '@/components/ui/EmptyState'
-import Figure, { Delta, Contexto } from '@/components/ui/Figure'
+import Figure from '@/components/ui/Figure'
 
 const ROTULO_META: Record<string, string> = {
   RECEITA_TARIFARIA: 'Receita Tarifária', TPV: 'TPV', SALDO_EM_CONTA: 'Saldo em Conta',
@@ -26,23 +27,19 @@ const ROTULO_META: Record<string, string> = {
   RECEITA: 'Receita (legado)', MRR: 'MRR (legado)', CLIENTES_ATIVOS: 'Clientes ativos (legado)',
 }
 
-const VOLUMETRIA: Record<string, { label: string; tone: BadgeTone }> = {
-  ATINGIDO: { label: 'Atingido', tone: 'pos' },
-  NAO_ATINGIDO: { label: 'Não atingido', tone: 'neg' },
-  EM_ACOMPANHAMENTO: { label: 'Em acompanhamento', tone: 'warn' },
-}
+/** Metas de valor monetário × metas de contagem: o formatador não é o mesmo. */
+const META_MONETARIA = new Set(['RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'RECEITA', 'MRR'])
 
 export default async function DashboardPage() {
   const session = await getSession()
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(12)
 
-  const [kpis, receita, metas, clientes, volumetria, serie] = await Promise.all([
+  const [kpis, receita, metas, estrutura, serie] = await Promise.all([
     kpisDoPeriodo(periodo),
     linhasReceita(periodo),
     metasDoPeriodo(periodo),
-    contagensClientes(),
-    volumetriaDoPeriodo(periodo),
+    indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
   ])
 
@@ -52,26 +49,49 @@ export default async function DashboardPage() {
   const varDe = (pick: (k: KpisPeriodo) => number | null) =>
     anterior ? variacao(pick(kpis), pick(anterior)) : null
 
+  /**
+   * NÍVEL 1 — o resultado do mês.
+   *
+   * O indicador de Float saiu do Cockpit: sobrou "Saldo médio em conta", que é
+   * o número que a operação confere. O Float continua sendo calculado e segue
+   * como linha de receita no Conselho — só não é mais um KPI aqui.
+   */
   const principais = [
-    { label: 'TPV', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv), primary: true,
-      delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv),
-      note: kpis.qtdTransacoes !== null ? `${figuraQuantidade(kpis.qtdTransacoes).valor}${figuraQuantidade(kpis.qtdTransacoes).unidade ? ' ' + figuraQuantidade(kpis.qtdTransacoes).unidade : ''} transações` : undefined },
-    { label: 'Receita Tarifária', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria),
-      delta: varDe((k) => k.receitaTarifaria), spark: spark((k) => k.receitaTarifaria), note: 'Lançamento diário' },
-    { label: 'Float', fig: kpis.float === null ? null : figuraMoeda(kpis.float),
-      delta: varDe((k) => k.float), spark: spark((k) => k.float), note: 'Saldo que dorme × multiplicador' },
-    { label: 'Faturamento', fig: receita ? figuraMoeda(receita.total) : null, note: 'Soma das 5 linhas' },
+    { label: 'Receita', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria),
+      primary: true, delta: varDe((k) => k.receitaTarifaria), spark: spark((k) => k.receitaTarifaria),
+      note: 'Receita tarifária do lançamento diário' },
+    { label: 'TPV geral', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv),
+      delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv), note: 'Lançamento diário' },
+    { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
+      delta: varDe((k) => k.qtdTransacoes), spark: spark((k) => k.qtdTransacoes),
+      note: `Mês vigente · ${formatMesRef(periodo)}` },
+    { label: 'Saldo médio em conta', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio),
+      delta: varDe((k) => k.saldoMedio), spark: spark((k) => k.saldoMedio), note: 'Média do período' },
   ]
 
-  const secundarios = [
+  /** NÍVEL 2 — qualificadores do mesmo dado. */
+  const qualificadores = [
+    { label: 'MED', fig: kpis.qtdMed === null ? null : figuraQuantidade(kpis.qtdMed),
+      delta: varDe((k) => k.qtdMed),
+      note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações` },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3),
       delta: varDe((k) => k.takeRate), note: 'Receita ÷ TPV' },
-    { label: 'Saldo Médio', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio),
-      delta: varDe((k) => k.saldoMedio), note: 'Média do período' },
-    { label: '% de MEDs', fig: kpis.percentMed === null ? null : figuraPercentual(kpis.percentMed, 2),
-      delta: varDe((k) => k.percentMed),
-      note: kpis.qtdMed !== null ? `${figuraQuantidade(kpis.qtdMed).valor} MEDs` : undefined },
-    { label: 'MRR', fig: figuraMoeda(clientes.mrr), note: `${clientes.contasAtivas} contas ativas` },
+    { label: 'Faturamento', fig: receita ? figuraMoeda(receita.total) : null,
+      note: 'Soma das 4 linhas de receita' },
+  ]
+
+  /**
+   * NÍVEL 3 — estrutura do negócio. Cada um vem de onde é lançado:
+   * clientes ativos do Lançamento Diário; BaaS e White Labels das Condições
+   * Comerciais BaaS. É a mesma fonte usada pelo Conselho e pelo Financeiro.
+   */
+  const estruturais = [
+    { label: 'Clientes ativos', fig: estrutura.clientesAtivos === null ? null : figuraContagem(estrutura.clientesAtivos),
+      note: 'Lançamento diário · fotografia do último dia informado' },
+    { label: 'BaaS ativos', fig: figuraContagem(estrutura.baasAtivos),
+      note: 'Condições Comerciais BaaS' },
+    { label: 'White Labels ativos', fig: figuraContagem(estrutura.whiteLabelsAtivos),
+      note: 'Condições Comerciais BaaS' },
   ]
 
   const chartData = periodos.map((p, i) => {
@@ -90,23 +110,6 @@ export default async function DashboardPage() {
       margemRealizada: null,
     }
   })
-
-  /** Atenção: metas abaixo de 70% e volumetria não atingida. Só o que já existe. */
-  const alertas = [
-    ...metas
-      .filter((m) => m.atingimento !== null && m.atingimento < 70)
-      .map((m) => ({
-        tone: (m.atingimento! < 40 ? 'neg' : 'warn') as BadgeTone,
-        titulo: `${ROTULO_META[m.tipo] ?? m.tipo} em ${m.atingimento!.toFixed(0)}% da meta`,
-        href: '/dashboard/metas',
-      })),
-    ...(volumetria?.status === 'NAO_ATINGIDO'
-      ? [{ tone: 'neg' as BadgeTone, titulo: 'Volumetria mínima contratada não atingida', href: '/dashboard/volumetria' }]
-      : []),
-    ...(!kpis.temDados
-      ? [{ tone: 'warn' as BadgeTone, titulo: 'Nenhum lançamento diário no mês corrente', href: '/dashboard/forecast' }]
-      : []),
-  ]
 
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -139,7 +142,6 @@ export default async function DashboardPage() {
         </Panel>
       )}
 
-      {/* NÍVEL 1 — os quatro números que respondem "como estamos". */}
       <HairlineGrid cols={4}>
         {principais.map((c) => (
           <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta}
@@ -147,72 +149,31 @@ export default async function DashboardPage() {
         ))}
       </HairlineGrid>
 
-      {/* NÍVEL 2 — qualificadores. Mesma grade, sem sparkline: menos ruído. */}
-      <HairlineGrid cols={4}>
-        {secundarios.map((c) => (
+      <HairlineGrid cols={3}>
+        {qualificadores.map((c) => (
           <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta} note={c.note} size="sm" />
         ))}
       </HairlineGrid>
 
-      {/* Painel largo: atenção + volumetria juntas, em vez de dois cards soltos. */}
-      {(alertas.length > 0 || volumetria) && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Panel className="lg:col-span-2" padded={false}>
-            <div className="p-5 sm:p-6 pb-3">
-              <PanelHeader title="Requer atenção" sub="Derivado das metas e da volumetria do período." />
-            </div>
-            {alertas.length === 0 ? (
-              <EmptyState compact title="Nada em alerta" description="Metas e volumetria dentro do esperado." />
-            ) : (
-              <ul className="divide-y divide-line border-t border-line">
-                {alertas.map((a) => (
-                  <li key={a.titulo}>
-                    <Link href={a.href}
-                      className="group flex items-center gap-3 px-5 sm:px-6 py-3.5 transition-colors duration-[180ms] hover:bg-surface-2">
-                      <Badge tone={a.tone}>{a.tone === 'neg' ? 'Crítico' : 'Atenção'}</Badge>
-                      <span className="t-body text-fg bp-truncate flex-1">{a.titulo}</span>
-                      <span aria-hidden className="t-sm text-subtle transition-transform duration-[180ms] group-hover:translate-x-0.5">→</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          {volumetria && (
-            <Panel className="flex flex-col justify-between gap-4">
-              {/* De onde vem o mínimo: soma dos contratos por cliente ou contrato geral. */}
-              <PanelHeader
-                title="Volumetria mínima"
-                sub={volumetria.origem === 'CLIENTES'
-                  ? `Soma de ${volumetria.clientes} ${volumetria.clientes === 1 ? 'cliente' : 'clientes'} · ${formatMesRef(periodo)}`
-                  : `Contrato geral · ${formatMesRef(periodo)}`}
-              />
-              <div>
-                <Figure figura={volumetria.realizado === null ? null : figuraQuantidade(volumetria.realizado)} />
-                <Contexto className="block mt-2">
-                  de {figuraQuantidade(volumetria.qtdMinima).completo} transações mínimas
-                </Contexto>
-              </div>
-              <div className="space-y-2.5">
-                <MetaBar pct={volumetria.realizado === null ? null : (volumetria.realizado / volumetria.qtdMinima) * 100} />
-                <Badge tone={VOLUMETRIA[volumetria.status]?.tone ?? 'neutral'}>
-                  {VOLUMETRIA[volumetria.status]?.label ?? 'Sem dados'}
-                </Badge>
-              </div>
-            </Panel>
-          )}
-        </div>
-      )}
+      <section className="space-y-4">
+        <PanelHeader
+          title="Estrutura da carteira"
+          sub="Clientes ativos vêm do lançamento diário; BaaS e White Labels, das condições comerciais."
+        />
+        <HairlineGrid cols={3}>
+          {estruturais.map((c) => (
+            <StatTile key={c.label} label={c.label} figura={c.fig} note={c.note} size="sm" />
+          ))}
+        </HairlineGrid>
+      </section>
 
       {receita && (
         <section className="space-y-4">
           <PanelHeader title="Composição da receita" sub="Cada linha tem origem única. A soma é o faturamento do período." />
-          <HairlineGrid cols={5}>
+          <HairlineGrid cols={4}>
             {([
               ['Tarifário', receita.tarifario], ['Float', receita.float],
               ['Sustentação', receita.sustentacao], ['Setup', receita.setup],
-              ['Serviços', receita.servicos],
             ] as const).map(([label, valor]) => (
               <HairlineCell key={label} className="gap-2.5">
                 <p className="t-label text-subtle">{label}</p>
@@ -228,38 +189,41 @@ export default async function DashboardPage() {
 
       {metas.length > 0 && (
         <section className="space-y-4">
-          <PanelHeader title="Meta × Realizado" sub={formatMesRef(periodo)} />
+          {/* A meta é o esperado; o realizado vem do lançamento diário. Nenhum
+              dos dois é digitado nesta tela. */}
+          <PanelHeader title="Meta × Realizado" sub={`${formatMesRef(periodo)} · realizado apurado do lançamento diário`} />
           <HairlineGrid cols={5}>
-            {metas.map((m) => (
-              <HairlineCell key={m.tipo} className="gap-2.5">
-                <p className="t-label text-subtle bp-truncate" title={ROTULO_META[m.tipo] ?? m.tipo}>
-                  {ROTULO_META[m.tipo] ?? m.tipo}
-                </p>
-                {m.realizado === null
-                  ? <NoData />
-                  : <Figure figura={figuraQuantidade(m.realizado)} size="sm" />}
-                <p className="t-sm text-subtle" title={moedaCheia(m.meta)}>
-                  meta {figuraQuantidade(m.meta).valor}{figuraQuantidade(m.meta).unidade && ` ${figuraQuantidade(m.meta).unidade}`}
-                </p>
-                <div className="mt-auto pt-2 space-y-2">
-                  <MetaBar pct={m.atingimento} />
-                  <p className={
-                    m.atingimento === null ? 't-mono text-subtle'
-                      : m.atingimento >= 100 ? 't-mono text-pos'
-                      : m.atingimento >= 70 ? 't-mono text-warn' : 't-mono text-neg'
-                  }>
-                    {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}% da meta`}
+            {metas.map((m) => {
+              const fmt = META_MONETARIA.has(m.tipo) ? figuraMoeda : figuraQuantidade
+              return (
+                <HairlineCell key={m.tipo} className="gap-2.5">
+                  <p className="t-label text-subtle bp-truncate" title={ROTULO_META[m.tipo] ?? m.tipo}>
+                    {ROTULO_META[m.tipo] ?? m.tipo}
                   </p>
-                </div>
-              </HairlineCell>
-            ))}
+                  {m.realizado === null ? <NoData /> : <Figure figura={fmt(m.realizado)} size="sm" />}
+                  <p className="t-sm text-subtle" title={META_MONETARIA.has(m.tipo) ? moedaCheia(m.meta) : undefined}>
+                    meta {fmt(m.meta).completo}
+                  </p>
+                  <div className="mt-auto pt-2 space-y-2">
+                    <MetaBar pct={m.atingimento} />
+                    <p className={
+                      m.atingimento === null ? 't-mono text-subtle'
+                        : m.atingimento >= 100 ? 't-mono text-pos'
+                        : m.atingimento >= 70 ? 't-mono text-warn' : 't-mono text-neg'
+                    }>
+                      {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}% da meta`}
+                    </p>
+                  </div>
+                </HairlineCell>
+              )
+            })}
           </HairlineGrid>
         </section>
       )}
 
       <DashboardCharts
         chartData={chartData}
-        mrrEvolution={periodos.map((p) => ({ mes: p, mrr: clientes.mrr }))}
+        mrrEvolution={periodos.map((p) => ({ mes: p, mrr: estrutura.mrr.total }))}
       />
     </div>
   )

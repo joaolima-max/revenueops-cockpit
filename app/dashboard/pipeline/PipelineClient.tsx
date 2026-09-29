@@ -14,7 +14,13 @@ import type { AcessoFunil, FunilResumo, EtapaResumo, Card } from '@/components/p
 
 interface Lead { id: string; name: string; company: string | null }
 
-const FORM_VAZIO = { title: '', value: '', probability: '30', leadId: '' }
+/**
+ * O card NASCE de um Lead que já existe (§7). O Pipeline não cadastra Lead:
+ * quem entra aqui escolhe um Lead, a etapa em que clicou e salva. O título do
+ * card vem do próprio Lead — não há um segundo lugar para escrever o nome da
+ * oportunidade e depois ele divergir do cadastro.
+ */
+const FORM_VAZIO = { valor: '', probability: '30', leadId: '' }
 
 export default function PipelineClient({ leads, podeAdministrar }: {
   leads: Lead[]
@@ -77,15 +83,16 @@ export default function PipelineClient({ leads, podeAdministrar }: {
   }
 
   async function criar(etapaId: string) {
-    if (!form.title || !form.value) return
+    const lead = leads.find((l) => l.id === form.leadId)
+    if (!lead) return
     setSalvando(true); setErro('')
     const res = await fetch('/api/deals', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: form.title,
-        value: parseFloat(form.value),
+        title: lead.company || lead.name,
+        value: form.valor ? parseFloat(form.valor) : 0,
         probability: parseInt(form.probability) || 0,
-        leadId: form.leadId || null,
+        leadId: lead.id,
         etapaId,
       }),
     })
@@ -108,7 +115,7 @@ export default function PipelineClient({ leads, podeAdministrar }: {
           <EmptyState
             title="Nenhum funil disponível"
             description="Você não tem acesso a nenhum funil ativo. Um administrador precisa liberar o acesso ou criar um funil."
-            action={podeAdministrar ? <Link href="/dashboard/pipeline/funis"><Button variant="primary">Gerenciar funis</Button></Link> : undefined}
+            action={podeAdministrar ? <Link href="/dashboard/funis"><Button variant="primary">Gerenciar funis</Button></Link> : undefined}
           />
         </Panel>
       </div>
@@ -121,7 +128,7 @@ export default function PipelineClient({ leads, podeAdministrar }: {
         title="Pipeline"
         sub={`${cards.length} ${cards.length === 1 ? 'negócio' : 'negócios'} · Valor ponderado ${formatCurrency(totalPonderado)}`}
         actions={podeAdministrar
-          ? <Link href="/dashboard/pipeline/funis"><Button>Gerenciar funis</Button></Link>
+          ? <Link href="/dashboard/funis"><Button>Gerenciar funis</Button></Link>
           : undefined}
       />
 
@@ -214,27 +221,29 @@ export default function PipelineClient({ leads, podeAdministrar }: {
 
                   {acesso?.criar && (criando ? (
                     <div className="bg-surface-2 border border-line rounded-lg p-2.5 space-y-2">
-                      <input autoFocus value={form.title} placeholder="Título *"
-                        onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                        className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
-                      <input type="number" value={form.value} placeholder="Valor R$ *"
-                        onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
-                        className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
+                      <select autoFocus value={form.leadId}
+                        onChange={(e) => setForm((p) => ({ ...p, leadId: e.target.value }))}
+                        className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent">
+                        <option value="">Selecione o lead *</option>
+                        {leads.map((l) => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
+                      </select>
+                      {leads.length === 0 && (
+                        <p className="t-label text-subtle">
+                          Nenhum lead cadastrado. Cadastre em <Link href="/dashboard/leads" className="text-accent-soft">Leads</Link>.
+                        </p>
+                      )}
                       <div className="grid grid-cols-2 gap-1.5">
+                        <input type="number" value={form.valor} placeholder="Valor R$"
+                          onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))}
+                          className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
                         <input type="number" min="0" max="100" value={form.probability} placeholder="% prob."
                           onChange={(e) => setForm((p) => ({ ...p, probability: e.target.value }))}
                           className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent" />
-                        <select value={form.leadId}
-                          onChange={(e) => setForm((p) => ({ ...p, leadId: e.target.value }))}
-                          className="w-full bg-bg border border-line rounded px-2 py-1.5 t-sm text-fg focus:outline-none focus:border-accent">
-                          <option value="">Lead opc.</option>
-                          {leads.map((l) => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
-                        </select>
                       </div>
                       <div className="flex gap-1.5">
                         <Button size="sm" className="flex-1" onClick={() => { setCriandoEm(null); setForm(FORM_VAZIO) }}>Cancelar</Button>
                         <Button size="sm" variant="primary" className="flex-1"
-                          disabled={salvando || !form.title || !form.value}
+                          disabled={salvando || !form.leadId}
                           onClick={() => criar(etapa.id)}>
                           {salvando ? '...' : 'Criar'}
                         </Button>

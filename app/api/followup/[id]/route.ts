@@ -8,7 +8,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params
   const body = await request.json()
-  const { titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, frequenciaDias, ultimoContato, proximoContato } = body
+  const { titulo, descricao, tipo, recorrente, diaSemana, horaInicio, horaFim, dataInicio, dataFim, notas, picoIntervaloDias, ultimoContato, proximoContato } = body
 
   const followUp = await prisma.followUp.update({
     where: { id },
@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ...(dataInicio !== undefined && { dataInicio: !recorrente && dataInicio ? new Date(dataInicio) : null }),
       ...(dataFim !== undefined && { dataFim: !recorrente && dataFim ? new Date(dataFim) : null }),
       notas: notas !== undefined ? notas || null : undefined,
-      frequenciaDias: frequenciaDias !== undefined ? (frequenciaDias ? parseInt(frequenciaDias) : null) : undefined,
+      picoIntervaloDias: picoIntervaloDias !== undefined ? (picoIntervaloDias ? parseInt(picoIntervaloDias) : null) : undefined,
       ultimoContato: ultimoContato !== undefined ? (ultimoContato ? new Date(ultimoContato) : null) : undefined,
       proximoContato: proximoContato !== undefined ? (proximoContato ? new Date(proximoContato) : null) : undefined,
     },

@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  formatCurrency, formatTPV, formatPercent, formatDate, formatMesRef,
+  formatCurrency, formatDate,
   CLIENTE_STATUS_LABELS, CLIENTE_STATUS_COLORS, MODELO_OPERACIONAL_LABELS,
-  SEGMENTO_LABELS, SEGMENTO_COLORS, OPERACAO_LABELS, SCORE_RISCO_LABELS, SCORE_RISCO_COLORS,
+  SEGMENTO_CRM_LABELS,
 } from '@/lib/utils'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -16,12 +16,9 @@ interface FollowUpItem { id: string; titulo: string; descricao: string | null; t
 
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null; telefone: string | null
-  modeloOperacional: string; status: string; segmento: string | null; operacao: string | null; scoreRisco: string | null
+  modeloOperacional: string; status: string; segmento: string | null
   dataFechamento: string | null; dataEncerramento: string | null
-  mensalidadeApi: number | null; sustentacaoWhiteLabel: number | null; setup: number | null
-  tpvEsperado: number | null; qtdTransacoesEsperada: number | null; qtdMedEsperada: number | null
-  receitaPrevistaMensal: number | null
-  descontoPercent: number | null; overpricePercent: number | null; notas: string | null
+  mensalidadeApi: number | null; notas: string | null
   owner: { id: string; name: string }
   tarefas: TarefaItem[]
   contasReceber: ContaItem[]; followUps: FollowUpItem[]
@@ -37,9 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'relacionamento', label: 'Relacionamento' },
 ]
-const SEGMENTOS = ['IGAMING', 'ECOMMERCE', 'SAAS', 'ERP', 'TELECOM', 'CRIPTOMOEDAS', 'VAREJO', 'OUTROS']
-const OPERACOES = ['CASH_IN', 'CASH_OUT', 'BAAS', 'WHITE_LABEL']
-const SCORES = ['BAIXO', 'MEDIO', 'ALTO', 'CRITICO']
+const MODELOS = ['API', 'BAAS', 'WHITE_LABEL'] as const
 const PRIORIDADE_COLORS: Record<string, string> = { CRITICA: 'text-neg', ALTA: 'text-warn', MEDIA: 'text-accent-soft', BAIXA: 'text-subtle' }
 const STATUS_TAREFA_LABELS: Record<string, string> = { PENDENTE: 'Pendente', EM_ANDAMENTO: 'Em andamento', CONCLUIDA: 'Concluída', CANCELADA: 'Cancelada' }
 const CONTA_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-warn', FATURADO: 'text-accent-soft', PAGO: 'text-pos', INADIMPLENTE: 'text-neg' }
@@ -48,17 +43,8 @@ const CONTA_STATUS_COLORS: Record<string, string> = { PENDENTE: 'text-warn', FAT
 function toEditForm(c: Cliente) {
   return {
     nome: c.nome, cnpj: c.cnpj || '', email: c.email || '', telefone: c.telefone || '',
-    modeloOperacional: c.modeloOperacional, segmento: c.segmento || '', operacao: c.operacao || '',
-    scoreRisco: c.scoreRisco || '',
+    modeloOperacional: c.modeloOperacional, segmento: c.segmento || '',
     mensalidadeApi: c.mensalidadeApi != null ? String(c.mensalidadeApi) : '',
-    sustentacaoWhiteLabel: c.sustentacaoWhiteLabel != null ? String(c.sustentacaoWhiteLabel) : '',
-    setup: c.setup != null ? String(c.setup) : '',
-    tpvEsperado: c.tpvEsperado != null ? String(c.tpvEsperado) : '',
-    qtdTransacoesEsperada: c.qtdTransacoesEsperada != null ? String(c.qtdTransacoesEsperada) : '',
-    qtdMedEsperada: c.qtdMedEsperada != null ? String(c.qtdMedEsperada) : '',
-    receitaPrevistaMensal: c.receitaPrevistaMensal != null ? String(c.receitaPrevistaMensal) : '',
-    descontoPercent: c.descontoPercent != null ? String(c.descontoPercent) : '',
-    overpricePercent: c.overpricePercent != null ? String(c.overpricePercent) : '',
     dataFechamento: c.dataFechamento ? c.dataFechamento.slice(0, 10) : '',
     notas: c.notas || '',
     ownerId: c.owner.id,
@@ -69,10 +55,9 @@ function toEditForm(c: Cliente) {
 
 export default function ClienteDetailClient({
   cliente: initial, users, role, currentUserId,
-  ltv, cac, ltvMeses, healthScore,
+  healthScore,
 }: {
   cliente: Cliente; users: User[]; role: string; currentUserId: string
-  ltv: number; cac: number; ltvMeses: number
   healthScore: number
 }) {
   const router = useRouter()
@@ -86,7 +71,7 @@ export default function ClienteDetailClient({
   const [editForm, setEditForm] = useState(toEditForm(initial))
   const [tarefaForm, setTarefaForm] = useState({ titulo: '', prioridade: 'MEDIA', dueDate: '', responsavelId: currentUserId })
 
-  const mrr = (cliente.mensalidadeApi || 0) + (cliente.sustentacaoWhiteLabel || 0)
+  const mrr = cliente.mensalidadeApi || 0
 
   const inp = 'bp-field'
   const lbl = 'bp-field-label'
@@ -124,19 +109,13 @@ export default function ClienteDetailClient({
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     const n = (v: string) => v !== '' ? parseFloat(v) : null
-    const ni = (v: string) => v !== '' ? parseInt(v) : null
     const res = await fetch(`/api/clientes/${cliente.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nome: editForm.nome, cnpj: editForm.cnpj || null, email: editForm.email || null,
         telefone: editForm.telefone || null, modeloOperacional: editForm.modeloOperacional,
-        segmento: editForm.segmento || null, operacao: editForm.operacao || null,
-        scoreRisco: editForm.scoreRisco || null,
-        mensalidadeApi: n(editForm.mensalidadeApi), sustentacaoWhiteLabel: n(editForm.sustentacaoWhiteLabel),
-        setup: n(editForm.setup), tpvEsperado: n(editForm.tpvEsperado),
-        qtdTransacoesEsperada: ni(editForm.qtdTransacoesEsperada), qtdMedEsperada: ni(editForm.qtdMedEsperada),
-        receitaPrevistaMensal: n(editForm.receitaPrevistaMensal),
-        descontoPercent: n(editForm.descontoPercent), overpricePercent: n(editForm.overpricePercent),
+        segmento: editForm.segmento || null,
+        mensalidadeApi: n(editForm.mensalidadeApi),
         dataFechamento: editForm.dataFechamento || null, notas: editForm.notas || null, ownerId: editForm.ownerId,
       }),
     })
@@ -193,8 +172,7 @@ export default function ClienteDetailClient({
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CLIENTE_STATUS_COLORS[statusEdit]}`}>{CLIENTE_STATUS_LABELS[statusEdit]}</span>
                 <span className="text-xs text-subtle">{MODELO_OPERACIONAL_LABELS[cliente.modeloOperacional]}</span>
-                {cliente.segmento && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEGMENTO_COLORS[cliente.segmento]}`}>{SEGMENTO_LABELS[cliente.segmento]}</span>}
-                {cliente.scoreRisco && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_RISCO_COLORS[cliente.scoreRisco]}`}>{SCORE_RISCO_LABELS[cliente.scoreRisco]}</span>}
+                {cliente.segmento && <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-surface-2 text-muted border border-line-2">{SEGMENTO_CRM_LABELS[cliente.segmento] ?? cliente.segmento}</span>}
                 {cliente.cnpj && <span className="text-xs text-subtle">{cliente.cnpj}</span>}
               </div>
             </div>
@@ -237,14 +215,14 @@ export default function ClienteDetailClient({
         {/* ── VISÃO GERAL ──────────────────────────────────────────────────── */}
         {tab === 'visao-geral' && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            {/* Três números que o cadastro de fato tem. As expectativas
+                financeiras (TPV esperado, receita prevista, desconto) saíram do
+                cliente: o realizado é global e vem do lançamento diário. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { label: 'MRR contratado', value: mrr > 0 ? formatCurrency(mrr) : '—', color: 'text-pos' },
                 { label: 'Mensalidade API', value: cliente.mensalidadeApi ? formatCurrency(cliente.mensalidadeApi) : '—', color: 'text-accent-soft' },
-                { label: 'Sustentação WL', value: cliente.sustentacaoWhiteLabel ? formatCurrency(cliente.sustentacaoWhiteLabel) : '—', color: 'text-accent-soft' },
-                { label: 'Setup', value: cliente.setup ? formatCurrency(cliente.setup) : '—', color: 'text-warn' },
-                { label: 'TPV esperado', value: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : '—', color: 'text-muted' },
-                { label: 'Receita prevista', value: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : '—', color: 'text-muted' },
+                { label: 'A receber em aberto', value: formatCurrency(cliente.contasReceber.filter(c => c.status !== 'PAGO').reduce((a, c) => a + c.valor, 0)), color: 'text-warn' },
+                { label: 'Saúde', value: `${healthScore}/100`, color: 'text-muted' },
               ].map(k => (
                 <div key={k.label} className="bg-surface border border-line rounded-xl p-4">
                   <p className="text-subtle text-[10px] uppercase tracking-wide mb-1.5">{k.label}</p>
@@ -262,12 +240,9 @@ export default function ClienteDetailClient({
                     { l: 'Responsável', v: cliente.owner.name },
                     { l: 'Email', v: cliente.email },
                     { l: 'Telefone', v: cliente.telefone },
-                    { l: 'Operação', v: cliente.operacao ? OPERACAO_LABELS[cliente.operacao] : null },
+                    { l: 'Segmento', v: cliente.segmento ? (SEGMENTO_CRM_LABELS[cliente.segmento] ?? cliente.segmento) : null },
                     { l: 'Fechamento', v: cliente.dataFechamento ? formatDate(cliente.dataFechamento) : null },
-                    { l: 'MRR', v: mrr > 0 ? formatCurrency(mrr) : null },
-                    { l: 'TPV Esperado', v: cliente.tpvEsperado ? formatTPV(cliente.tpvEsperado) : null },
-                    { l: 'Receita Prevista/Mês', v: cliente.receitaPrevistaMensal ? formatCurrency(cliente.receitaPrevistaMensal) : null },
-                    { l: 'Desconto', v: cliente.descontoPercent ? `${cliente.descontoPercent}%` : null },
+                    { l: 'Mensalidade de API', v: mrr > 0 ? formatCurrency(mrr) : null },
                   ] as { l: string; v: string | null }[]).filter(r => r.v).map(({ l, v }) => (
                     <div key={l} className="flex justify-between gap-3">
                       <span className="text-subtle flex-shrink-0">{l}</span>
@@ -466,25 +441,13 @@ export default function ClienteDetailClient({
                 <div><label className={lbl}>CNPJ</label><input value={editForm.cnpj} onChange={ef('cnpj')} placeholder="00.000.000/0001-00" className={inp} /></div>
                 <div><label className={lbl}>Modelo *</label>
                   <select value={editForm.modeloOperacional} onChange={ef('modeloOperacional')} className={inp}>
-                    <option value="API">API</option><option value="WHITE_LABEL">White Label</option>
+                    {MODELOS.map(m => <option key={m} value={m}>{MODELO_OPERACIONAL_LABELS[m]}</option>)}
                   </select>
                 </div>
                 <div><label className={lbl}>Segmento</label>
                   <select value={editForm.segmento} onChange={ef('segmento')} className={inp}>
                     <option value="">Selecione</option>
-                    {SEGMENTOS.map(s => <option key={s} value={s}>{SEGMENTO_LABELS[s]}</option>)}
-                  </select>
-                </div>
-                <div><label className={lbl}>Operação</label>
-                  <select value={editForm.operacao} onChange={ef('operacao')} className={inp}>
-                    <option value="">Selecione</option>
-                    {OPERACOES.map(o => <option key={o} value={o}>{OPERACAO_LABELS[o]}</option>)}
-                  </select>
-                </div>
-                <div><label className={lbl}>Score de Risco</label>
-                  <select value={editForm.scoreRisco} onChange={ef('scoreRisco')} className={inp}>
-                    <option value="">Selecione</option>
-                    {SCORES.map(s => <option key={s} value={s}>{SCORE_RISCO_LABELS[s]}</option>)}
+                    {Object.entries(SEGMENTO_CRM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
                 </div>
                 <div><label className={lbl}>Responsável</label>
@@ -492,24 +455,10 @@ export default function ClienteDetailClient({
                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
-                <div><label className={lbl}>Email</label><input type="email" value={editForm.email} onChange={ef('email')} className={inp} /></div>
+                <div><label className={lbl}>E-mail</label><input type="email" value={editForm.email} onChange={ef('email')} className={inp} /></div>
                 <div><label className={lbl}>Telefone</label><input value={editForm.telefone} onChange={ef('telefone')} className={inp} /></div>
                 <div><label className={lbl}>Data de Fechamento</label><input type="date" value={editForm.dataFechamento} onChange={ef('dataFechamento')} className={inp} /></div>
-              </div>
-
-              <div className="border-t border-line pt-4">
-                <p className="text-[10px] text-subtle font-semibold tracking-widest mb-3">FINANCEIRO</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><label className={lbl}>Mensalidade API (R$)</label><input type="number" step="0.01" value={editForm.mensalidadeApi} onChange={ef('mensalidadeApi')} className={inp} /></div>
-                  <div><label className={lbl}>Sustentação WL (R$)</label><input type="number" step="0.01" value={editForm.sustentacaoWhiteLabel} onChange={ef('sustentacaoWhiteLabel')} className={inp} /></div>
-                  <div><label className={lbl}>Setup (R$)</label><input type="number" step="0.01" value={editForm.setup} onChange={ef('setup')} className={inp} /></div>
-                  <div><label className={lbl}>Receita Prevista/Mês (R$)</label><input type="number" step="0.01" value={editForm.receitaPrevistaMensal} onChange={ef('receitaPrevistaMensal')} className={inp} /></div>
-                  <div><label className={lbl}>TPV Esperado (R$)</label><input type="number" step="0.01" value={editForm.tpvEsperado} onChange={ef('tpvEsperado')} className={inp} /></div>
-                  <div><label className={lbl}>Qtd. Transações/Mês</label><input type="number" value={editForm.qtdTransacoesEsperada} onChange={ef('qtdTransacoesEsperada')} className={inp} /></div>
-                  <div><label className={lbl}>Qtd. MED/Mês</label><input type="number" value={editForm.qtdMedEsperada} onChange={ef('qtdMedEsperada')} className={inp} /></div>
-                  <div><label className={lbl}>Desconto (%)</label><input type="number" step="0.01" min="0" max="100" value={editForm.descontoPercent} onChange={ef('descontoPercent')} className={inp} /></div>
-                  <div><label className={lbl}>Overprice (%)</label><input type="number" step="0.01" min="0" value={editForm.overpricePercent} onChange={ef('overpricePercent')} className={inp} /></div>
-                </div>
+                <div><label className={lbl}>Mensalidade de API (R$)</label><input type="number" step="0.01" min="0" value={editForm.mensalidadeApi} onChange={ef('mensalidadeApi')} className={inp} /></div>
               </div>
 
               <div><label className={lbl}>Notas</label><textarea rows={2} value={editForm.notas} onChange={ef('notas')} className={inp + ' resize-none'} /></div>

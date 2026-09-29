@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, linhasReceita, metasDoPeriodo, contagensClientes,
-  volumetriaDoPeriodo, periodoAtual, ultimosPeriodos,
+  kpisDoPeriodo, linhasReceita, metasDoPeriodo, indicadoresEstrutura,
+  periodoAtual, ultimosPeriodos,
 } from '@/lib/kpi'
 
 /** Todos os números do cockpit vêm daqui, e daqui vêm de uma fonte só cada um. */
@@ -16,17 +16,18 @@ export async function GET(request: NextRequest) {
   }
 
   const periodos = ultimosPeriodos(12)
-  const [kpis, receita, metas, clientes, volumetria, serie] = await Promise.all([
+  const [kpis, receita, metas, estrutura, serie] = await Promise.all([
     kpisDoPeriodo(periodo),
     linhasReceita(periodo),
     metasDoPeriodo(periodo),
-    contagensClientes(),
-    volumetriaDoPeriodo(periodo),
+    indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
   ])
 
+  // A volumetria saiu do Cockpit (§10): continua no seu próprio ambiente, que
+  // consulta /api/volumetria. Não é mais devolvida aqui.
   return NextResponse.json({
-    periodo, kpis, receita, metas, clientes, volumetria,
+    periodo, kpis, receita, metas, estrutura,
     evolucao: serie.map((k) => ({
       periodo: k.periodo,
       temDados: k.temDados,
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
       float: k.float,
       qtdTransacoes: k.qtdTransacoes,
       takeRate: k.takeRate,
+      clientesAtivos: k.clientesAtivos,
     })),
   })
 }
