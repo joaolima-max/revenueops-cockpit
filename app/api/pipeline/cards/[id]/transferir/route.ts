@@ -62,7 +62,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const funilOrigemId = ctx.deal.funilId
   const etapaOrigemId = ctx.deal.etapaId
   const stage = stageLegado(etapa.id)
-  const encerra = etapa.tipo === 'GANHO' || etapa.tipo === 'PERDIDO'
+  // Transferir de funil preserva o RESULTADO do card: o desfecho e do negocio,
+  // nao da coluna em que ele esta.
   const nota = observacao ? String(observacao).slice(0, 500) : null
 
   const card = await prisma.$transaction(async (tx) => {
@@ -73,7 +74,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         etapaId: etapa.id,
         ...(clienteInformadoId ? { clienteId: clienteInformadoId } : {}),
         ...(stage ? { stage: stage as never } : {}),
-        closedAt: encerra ? new Date() : null,
       },
       include: INCLUDE_CARD,
     })

@@ -13,6 +13,49 @@
 
 import { hasPermission } from '@/lib/permissions'
 
+/* ========================================================================= *
+ * RESULTADO DO CARD
+ *
+ * Ganho e Perdido NAO sao etapas — sao o desfecho do processo comercial. A
+ * distincao nao e cosmetica: como coluna, "Ganho" engolia todos os cards
+ * fechados e destruia a informacao de ONDE eles fecharam; e um card perdido na
+ * Negociacao precisava sair da Negociacao para ser marcado como perdido, o que
+ * falsificava a propria etapa.
+ *
+ * Etapa e resultado sao, por isso, dois eixos independentes do mesmo card.
+ * ========================================================================= */
+
+export const RESULTADOS = ['EM_ANDAMENTO', 'GANHO', 'PERDIDO'] as const
+export type ResultadoCard = (typeof RESULTADOS)[number]
+
+export const RESULTADO_LABEL: Record<ResultadoCard, string> = {
+  EM_ANDAMENTO: 'Em andamento',
+  GANHO: 'Ganho',
+  PERDIDO: 'Perdido',
+}
+
+/** Um resultado diferente de EM_ANDAMENTO encerra o card. */
+export function encerraCard(r: ResultadoCard): boolean {
+  return r !== 'EM_ANDAMENTO'
+}
+
+/**
+ * Regras da mudanca de resultado. Devolve a mensagem de erro, ou null.
+ *
+ * Reabrir um card ganho/perdido e permitido de proposito: negocio volta atras,
+ * e a alternativa seria o operador criar um card duplicado para corrigir o
+ * desfecho — que e como uma base de pipeline vira duas.
+ */
+export function validarMudancaResultado(
+  atual: ResultadoCard, novo: unknown,
+): string | null {
+  if (!RESULTADOS.includes(novo as ResultadoCard)) {
+    return `Resultado invalido. Use: ${RESULTADOS.join(', ')}.`
+  }
+  if (novo === atual) return 'O card ja esta com esse resultado.'
+  return null
+}
+
 export const ACOES_FUNIL = ['ver', 'editar', 'mover', 'criar', 'transferir', 'administrar'] as const
 export type AcaoFunil = (typeof ACOES_FUNIL)[number]
 
@@ -124,6 +167,17 @@ export function resolverAcesso(s: SessaoMinima, linhas: LinhaPermissao[]): Acess
     administrar: false,
     apenasProprios: false,
   }
+}
+
+/**
+ * Quem pode mudar o RESULTADO de um card.
+ *
+ * E a mesma alcada de operar o card: quem move entre etapas, ou edita, decide
+ * o desfecho. Criar uma acao propria para isso multiplicaria a matriz de
+ * permissoes sem nenhum caso de uso que a justifique.
+ */
+export function podeAlterarResultado(acesso: AcessoFunil): boolean {
+  return acesso.mover || acesso.editar
 }
 
 /** Renumera de 1..n na ordem recebida. Usado pela reordenacao de etapas e funis. */

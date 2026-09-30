@@ -7,6 +7,21 @@ import { hasPermission } from '@/lib/permissions'
 const TIPOS = ['RECEITA', 'DESPESA'] as const
 type Tipo = (typeof TIPOS)[number]
 
+/**
+ * Papel economico da categoria. So faz sentido em RECEITA: sao as tres linhas
+ * que os graficos financeiros reconhecem por si — Float, Setup e Sustentacao.
+ *
+ * E um CAMPO, e nao o nome digitado: renomear a categoria nao quebra o
+ * grafico, e duas categorias podem compartilhar a mesma natureza.
+ */
+const NATUREZAS = ['FLOAT', 'SETUP', 'SUSTENTACAO'] as const
+type Natureza = (typeof NATUREZAS)[number]
+
+function natureza(v: unknown, tipo: Tipo): Natureza | null {
+  if (tipo !== 'RECEITA') return null
+  return NATUREZAS.includes(v as Natureza) ? (v as Natureza) : null
+}
+
 function podeGerenciar(session: TokenPayload): boolean {
   return hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
 }
@@ -32,7 +47,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { nome, tipo } = await request.json()
+  const { nome, tipo, natureza: naturezaInformada } = await request.json()
   const n = String(nome ?? '').trim()
   if (!n) return NextResponse.json({ error: 'Informe o nome da categoria.' }, { status: 400 })
   if (!TIPOS.includes(tipo)) {
@@ -49,7 +64,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const categoria = await prisma.categoriaFinanceira.create({ data: { nome: n, tipo } })
+  const categoria = await prisma.categoriaFinanceira.create({
+    data: { nome: n, tipo, natureza: natureza(naturezaInformada, tipo) },
+  })
   await logAudit(session.userId, 'CRIOU_CATEGORIA_FINANCEIRA', 'CategoriaFinanceira', categoria.id, `${n} (${tipo})`)
 
   return NextResponse.json({ categoria }, { status: 201 })

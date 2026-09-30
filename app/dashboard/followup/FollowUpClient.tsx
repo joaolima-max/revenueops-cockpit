@@ -236,14 +236,25 @@ export default function FollowUpClient({ clientes }: Props) {
 
   const [registrandoId, setRegistrandoId] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
+  // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
+  // `.then`, e `vivo` evita escrever em componente já desmontado.
+  const buscar = useCallback(async (): Promise<FollowUp[] | null> => {
     const res = await fetch('/api/followup')
-    if (res.ok) { const d = await res.json(); setFollowUps(d.followUps) }
+    if (!res.ok) return null
+    const d = await res.json()
+    return (d.followUps ?? []) as FollowUp[]
+  }, [])
+
+  const aplicar = useCallback((lista: FollowUp[] | null) => {
+    if (lista) setFollowUps(lista)
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    let vivo = true
+    buscar().then((d) => { if (vivo) aplicar(d) })
+    return () => { vivo = false }
+  }, [buscar, aplicar])
 
   const f = (field: string) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>

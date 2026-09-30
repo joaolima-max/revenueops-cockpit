@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import BrandMark from '@/components/ui/BrandMark'
+import Logo from '@/components/ui/Logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -43,12 +43,11 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-ink px-4 py-10">
       <div className="w-full max-w-md px-4">
         <div className="bg-surface border border-line rounded-3xl shadow-[var(--bp-shadow-overlay)] p-8 sm:p-10">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center mb-6 text-fg">
-              <BrandMark size={44} />
-            </div>
-            <h1 className="t-h1 text-fg">Bass Pago</h1>
-            <p className="t-label text-subtle mt-2">RevOps</p>
+          {/* Só a logo oficial. O símbolo desenhado em SVG e o wordmark
+              escrito saíram junto com o branding anterior. */}
+          <div className="flex items-center justify-center mb-8">
+            <Logo altura={34} />
+            <h1 className="sr-only">Bass Pago</h1>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

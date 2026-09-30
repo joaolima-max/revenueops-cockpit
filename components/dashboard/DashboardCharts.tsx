@@ -1,19 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useSyncExternalStore } from 'react'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Line, Legend,
 } from 'recharts'
 import { formatMesRef, cn } from '@/lib/utils'
 import {
-  paleta, gridProps, axisProps, legendProps, cursorBarra, cursorLinha,
+  paleta, gridProps, axisProps, cursorBarra, cursorLinha,
   BAR, LINE, hasSeries, isFlat,
 } from '@/lib/chart-theme'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { makeTooltip } from '@/components/ui/ChartTooltip'
-import { eixoMoeda as fmtEixoMoeda, moedaCheia, quantidadeCompacta, percentual, variacao } from '@/lib/format-financeiro'
+import { eixoMoeda as fmtEixoMoeda, moedaCheia, percentual, variacao } from '@/lib/format-financeiro'
 import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 import { Delta } from '@/components/ui/Figure'
@@ -21,40 +20,73 @@ import { Delta } from '@/components/ui/Figure'
 interface ChartPoint {
   mes: string
   receitaTarifaria: number
-  floating: number
   tpv: number
-  faturamentoPrevisto: number
-  faturamentoRealizado: number | null
-  tpvPrevisto: number
-  tpvRealizado: number | null
   takeRate: number
-  margemPrevista: number | null
-  margemRealizada: number | null
 }
 
 interface MRRPoint { mes: string; mrr: number }
 
+/**
+ * Cada gráfico daqui tem FONTE REAL. Saíram nesta rodada:
+ *
+ *   * Margem Operacional — não é apurada a partir de nenhuma fonte do sistema;
+ *   * Faturamento previsto × realizado e TPV previsto × liquidado — o
+ *     "previsto" não existe em lugar nenhum do produto, então o gráfico era um
+ *     par de barras zeradas ao lado da série real.
+ *
+ * O Float também saiu: continua sendo calculado e aparece como linha de
+ * receita no Conselho, mas não é mais exibido no Cockpit.
+ */
 const CHART_DEFS = [
-  { id: 'receita', title: 'Receita Mensal', sub: 'Tarifária + Float' },
+  { id: 'receita', title: 'Receita Mensal', sub: 'Receita tarifária do lançamento diário' },
   { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal' },
-  { id: 'fat_forecast', title: 'Faturamento', sub: 'Previsto vs. realizado' },
-  { id: 'tpv_forecast', title: 'TPV', sub: 'Previsto vs. liquidado' },
   { id: 'tpv', title: 'TPV Mensal', sub: 'Volume total de pagamentos' },
   { id: 'takerate', title: 'Take Rate', sub: 'Receita tarifária ÷ TPV' },
-  { id: 'margem', title: 'Margem Operacional', sub: 'Previsto vs. realizado' },
 ]
 
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
-const LS_KEY = 'dashboard_chart_order'
+// Chave versionada: a lista de graficos mudou nesta rodada, e uma ordem
+// salva com os ids antigos nao deve sobreviver silenciosamente.
+const LS_KEY = 'dashboard_chart_order_v2'
 
-function loadOrder(): string[] {
-  if (typeof window === 'undefined') return DEFAULT_ORDER
+const PADRAO_SERIALIZADO = JSON.stringify(DEFAULT_ORDER)
+const EVENTO_ORDEM = 'bp-chart-order'
+
+/**
+ * A ordem dos gráficos é preferência LOCAL do usuário, guardada no navegador.
+ *
+ * Lida por `useSyncExternalStore` e não por efeito: o localStorage é um
+ * sistema externo ao React, e ler dele com `setState` dentro de um efeito
+ * causa uma renderização em cascata a cada montagem. O snapshot precisa ser a
+ * STRING crua — devolver um array novo a cada chamada faria o store considerar
+ * o valor sempre diferente e entrar em laço.
+ */
+function assinarOrdem(cb: () => void) {
+  window.addEventListener(EVENTO_ORDEM, cb)
+  window.addEventListener('storage', cb)
+  return () => {
+    window.removeEventListener(EVENTO_ORDEM, cb)
+    window.removeEventListener('storage', cb)
+  }
+}
+
+function ordemGuardada(): string {
   try {
-    const stored = localStorage.getItem(LS_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored) as string[]
-      if (parsed.length === DEFAULT_ORDER.length && DEFAULT_ORDER.every(id => parsed.includes(id))) return parsed
-    }
+    return localStorage.getItem(LS_KEY) ?? PADRAO_SERIALIZADO
+  } catch {
+    return PADRAO_SERIALIZADO
+  }
+}
+
+/** Valida contra a lista atual: uma ordem salva com ids antigos é descartada. */
+function interpretarOrdem(bruto: string): string[] {
+  try {
+    const parsed = JSON.parse(bruto) as string[]
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === DEFAULT_ORDER.length &&
+      DEFAULT_ORDER.every((id) => parsed.includes(id))
+    ) return parsed
   } catch {}
   return DEFAULT_ORDER
 }
@@ -111,19 +143,21 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
 
-  const [order, setOrder] = useState<string[]>(DEFAULT_ORDER)
+  const bruto = useSyncExternalStore(assinarOrdem, ordemGuardada, () => PADRAO_SERIALIZADO)
+  const order = useMemo(() => interpretarOrdem(bruto), [bruto])
+
   const [reordering, setReordering] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const dragOver = useRef<string | null>(null)
-
-  useEffect(() => { setOrder(loadOrder()) }, [])
 
   function handleDrop(targetId: string) {
     if (!draggingId || draggingId === targetId) return
     const next = [...order]
     next.splice(next.indexOf(targetId), 0, ...next.splice(next.indexOf(draggingId), 1))
-    setOrder(next)
-    localStorage.setItem(LS_KEY, JSON.stringify(next))
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(next))
+    } catch {}
+    window.dispatchEvent(new Event(EVENTO_ORDEM))
     setDraggingId(null)
   }
 
@@ -139,24 +173,20 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
 
   // Eixo sem centavos; tooltip e cards seguem com o valor cheio.
   const eixoMoeda = (v: number) => fmtEixoMoeda(v)
-  const eixoQtd = (v: number) => quantidadeCompacta(v)
   const eixoPct = (v: number) => `${v.toFixed(v < 1 ? 2 : 1)}%`
 
-  const grid = gridProps(p), eixo = axisProps(p), leg = legendProps(p), linha = LINE(p)
+  const grid = gridProps(p), eixo = axisProps(p), linha = LINE(p)
 
   const charts: Record<string, React.ReactNode> = {
-    receita: hasSeries(data, 'receitaTarifaria', 'floating') ? (
+    receita: hasSeries(data, 'receitaTarifaria') ? (
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="mes" {...eixo} />
           <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
           <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
-            [{ key: 'receitaTarifaria', nome: 'Tarifária', cor: p.s1 }, { key: 'floating', nome: 'Float', cor: p.s2 }],
-            moedaCheia)} />
-          <Legend {...leg} />
+            [{ key: 'receitaTarifaria', nome: 'Tarifária', cor: p.s1 }], moedaCheia)} />
           <Bar dataKey="receitaTarifaria" name="Tarifária" fill={p.s1} {...BAR} />
-          <Bar dataKey="floating" name="Float" fill={p.s2} {...BAR} />
         </BarChart>
       </ResponsiveContainer>
     ) : <NoSeries what="Nenhum lançamento diário nos últimos 12 meses." />,
@@ -189,38 +219,6 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
             </AreaChart>
           </ResponsiveContainer>
         ),
-
-    fat_forecast: hasSeries(data, 'faturamentoPrevisto', 'faturamentoRealizado') ? (
-      <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
-          <CartesianGrid {...grid} />
-          <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
-          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
-            [{ key: 'faturamentoPrevisto', nome: 'Previsto', cor: p.s3 },
-             { key: 'faturamentoRealizado', nome: 'Realizado', cor: p.s1 }], moedaCheia)} />
-          <Legend {...leg} />
-          <Bar dataKey="faturamentoPrevisto" name="Previsto" fill={p.s3} {...BAR} />
-          <Line type="monotone" dataKey="faturamentoRealizado" name="Realizado" stroke={p.s1} connectNulls={false} {...linha} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    ) : <NoSeries what="Não há faturamento previsto cadastrado para comparar." />,
-
-    tpv_forecast: hasSeries(data, 'tpvPrevisto', 'tpvRealizado') ? (
-      <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
-          <CartesianGrid {...grid} />
-          <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
-          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
-            [{ key: 'tpvPrevisto', nome: 'Previsto', cor: p.s3 },
-             { key: 'tpvRealizado', nome: 'Liquidado', cor: p.s1 }], moedaCheia)} />
-          <Legend {...leg} />
-          <Bar dataKey="tpvPrevisto" name="Previsto" fill={p.s3} {...BAR} />
-          <Line type="monotone" dataKey="tpvRealizado" name="Liquidado" stroke={p.s1} connectNulls={false} {...linha} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    ) : <NoSeries what="Não há TPV previsto cadastrado para comparar." />,
 
     tpv: hasSeries(data, 'tpv') ? (
       <ResponsiveContainer width="100%" height={200}>
@@ -261,21 +259,6 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
       </ResponsiveContainer>
     ) : <NoSeries what="Take rate depende de TPV e receita lançados." />,
 
-    margem: hasSeries(data, 'margemPrevista', 'margemRealizada') ? (
-      <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
-          <CartesianGrid {...grid} />
-          <XAxis dataKey="mes" {...eixo} />
-          <YAxis {...eixo} tickFormatter={eixoPct} width={56} />
-          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
-            [{ key: 'margemPrevista', nome: 'Prevista', cor: p.s3 },
-             { key: 'margemRealizada', nome: 'Realizada', cor: p.s1 }], (n) => percentual(n, 2))} />
-          <Legend {...leg} />
-          <Bar dataKey="margemPrevista" name="Prevista" fill={p.s3} {...BAR} />
-          <Line type="monotone" dataKey="margemRealizada" name="Realizada" stroke={p.s1} connectNulls={false} {...linha} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    ) : <NoSeries what="Margem não é apurada a partir do lançamento diário." />,
   }
 
   const deltas: Record<string, React.ReactNode> = {

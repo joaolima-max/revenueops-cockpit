@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { formatDate, ROLE_LABELS } from '@/lib/utils'
 import UsersClient from './UsersClient'
 
 export default async function UsersPage() {

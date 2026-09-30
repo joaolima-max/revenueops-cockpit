@@ -3,6 +3,18 @@ export const dynamic = 'force-dynamic'
 import { prisma } from '@/lib/prisma'
 import { CRITICIDADES, calcularDowntime, formatarDuracao } from '@/lib/incidentes'
 
+/**
+ * MTTR É O DOWNTIME.
+ *
+ * Não existe um segundo cálculo: o downtime de um incidente é (fim − início),
+ * derivado por `calcularDowntime`, e o MTTR do conjunto é a MÉDIA desses
+ * mesmos números. Por isso um incidente isolado tem MTTR igual ao próprio
+ * downtime, e a tela de Incidentes e esta mostram sempre o mesmo valor.
+ *
+ * Só os ENCERRADOS entram: a duração de um incidente aberto ainda está
+ * crescendo, e somá-la faria o acumulado mudar a cada refresh.
+ */
+
 
 /* Severidade crescente nos tokens semânticos — responde ao tema. */
 const COR_CRITICIDADE: Record<string, string> = {
@@ -61,7 +73,8 @@ export default async function MetricasOpPage() {
     { label: 'Incidentes no total', valor: String(incidentes.length), sub: `${fechados.length} encerrados` },
     { label: 'Em aberto', valor: String(abertos.length), sub: abertos.length > 0 ? 'Requer acompanhamento' : 'Nenhum pendente' },
     { label: 'Downtime acumulado', valor: formatarDuracao(downtimeTotal), sub: `${fechados.length} encerrados` },
-    { label: 'MTTR', valor: mttr === null ? '—' : formatarDuracao(mttr), sub: 'Tempo médio de resolução' },
+    { label: 'MTTR', valor: mttr === null ? '—' : formatarDuracao(mttr),
+      sub: 'Média do downtime dos encerrados' },
   ]
 
   return (

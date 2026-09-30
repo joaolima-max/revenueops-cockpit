@@ -1,34 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { activeFeatures } from '@/lib/modules'
 import { Dot } from '@/components/ui/Badge'
 import SinoNotificacoes from '@/components/notificacoes/SinoNotificacoes'
-import BrandMark from '@/components/ui/BrandMark'
+import Logo from '@/components/ui/Logo'
 import ThemeToggle from '@/components/theme/ThemeToggle'
+import RelogiosGlobais from './RelogiosGlobais'
 
 /**
- * Barra superior — não existia. Cada tela inventava o próprio cabeçalho.
- * Traz localização (módulo › função) e o relógio discreto do site (.utc).
+ * Barra superior: marca à esquerda, localização (módulo › função) e os
+ * horários das quatro praças à direita.
+ *
+ * A marca é a LOGO OFICIAL da Bass Pago, e só ela — o lockup anterior, com o
+ * símbolo desenhado em SVG e a palavra "RevOps" ao lado, saiu do produto.
  */
 export default function Topbar({ onMenu }: { onMenu: () => void }) {
   const pathname = usePathname()
-  const [clock, setClock] = useState<string | null>(null)
-
-  // Só após montar: evita divergência de hidratação com o horário do servidor.
-  useEffect(() => {
-    const tick = () =>
-      setClock(
-        new Intl.DateTimeFormat('pt-BR', {
-          hour: '2-digit', minute: '2-digit', second: '2-digit',
-          timeZone: 'America/Sao_Paulo', hour12: false,
-        }).format(new Date())
-      )
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [])
 
   const current = activeFeatures()
     .filter((f) => (f.exact ? pathname === f.route : pathname === f.route || pathname.startsWith(f.route + '/')))
@@ -48,8 +36,8 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
         </button>
 
         {/* Abaixo de lg a sidebar vira drawer e a marca sai da tela — aqui ela
-            reaparece, no mesmo tamanho do lockup compacto. */}
-        <BrandMark size={22} className="lg:hidden flex-none text-fg" />
+            reaparece, na mesma altura do lockup da navegação. */}
+        <Logo altura={18} className="lg:hidden" />
 
         <nav aria-label="Localização" className="min-w-0 flex items-center gap-2.5">
           <Dot tone="accent" />
@@ -60,16 +48,13 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
               <span className="t-sm font-medium text-fg truncate">{current.label}</span>
             </p>
           ) : (
-            <span className="t-label text-subtle">Bass Pago RevOps</span>
+            <span className="t-label text-subtle">Bass Pago</span>
           )}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 min-w-0">
+          <RelogiosGlobais />
           <SinoNotificacoes />
-          <span className="hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-line bg-[var(--bp-hover)]">
-            <span className="t-label text-subtle">São Paulo</span>
-            <span className="t-mono text-fg tabular-nums">{clock ?? '--:--:--'}</span>
-          </span>
           <ThemeToggle />
         </div>
       </div>

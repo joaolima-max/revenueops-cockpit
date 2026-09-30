@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
 import { logAudit } from '@/lib/audit'
 import {
   resolverAcesso, type AcessoFunil, type SessaoMinima, type LinhaPermissao,
+  type ResultadoCard,
 } from '@/lib/pipeline'
 import type { Prisma } from '@prisma/client'
 
@@ -67,7 +68,10 @@ export async function acessoAoFunil(
 export async function acessoAoCard(session: SessaoMinima, dealId: string) {
   const deal = await prisma.deal.findUnique({
     where: { id: dealId },
-    select: { id: true, ownerId: true, funilId: true, etapaId: true, clienteId: true, title: true },
+    select: {
+      id: true, ownerId: true, funilId: true, etapaId: true, clienteId: true,
+      title: true, resultado: true,
+    },
   })
   if (!deal) return null
 
@@ -84,9 +88,15 @@ export async function acessoAoCard(session: SessaoMinima, dealId: string) {
 
 export const INCLUDE_CARD = {
   owner: { select: { id: true, name: true } },
-  lead: { select: { id: true, name: true, company: true } },
+  lead: { select: { id: true, name: true, company: true, cnpj: true } },
   cliente: { select: { id: true, nome: true } },
 } satisfies Prisma.DealInclude
+
+/** Campos do card que o quadro precisa. O VALOR nao esta aqui: o card nao tem. */
+export const SELECT_CARD_BASE = {
+  id: true, title: true, etapaId: true, funilId: true,
+  resultado: true, resultadoEm: true, createdAt: true, updatedAt: true,
+} satisfies Prisma.DealSelect
 
 /**
  * Grava a movimentacao e a trilha de auditoria na MESMA transacao da mudanca
@@ -97,13 +107,16 @@ export async function registrarMovimentacao(
   tx: Prisma.TransactionClient,
   m: {
     dealId: string
-    tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL'
+    tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL' | 'MUDANCA_RESULTADO'
     funilOrigemId: string | null
     etapaOrigemId: string | null
     funilDestinoId: string
     etapaDestinoId: string
     userId: string
     observacao?: string | null
+    /** So em MUDANCA_RESULTADO: o card nao sai do lugar, o desfecho e que muda. */
+    resultadoAnterior?: ResultadoCard | null
+    resultadoNovo?: ResultadoCard | null
   },
 ) {
   return tx.pipelineMovimentacao.create({
@@ -116,15 +129,21 @@ export async function registrarMovimentacao(
       etapaDestinoId: m.etapaDestinoId,
       userId: m.userId,
       observacao: m.observacao ?? null,
+      resultadoAnterior: m.resultadoAnterior ?? null,
+      resultadoNovo: m.resultadoNovo ?? null,
     },
   })
 }
 
 /**
- * `Deal.stage` é o campo legado, anterior aos funis. Mantemos o
- * campo em dia enquanto o card estiver no funil de Vendas, cujas etapas nasceram
- * dos proprios valores do enum. Fora de Vendas o stage nao e mexido: o card ja
- * nao pertence ao relatorio comercial.
+ * `Deal.stage` é o campo legado, anterior aos funis. Mantemos o campo em dia
+ * enquanto o card estiver no funil de Vendas, cujas etapas nasceram dos
+ * proprios valores do enum. Fora de Vendas o stage nao e mexido: o card ja nao
+ * pertence ao relatorio comercial.
+ *
+ * GANHO e PERDIDO sairam deste mapa: deixaram de ser etapas e viraram
+ * `Deal.resultado`. O stage passa a descrever so a ETAPA, que e o que ele
+ * sempre deveria ter descrito.
  */
 export const FUNIL_VENDAS_ID = 'fnl_vendas'
 
@@ -134,8 +153,6 @@ const STAGE_POR_ETAPA: Record<string, string> = {
   etp_vnd_proposta: 'PROPOSTA',
   etp_vnd_negociacao: 'NEGOCIACAO',
   etp_vnd_fechamento: 'FECHAMENTO',
-  etp_vnd_ganho: 'GANHO',
-  etp_vnd_perdido: 'PERDIDO',
 }
 
 export function stageLegado(etapaId: string): string | undefined {

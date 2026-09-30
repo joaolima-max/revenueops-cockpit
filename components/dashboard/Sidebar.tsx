@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { navigationFor } from '@/lib/modules'
 import { ICONS } from './nav-icons'
-import { BrandLockup } from '@/components/ui/BrandMark'
+import Logo from '@/components/ui/Logo'
 
 interface SidebarProps {
   role: string
@@ -36,8 +36,10 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
         open ? 'translate-x-0' : '-translate-x-full'
       )}
     >
+      {/* Topo da navegação: SOMENTE a logo oficial. O lockup anterior (símbolo
+          SVG + "Bass Pago" + "RevOps") saiu junto com o branding antigo. */}
       <div className="h-16 px-5 flex items-center border-b border-line flex-none">
-        <BrandLockup />
+        <Logo altura={20} />
       </div>
 
       <nav className="flex-1 overflow-y-auto py-5">
@@ -116,7 +118,7 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
           Sair
         </button>
 
-        <p className="px-2 pt-3 pb-1 t-mono text-subtle/60">BASS PAGO REVOPS · v0.1.0</p>
+        <p className="px-2 pt-3 pb-1 t-mono text-subtle/60">v0.1.0</p>
       </div>
     </aside>
   )

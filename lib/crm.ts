@@ -9,9 +9,11 @@
  * poderem ser exercitadas sem banco.
  */
 
+export type ResultadoCard = 'EM_ANDAMENTO' | 'GANHO' | 'PERDIDO'
+
 export interface MovimentoBruto {
   dealId: string
-  tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL'
+  tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL' | 'MUDANCA_RESULTADO'
   funilOrigemId: string | null
   etapaOrigemId: string | null
   funilDestinoId: string
@@ -19,13 +21,22 @@ export interface MovimentoBruto {
   createdAt: Date
 }
 
+/**
+ * O card do ponto de vista da analitica. NAO tem valor: o card do pipeline
+ * deixou de ter valor financeiro, e a analitica nao inventa um.
+ *
+ * Ganho e perda vem de `resultado`, nao da etapa em que o card esta — e
+ * exatamente a mudanca desta rodada. Um card perdido na Negociacao continua
+ * contando como volume da Negociacao e como perda; antes ele precisava sair da
+ * Negociacao para ser marcado, e a etapa mentia.
+ */
 export interface CardBruto {
   id: string
   ownerId: string
   ownerNome: string
   funilId: string | null
   etapaId: string | null
-  valor: number
+  resultado: ResultadoCard
   criadoEm: Date
   fechadoEm: Date | null
 }
@@ -43,7 +54,9 @@ export function tempoMedioPorEtapa(
   movimentos: MovimentoBruto[], agora = new Date(),
 ): Map<string, { dias: number; amostras: number }> {
   const porCard = new Map<string, MovimentoBruto[]>()
-  for (const m of movimentos) {
+  // Mudanca de resultado nao e passagem de etapa: o card nao saiu do lugar, e
+  // conta-la como entrada zeraria o tempo de permanencia da etapa.
+  for (const m of movimentos.filter((x) => x.tipo !== 'MUDANCA_RESULTADO')) {
     const lista = porCard.get(m.dealId) ?? []
     lista.push(m)
     porCard.set(m.dealId, lista)
@@ -86,7 +99,7 @@ export function conversaoPorEtapa(
   const maiorPosicao = new Map<string, number>()
   const entrouEm = new Map<string, Set<string>>()
 
-  for (const m of movimentos) {
+  for (const m of movimentos.filter((x) => x.tipo !== 'MUDANCA_RESULTADO')) {
     const pos = posicao.get(m.etapaDestinoId)
     if (pos === undefined) continue
 
@@ -120,7 +133,6 @@ export interface ConversaoResponsavel {
   ganhos: number
   perdas: number
   abertos: number
-  valorAberto: number
   taxa: number | null
 }
 
@@ -128,21 +140,19 @@ export interface ConversaoResponsavel {
  * Conversao por responsavel. A taxa considera so os cards ja decididos —
  * incluir os que ainda estao em aberto puniria quem tem pipeline cheio.
  */
-export function conversaoPorResponsavel(
-  cards: CardBruto[], etapasGanho: Set<string>, etapasPerda: Set<string>,
-): ConversaoResponsavel[] {
+export function conversaoPorResponsavel(cards: CardBruto[]): ConversaoResponsavel[] {
   const porDono = new Map<string, ConversaoResponsavel>()
 
   for (const c of cards) {
     const atual = porDono.get(c.ownerId) ?? {
       ownerId: c.ownerId, ownerNome: c.ownerNome,
-      total: 0, ganhos: 0, perdas: 0, abertos: 0, valorAberto: 0, taxa: null,
+      total: 0, ganhos: 0, perdas: 0, abertos: 0, taxa: null,
     }
     atual.total++
 
-    if (c.etapaId && etapasGanho.has(c.etapaId)) atual.ganhos++
-    else if (c.etapaId && etapasPerda.has(c.etapaId)) atual.perdas++
-    else { atual.abertos++; atual.valorAberto += c.valor }
+    if (c.resultado === 'GANHO') atual.ganhos++
+    else if (c.resultado === 'PERDIDO') atual.perdas++
+    else atual.abertos++
 
     porDono.set(c.ownerId, atual)
   }
@@ -150,6 +160,53 @@ export function conversaoPorResponsavel(
   return [...porDono.values()]
     .map((r) => ({ ...r, taxa: r.ganhos + r.perdas > 0 ? (r.ganhos / (r.ganhos + r.perdas)) * 100 : null }))
     .sort((a, b) => b.total - a.total)
+}
+
+export interface PontoEvolucao {
+  periodo: string
+  criados: number
+  ganhos: number
+  perdidos: number
+}
+
+/**
+ * Evolucao mensal do funil: quantos cards NASCERAM e quantos foram DECIDIDOS
+ * em cada mes.
+ *
+ * Criacao conta pela data do card; ganho e perda contam pela data do desfecho
+ * (`fechadoEm`), nao pela de criacao — senao um card criado em janeiro e
+ * ganho em marco apareceria como ganho de janeiro.
+ */
+export function evolucaoMensal(cards: CardBruto[], periodos: string[]): PontoEvolucao[] {
+  const chave = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+
+  const mapa = new Map<string, PontoEvolucao>(
+    periodos.map((p) => [p, { periodo: p, criados: 0, ganhos: 0, perdidos: 0 }]),
+  )
+
+  for (const c of cards) {
+    const nasceu = mapa.get(chave(c.criadoEm))
+    if (nasceu) nasceu.criados++
+
+    if (c.resultado !== 'EM_ANDAMENTO' && c.fechadoEm) {
+      const decidiu = mapa.get(chave(c.fechadoEm))
+      if (decidiu) {
+        if (c.resultado === 'GANHO') decidiu.ganhos++
+        else decidiu.perdidos++
+      }
+    }
+  }
+
+  return periodos.map((p) => mapa.get(p)!)
+}
+
+/** Distribuicao do pipeline por resultado. Alimenta o grafico circular do CRM. */
+export function distribuicaoPorResultado(
+  cards: CardBruto[],
+): Array<{ resultado: ResultadoCard; total: number }> {
+  const ordem: ResultadoCard[] = ['EM_ANDAMENTO', 'GANHO', 'PERDIDO']
+  return ordem.map((r) => ({ resultado: r, total: cards.filter((c) => c.resultado === r).length }))
 }
 
 /** Transferencias entre funis, agregadas por par origem→destino. */
@@ -171,7 +228,7 @@ export function conversaoEntreFunis(
 
 /** Ciclo total em dias dos cards ja encerrados. Null quando nenhum fechou ainda. */
 export function cicloMedioDias(cards: CardBruto[]): number | null {
-  const fechados = cards.filter((c) => c.fechadoEm)
+  const fechados = cards.filter((c) => c.resultado !== 'EM_ANDAMENTO' && c.fechadoEm)
   if (fechados.length === 0) return null
   const total = fechados.reduce((s, c) => s + (c.fechadoEm!.getTime() - c.criadoEm.getTime()) / DIA_MS, 0)
   return total / fechados.length

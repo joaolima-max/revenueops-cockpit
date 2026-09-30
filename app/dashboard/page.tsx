@@ -3,13 +3,12 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, linhasReceita, metasDoPeriodo, indicadoresEstrutura,
+  kpisDoPeriodo, metasDoPeriodo, indicadoresEstrutura,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
-import { formatMesRef } from '@/lib/utils'
+import { formatMesRef, META_TIPO_LABELS } from '@/lib/utils'
 import {
-  figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem,
-  variacao, moedaCheia,
+  figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem, variacao,
 } from '@/lib/format-financeiro'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
 import PageHeader from '@/components/dashboard/PageHeader'
@@ -21,23 +20,23 @@ import Badge from '@/components/ui/Badge'
 import EmptyState, { NoData } from '@/components/ui/EmptyState'
 import Figure from '@/components/ui/Figure'
 
-const ROTULO_META: Record<string, string> = {
-  RECEITA_TARIFARIA: 'Receita Tarifária', TPV: 'TPV', SALDO_EM_CONTA: 'Saldo em Conta',
-  TRANSACOES: 'Transações', MEDS: 'MEDs',
-  RECEITA: 'Receita (legado)', MRR: 'MRR (legado)', CLIENTES_ATIVOS: 'Clientes ativos (legado)',
+/**
+ * A meta é formatada pela sua UNIDADE, não pelo tipo: é o que permite uma meta
+ * percentual (MED = 2%) conviver com uma monetária (TPV) na mesma faixa.
+ */
+function formatarMeta(unidade: 'VALOR' | 'QUANTIDADE' | 'PERCENTUAL', valor: number) {
+  if (unidade === 'PERCENTUAL') return figuraPercentual(valor, 2)
+  if (unidade === 'QUANTIDADE') return figuraQuantidade(valor)
+  return figuraMoeda(valor)
 }
-
-/** Metas de valor monetário × metas de contagem: o formatador não é o mesmo. */
-const META_MONETARIA = new Set(['RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'RECEITA', 'MRR'])
 
 export default async function DashboardPage() {
   const session = await getSession()
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(12)
 
-  const [kpis, receita, metas, estrutura, serie] = await Promise.all([
+  const [kpis, metas, estrutura, serie] = await Promise.all([
     kpisDoPeriodo(periodo),
-    linhasReceita(periodo),
     metasDoPeriodo(periodo),
     indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
@@ -69,15 +68,19 @@ export default async function DashboardPage() {
       delta: varDe((k) => k.saldoMedio), spark: spark((k) => k.saldoMedio), note: 'Média do período' },
   ]
 
-  /** NÍVEL 2 — qualificadores do mesmo dado. */
+  /**
+   * NÍVEL 2 — qualificadores do mesmo dado.
+   *
+   * "Faturamento" e a composição da receita saíram do Cockpit: os dois
+   * exibiam o Float, que não é mais mostrado aqui. Ambos continuam no
+   * Conselho, onde o Float segue como linha de receita.
+   */
   const qualificadores = [
     { label: 'MED', fig: kpis.qtdMed === null ? null : figuraQuantidade(kpis.qtdMed),
       delta: varDe((k) => k.qtdMed),
       note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações` },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3),
       delta: varDe((k) => k.takeRate), note: 'Receita ÷ TPV' },
-    { label: 'Faturamento', fig: receita ? figuraMoeda(receita.total) : null,
-      note: 'Soma das 4 linhas de receita' },
   ]
 
   /**
@@ -94,20 +97,16 @@ export default async function DashboardPage() {
       note: 'Condições Comerciais BaaS' },
   ]
 
+  // Só séries com FONTE REAL. O Float saiu do Cockpit, e "previsto" não existe
+  // em lugar nenhum do sistema — um gráfico de previsto × realizado seria uma
+  // barra zerada ao lado da série verdadeira.
   const chartData = periodos.map((p, i) => {
     const k: KpisPeriodo = serie[i]
     return {
       mes: p,
       receitaTarifaria: k.receitaTarifaria ?? 0,
-      floating: k.float ?? 0,
       tpv: k.tpv ?? 0,
-      faturamentoPrevisto: 0,
-      faturamentoRealizado: k.temDados ? (k.receitaTarifaria ?? 0) + (k.float ?? 0) : null,
-      tpvPrevisto: 0,
-      tpvRealizado: k.tpv,
       takeRate: k.takeRate ?? 0,
-      margemPrevista: null,
-      margemRealizada: null,
     }
   })
 
@@ -149,7 +148,7 @@ export default async function DashboardPage() {
         ))}
       </HairlineGrid>
 
-      <HairlineGrid cols={3}>
+      <HairlineGrid cols={2}>
         {qualificadores.map((c) => (
           <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta} note={c.note} size="sm" />
         ))}
@@ -167,26 +166,6 @@ export default async function DashboardPage() {
         </HairlineGrid>
       </section>
 
-      {receita && (
-        <section className="space-y-4">
-          <PanelHeader title="Composição da receita" sub="Cada linha tem origem única. A soma é o faturamento do período." />
-          <HairlineGrid cols={4}>
-            {([
-              ['Tarifário', receita.tarifario], ['Float', receita.float],
-              ['Sustentação', receita.sustentacao], ['Setup', receita.setup],
-            ] as const).map(([label, valor]) => (
-              <HairlineCell key={label} className="gap-2.5">
-                <p className="t-label text-subtle">{label}</p>
-                <Figure figura={figuraMoeda(valor)} size="sm" />
-                <p className="t-mono text-muted">
-                  {receita.total > 0 ? `${((valor / receita.total) * 100).toFixed(1)}% do total` : '—'}
-                </p>
-              </HairlineCell>
-            ))}
-          </HairlineGrid>
-        </section>
-      )}
-
       {metas.length > 0 && (
         <section className="space-y-4">
           {/* A meta é o esperado; o realizado vem do lançamento diário. Nenhum
@@ -194,24 +173,27 @@ export default async function DashboardPage() {
           <PanelHeader title="Meta × Realizado" sub={`${formatMesRef(periodo)} · realizado apurado do lançamento diário`} />
           <HairlineGrid cols={5}>
             {metas.map((m) => {
-              const fmt = META_MONETARIA.has(m.tipo) ? figuraMoeda : figuraQuantidade
+              const rotulo = META_TIPO_LABELS[m.tipo] ?? m.tipo
               return (
                 <HairlineCell key={m.tipo} className="gap-2.5">
-                  <p className="t-label text-subtle bp-truncate" title={ROTULO_META[m.tipo] ?? m.tipo}>
-                    {ROTULO_META[m.tipo] ?? m.tipo}
-                  </p>
-                  {m.realizado === null ? <NoData /> : <Figure figura={fmt(m.realizado)} size="sm" />}
-                  <p className="t-sm text-subtle" title={META_MONETARIA.has(m.tipo) ? moedaCheia(m.meta) : undefined}>
-                    meta {fmt(m.meta).completo}
+                  <p className="t-label text-subtle bp-truncate" title={rotulo}>{rotulo}</p>
+                  {m.realizado === null
+                    ? <NoData />
+                    : <Figure figura={formatarMeta(m.unidade, m.realizado)} size="sm" />}
+                  <p className="t-sm text-subtle">
+                    meta {formatarMeta(m.unidade, m.meta).completo}
+                    {m.direcao === 'MENOR_MELHOR' && <span className="text-subtle/70"> · menor é melhor</span>}
                   </p>
                   <div className="mt-auto pt-2 space-y-2">
+                    {/* A barra mostra CUMPRIMENTO, que já respeita a direção da
+                        meta: 100% é "no alvo" tanto para TPV quanto para MED. */}
                     <MetaBar pct={m.atingimento} />
                     <p className={
-                      m.atingimento === null ? 't-mono text-subtle'
-                        : m.atingimento >= 100 ? 't-mono text-pos'
-                        : m.atingimento >= 70 ? 't-mono text-warn' : 't-mono text-neg'
+                      m.situacao === 'SEM_REALIZADO' ? 't-mono text-subtle'
+                        : m.positivo ? 't-mono text-pos'
+                        : (m.atingimento ?? 0) >= 70 ? 't-mono text-warn' : 't-mono text-neg'
                     }>
-                      {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}% da meta`}
+                      {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}% de cumprimento`}
                     </p>
                   </div>
                 </HairlineCell>

@@ -19,6 +19,13 @@ function taxa(v: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
+/** "YYYY-MM-DD" para meia-noite UTC. Vazio vira null. */
+function parseDia(v: unknown): Date | null {
+  if (!v || typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const d = new Date(v + 'T00:00:00Z')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 /**
  * GET — as condições ATUAIS, mais MRR e contagens derivadas delas.
  *
@@ -77,6 +84,9 @@ export async function POST(request: NextRequest) {
       kyc: taxa(body.kyc),
       sustentacao: taxa(body.sustentacao),
       apiMensal: taxa(body.apiMensal),
+      mensalidadeContaAtiva: taxa(body.mensalidadeContaAtiva),
+      // Antes desta data a sustentação NÃO entra no MRR (ver calcularMrr).
+      sustentacaoInicio: parseDia(body.sustentacaoInicio),
       overpricePercent: taxa(body.overpricePercent),
       observacao: body.observacao ? String(body.observacao).slice(0, 1000) : null,
     },

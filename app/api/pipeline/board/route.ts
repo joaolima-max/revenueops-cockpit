@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
         ...(acesso.apenasProprios ? { ownerId: session.userId } : {}),
       },
       include: INCLUDE_CARD,
-      orderBy: { value: 'desc' },
+      // O card nao tem valor: a ordem do quadro e cronologica, do mais recente
+      // para o mais antigo.
+      orderBy: { createdAt: 'desc' },
     }),
   ])
 

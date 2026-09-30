@@ -26,17 +26,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const data = await request.json()
 
+  // Nem `value` nem `resultado` entram por aqui: o card nao tem valor, e o
+  // desfecho tem rota propria (PATCH /api/pipeline/cards/[id]/resultado), que e
+  // a unica que grava historico da mudanca.
   const deal = await prisma.deal.update({
     where: { id },
     data: {
       title: data.title,
-      value: data.value ? parseFloat(data.value) : undefined,
       stage: data.stage,
-      probability: data.probability,
       notes: data.notes,
       leadId: data.leadId || null,
       expectedAt: data.expectedAt ? new Date(data.expectedAt) : null,
-      closedAt: data.stage === 'GANHO' || data.stage === 'PERDIDO' ? new Date() : null,
     },
     include: {
       owner: { select: { id: true, name: true } },

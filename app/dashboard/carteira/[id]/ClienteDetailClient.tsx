@@ -55,10 +55,12 @@ function toEditForm(c: Cliente) {
 
 export default function ClienteDetailClient({
   cliente: initial, users, role, currentUserId,
-  healthScore,
+  healthScore, mesesDesdeFechamento,
 }: {
   cliente: Cliente; users: User[]; role: string; currentUserId: string
   healthScore: number
+  /** Idade do contrato, calculada no servidor. Ver comentário em page.tsx. */
+  mesesDesdeFechamento: number
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
@@ -85,9 +87,8 @@ export default function ClienteDetailClient({
   // Insights derivados do que pertence ao cliente. TPV é indicador da empresa,
   // não do cliente, e por isso não aparece aqui.
   const insights: string[] = []
-  if (cliente.dataFechamento) {
-    const months = Math.floor((Date.now() - new Date(cliente.dataFechamento).getTime()) / (30 * 24 * 60 * 60 * 1000))
-    if (months > 0) insights.push(`Cliente ativo há ${months} meses`)
+  if (cliente.dataFechamento && mesesDesdeFechamento > 0) {
+    insights.push(`Cliente ativo há ${mesesDesdeFechamento} meses`)
   }
   if (mrr > 0) insights.push(`MRR contratado: ${formatCurrency(mrr)}`)
   const inadimplentes = cliente.contasReceber.filter(c => c.status === 'INADIMPLENTE')

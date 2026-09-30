@@ -22,12 +22,26 @@ const interTight = Inter_Tight({
   display: 'swap',
 })
 
+/**
+ * FAVICON — derivado da LOGO OFICIAL, não de um desenho novo.
+ *
+ * `public/icon.png` é o símbolo "b" com o arco azul, recortado do próprio
+ * arquivo da marca (`public/logo-bass-pago-original.png`, preservado). A
+ * variante clara existe porque a tipografia da marca é cinza-escuro e
+ * desapareceria numa aba em tema escuro; o arco azul é o mesmo nas duas.
+ *
+ * O ícone padrão do Next saiu, junto com os demais arquivos de exemplo.
+ */
 export const metadata: Metadata = {
-  title: 'Bass Pago · RevOps',
+  title: 'Bass Pago',
   description: 'Revenue Operations Platform — Bass Pago',
   icons: {
-    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
-    apple: '/icon.svg',
+    icon: [
+      { url: '/icon.png', type: 'image/png', sizes: '128x128', media: '(prefers-color-scheme: light)' },
+      { url: '/icon-dark.png', type: 'image/png', sizes: '128x128', media: '(prefers-color-scheme: dark)' },
+      { url: '/icon.png', type: 'image/png', sizes: '128x128' },
+    ],
+    apple: '/icon.png',
   },
 }
 

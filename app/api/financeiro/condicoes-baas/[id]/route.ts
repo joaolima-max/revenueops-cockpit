@@ -8,12 +8,15 @@ const TIPOS = ['BAAS', 'WHITE_LABEL'] as const
 
 /** Campos versionados. Alterar qualquer um grava histórico antes de gravar. */
 const CAMPOS_HISTORICO = [
-  'pix', 'kyc', 'sustentacao', 'apiMensal', 'overpricePercent', 'tipo', 'ativo',
+  'pix', 'kyc', 'sustentacao', 'apiMensal', 'mensalidadeContaAtiva',
+  'sustentacaoInicio', 'overpricePercent', 'tipo', 'ativo',
 ] as const
 type CampoHistorico = (typeof CAMPOS_HISTORICO)[number]
 
 const ROTULO: Record<CampoHistorico, string> = {
   pix: 'PIX', kyc: 'KYC', sustentacao: 'Sustentação', apiMensal: 'API mensal',
+  mensalidadeContaAtiva: 'Mensalidade de conta ativa',
+  sustentacaoInicio: 'Início da sustentação',
   overpricePercent: 'Overprice (%)', tipo: 'Tipo', ativo: 'Ativo',
 }
 
@@ -27,10 +30,17 @@ function taxa(v: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
+function parseDia(v: unknown): Date | null {
+  if (!v || typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const d = new Date(v + 'T00:00:00Z')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 /** Texto para o histórico. null vira "—" para a leitura não ficar ambígua. */
 function comoTexto(v: unknown): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'boolean') return v ? 'Sim' : 'Não'
+  if (v instanceof Date) return v.toISOString().slice(0, 10)
   return String(v)
 }
 
@@ -104,6 +114,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     ...(body.kyc !== undefined ? { kyc: taxa(body.kyc) } : {}),
     ...(body.sustentacao !== undefined ? { sustentacao: taxa(body.sustentacao) } : {}),
     ...(body.apiMensal !== undefined ? { apiMensal: taxa(body.apiMensal) } : {}),
+    ...(body.mensalidadeContaAtiva !== undefined
+      ? { mensalidadeContaAtiva: taxa(body.mensalidadeContaAtiva) } : {}),
+    ...(body.sustentacaoInicio !== undefined
+      ? { sustentacaoInicio: parseDia(body.sustentacaoInicio) } : {}),
     ...(body.overpricePercent !== undefined ? { overpricePercent: taxa(body.overpricePercent) } : {}),
     ...(typeof body.ativo === 'boolean' ? { ativo: body.ativo } : {}),
     ...(body.observacao !== undefined
@@ -111,8 +125,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       : {}),
   }
 
+  // Comparação por TEXTO: `Date` não é comparável por `!==` (dois objetos com
+  // o mesmo instante são diferentes por referência), e sem isso toda edição
+  // gravaria uma linha de histórico falsa para a data da sustentação.
   const mudancas = CAMPOS_HISTORICO.filter(
-    (campo) => campo in novos && novos[campo] !== (atual as Record<string, unknown>)[campo],
+    (campo) =>
+      campo in novos &&
+      comoTexto(novos[campo]) !== comoTexto((atual as Record<string, unknown>)[campo]),
   ).map((campo) => ({
     campo,
     valorAnterior: comoTexto((atual as Record<string, unknown>)[campo]),

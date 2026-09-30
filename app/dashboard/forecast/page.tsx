@@ -2,9 +2,16 @@ export const dynamic = 'force-dynamic'
 
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { intervaloMes, periodoAtual, kpisDoPeriodo } from '@/lib/kpi'
+import { intervaloMes, periodoAtual } from '@/lib/periodo'
 import CalendarioLancamentos from '@/components/forecast/CalendarioLancamentos'
 
+/**
+ * LANÇAMENTO DIÁRIO — tela de entrada do realizado.
+ *
+ * Só o calendário e os lançamentos do mês. Os KPIs derivados saíram do topo
+ * desta tela: vivem no Cockpit e no Conselho, calculados da mesma fonte, e não
+ * havia motivo para uma terceira leitura deles dentro do fluxo de digitação.
+ */
 export default async function ForecastPage({
   searchParams,
 }: {
@@ -15,13 +22,10 @@ export default async function ForecastPage({
   const periodo = /^\d{4}-\d{2}$/.test(params.periodo ?? '') ? params.periodo! : periodoAtual()
 
   const { inicio, fim } = intervaloMes(periodo)
-  const [lancamentos, kpis] = await Promise.all([
-    prisma.lancamentoDiario.findMany({
-      where: { data: { gte: inicio, lt: fim } },
-      orderBy: { data: 'asc' },
-    }),
-    kpisDoPeriodo(periodo),
-  ])
+  const lancamentos = await prisma.lancamentoDiario.findMany({
+    where: { data: { gte: inicio, lt: fim } },
+    orderBy: { data: 'asc' },
+  })
 
   return (
     <CalendarioLancamentos
@@ -38,19 +42,6 @@ export default async function ForecastPage({
         clientesAtivos: l.clientesAtivos,
         notas: l.notas,
       }))}
-      kpis={{
-        temDados: kpis.temDados,
-        diasLancados: kpis.diasLancados,
-        tpv: kpis.tpv,
-        receitaTarifaria: kpis.receitaTarifaria,
-        qtdTransacoes: kpis.qtdTransacoes,
-        qtdMed: kpis.qtdMed,
-        saldoMedio: kpis.saldoMedio,
-        float: kpis.float,
-        takeRate: kpis.takeRate,
-        percentMed: kpis.percentMed,
-        clientesAtivos: kpis.clientesAtivos,
-      }}
     />
   )
 }

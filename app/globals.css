@@ -313,6 +313,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }
 
+/* --------------------------------------------------------------------------
+   LOGO OFICIAL — troca por tema
+   A marca é um arquivo de imagem com DUAS cores (tipografia + arco azul), e o
+   azul não muda entre temas. Por isso a troca é por visibilidade entre dois
+   arquivos, e não por filtro de cor, que inverteria o azul junto.
+   O tema escuro é o padrão: é ele que vale enquanto `data-theme` não existe.
+   -------------------------------------------------------------------------- */
+.bp-logo-claro { display: none }
+:root[data-theme="light"] .bp-logo-escuro { display: none }
+:root[data-theme="light"] .bp-logo-claro { display: block }
+
 /* Skeleton de carregamento — a forma do conteúdo, não um spinner solto. */
 .bp-skeleton {
   background: linear-gradient(90deg,

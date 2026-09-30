@@ -1,8 +1,9 @@
 /**
  * FINANCEIRO — regras de negócio do ambiente. Uma fonte por número.
  *
- *   LancamentoFinanceiro  → Receita, Despesa, Resultado, Gasto por categoria
- *   CondicaoComercial     → MRR (2 parcelas), BaaS ativos, White Labels ativos
+ *   LancamentoFinanceiro  → Receita, Despesa, Resultado, Gasto por categoria,
+ *                           Contas a Pagar, Receita por BaaS / White Label
+ *   CondicaoComercial     → MRR, BaaS ativos, White Labels ativos
  *   Cliente.mensalidadeApi→ MRR (1 parcela)
  *   ContaReceber          → Inadimplência
  *   LancamentoDiario      → Clientes ativos (ver lib/kpi.ts)
@@ -19,30 +20,58 @@ import { intervaloMes } from '@/lib/periodo'
  * ========================================================================= */
 
 /**
- * As quatro parcelas que compõem o MRR, explícitas para que a tela possa
- * mostrar de onde vem cada real e ninguém precise confiar num total opaco.
+ * As parcelas que compõem o MRR, explícitas para que a tela possa mostrar de
+ * onde vem cada real e ninguém precise confiar num total opaco.
  */
 export interface Mrr {
-  /** Sustentação de TODOS os BaaS ativos. Campo: CondicaoComercial.sustentacao (tipo BAAS). */
+  /** Sustentação dos BaaS ativos JÁ VIGENTES. Campo: CondicaoComercial.sustentacao (tipo BAAS). */
   sustentacaoBaas: number
-  /** Sustentação de TODOS os White Labels ativos. Campo: CondicaoComercial.sustentacao (tipo WHITE_LABEL). */
+  /** Sustentação dos White Labels ativos JÁ VIGENTES. Campo: CondicaoComercial.sustentacao (tipo WHITE_LABEL). */
   sustentacaoWhiteLabel: number
   /** Mensalidade de API dos BaaS e White Labels. Campo: CondicaoComercial.apiMensal. */
   apiMensalParceiros: number
+  /** Mensalidade de conta ativa dos parceiros. Campo: CondicaoComercial.mensalidadeContaAtiva. */
+  mensalidadeContaAtiva: number
   /** Mensalidade de API dos clientes da Carteira. Campo: Cliente.mensalidadeApi (status ATIVO). */
   apiMensalCarteira: number
-  /** Soma das quatro parcelas acima. */
+  /** Soma das parcelas acima. */
   total: number
+  /**
+   * Parceiros ativos cuja sustentação ainda NÃO começou (data de início no
+   * futuro). Não entram no total — e a tela precisa poder dizer isso, senão o
+   * número parece simplesmente faltar.
+   */
+  sustentacaoAguardandoInicio: number
+}
+
+/** Último instante do mês "YYYY-MM". Referência de vigência da sustentação. */
+function fimDoPeriodo(periodo?: string): Date {
+  if (!periodo || !/^\d{4}-\d{2}$/.test(periodo)) return new Date()
+  return new Date(intervaloMes(periodo).fim.getTime() - 1)
+}
+
+/** A sustentação do parceiro já está vigente na data de referência? */
+export function sustentacaoVigente(
+  inicio: Date | null | undefined, referencia: Date,
+): boolean {
+  if (!inicio) return true
+  return inicio.getTime() <= referencia.getTime()
 }
 
 /**
  * MRR pelas condições ATUAIS.
  *
- * REGRA (§14 da especificação):
- *   MRR = sustentação de todos os BaaS
- *       + sustentação de todos os White Labels
+ * REGRA:
+ *   MRR = sustentação dos BaaS já vigentes
+ *       + sustentação dos White Labels já vigentes
  *       + mensalidades de API dos BaaS/White Labels
+ *       + mensalidades de conta ativa dos BaaS/White Labels
  *       + mensalidades de API dos clientes cadastrados na Carteira
+ *
+ * DATA DE INÍCIO DA SUSTENTAÇÃO: um parceiro em implantação já está cadastrado
+ * e ativo, mas ainda não paga sustentação. `sustentacaoInicio` no futuro mantém
+ * a parcela FORA do MRR até a data chegar — sem isso o recorrente contaria
+ * dinheiro que ainda não é cobrado.
  *
  * SEM DUPLA CONTAGEM: a mensalidade de API de um parceiro mora em
  * `CondicaoComercial.apiMensal` e a de um cliente da carteira em
@@ -55,12 +84,16 @@ export interface Mrr {
  * participa deste cálculo — alterar uma taxa hoje muda o MRR de hoje e não
  * reescreve o MRR que já foi reportado.
  */
-export async function calcularMrr(): Promise<Mrr> {
-  const [porTipo, carteira] = await Promise.all([
-    prisma.condicaoComercial.groupBy({
-      by: ['tipo'],
+export async function calcularMrr(periodo?: string): Promise<Mrr> {
+  const referencia = fimDoPeriodo(periodo)
+
+  const [parceiros, carteira] = await Promise.all([
+    prisma.condicaoComercial.findMany({
       where: { ativo: true },
-      _sum: { sustentacao: true, apiMensal: true },
+      select: {
+        tipo: true, sustentacao: true, apiMensal: true,
+        mensalidadeContaAtiva: true, sustentacaoInicio: true,
+      },
     }),
     prisma.cliente.aggregate({
       where: { status: 'ATIVO' },
@@ -68,19 +101,36 @@ export async function calcularMrr(): Promise<Mrr> {
     }),
   ])
 
-  const doTipo = (tipo: 'BAAS' | 'WHITE_LABEL') => porTipo.find((p) => p.tipo === tipo)?._sum
+  let sustentacaoBaas = 0
+  let sustentacaoWhiteLabel = 0
+  let apiMensalParceiros = 0
+  let mensalidadeContaAtiva = 0
+  let sustentacaoAguardandoInicio = 0
 
-  const sustentacaoBaas = doTipo('BAAS')?.sustentacao ?? 0
-  const sustentacaoWhiteLabel = doTipo('WHITE_LABEL')?.sustentacao ?? 0
-  const apiMensalParceiros = porTipo.reduce((a, p) => a + (p._sum.apiMensal ?? 0), 0)
+  for (const p of parceiros) {
+    const sust = p.sustentacao ?? 0
+    if (sustentacaoVigente(p.sustentacaoInicio, referencia)) {
+      if (p.tipo === 'BAAS') sustentacaoBaas += sust
+      else sustentacaoWhiteLabel += sust
+    } else {
+      sustentacaoAguardandoInicio += sust
+    }
+    apiMensalParceiros += p.apiMensal ?? 0
+    mensalidadeContaAtiva += p.mensalidadeContaAtiva ?? 0
+  }
+
   const apiMensalCarteira = carteira._sum.mensalidadeApi ?? 0
 
   return {
     sustentacaoBaas,
     sustentacaoWhiteLabel,
     apiMensalParceiros,
+    mensalidadeContaAtiva,
     apiMensalCarteira,
-    total: sustentacaoBaas + sustentacaoWhiteLabel + apiMensalParceiros + apiMensalCarteira,
+    sustentacaoAguardandoInicio,
+    total:
+      sustentacaoBaas + sustentacaoWhiteLabel + apiMensalParceiros +
+      mensalidadeContaAtiva + apiMensalCarteira,
   }
 }
 
@@ -103,8 +153,8 @@ export interface ContagensParceiros {
  * CondicaoComercial, que é onde eles são cadastrados (Financeiro → Condições
  * Comerciais BaaS).
  *
- * Mesma função serve Financeiro, Cockpit e Conselho. Não existe uma segunda
- * consulta em nenhum desses lugares.
+ * Mesma função serve Cockpit e Conselho. Não existe uma segunda consulta em
+ * nenhum desses lugares.
  */
 export async function contagensParceiros(): Promise<ContagensParceiros> {
   const porTipo = await prisma.condicaoComercial.groupBy({
@@ -183,47 +233,292 @@ export async function gastoPorCategoria(periodo: string): Promise<GastoCategoria
 }
 
 /* ========================================================================= *
- * RECEITA POR WHITE LABEL
+ * RECEITA POR NATUREZA — Float, Setup, Sustentação
  * ========================================================================= */
 
-export interface ReceitaWhiteLabel {
+export type Natureza = 'FLOAT' | 'SETUP' | 'SUSTENTACAO'
+
+export type ReceitaPorNatureza = Record<Natureza, number>
+
+/**
+ * Receita LANÇADA em cada uma das três naturezas reconhecidas.
+ *
+ * A fonte é a CATEGORIA do lançamento, não o nome digitado: `natureza` é um
+ * campo de CategoriaFinanceira, então renomear a categoria não quebra o
+ * gráfico, e duas categorias podem compartilhar a mesma natureza.
+ *
+ * Zero significa "nada lançado nessa natureza no período" — é a informação que
+ * permite às demais telas decidir se usam o valor lançado ou o derivado do
+ * cadastro, sem contar as duas coisas.
+ */
+export async function receitaPorNatureza(periodo: string): Promise<ReceitaPorNatureza> {
+  const { inicio, fim } = intervaloMes(periodo)
+
+  const grupos = await prisma.lancamentoFinanceiro.groupBy({
+    by: ['categoriaId'],
+    where: {
+      tipo: 'RECEITA',
+      data: { gte: inicio, lt: fim },
+      status: { not: 'CANCELADO' },
+      categoria: { natureza: { not: null } },
+    },
+    _sum: { valor: true },
+  })
+
+  const zero: ReceitaPorNatureza = { FLOAT: 0, SETUP: 0, SUSTENTACAO: 0 }
+  if (grupos.length === 0) return zero
+
+  const categorias = await prisma.categoriaFinanceira.findMany({
+    where: { id: { in: grupos.map((g) => g.categoriaId) } },
+    select: { id: true, natureza: true },
+  })
+  const naturezaDe = new Map(categorias.map((c) => [c.id, c.natureza]))
+
+  for (const g of grupos) {
+    const n = naturezaDe.get(g.categoriaId)
+    if (n) zero[n] += g._sum.valor ?? 0
+  }
+  return zero
+}
+
+/* ========================================================================= *
+ * RECEITA POR PARCEIRO — BaaS e White Label
+ * ========================================================================= */
+
+export interface ReceitaParceiro {
   id: string
   nomeFantasia: string
   identificacao: string
-  sustentacao: number
-  apiMensal: number
-  /** Receita recorrente do White Label: sustentação + API mensal. */
+  tipo: 'BAAS' | 'WHITE_LABEL'
+  /** Soma dos lançamentos de receita vinculados a este parceiro no período. */
+  lancado: number
+  /** Mensalidades do cadastro que ainda não foram lançadas como receita. */
+  recorrente: number
+  /** lancado + recorrente. */
   total: number
+  /** Quantos lançamentos sustentam a parcela `lancado` — a rastreabilidade. */
+  lancamentos: number
 }
 
 /**
- * Receita recorrente por White Label, direto das condições comerciais vigentes.
+ * Receita por BaaS / White Label do período.
  *
- * NÃO é TPV nem receita tarifária por parceiro: essas não existem por
- * parceiro no sistema — o lançamento diário é global, por decisão de produto.
- * O que existe por White Label são as duas mensalidades contratadas.
+ * DUAS ORIGENS, SEM DUPLA CONTAGEM:
+ *
+ *   1. LANÇAMENTOS vinculados ao parceiro (`LancamentoFinanceiro.condicaoId`).
+ *      É a parcela RASTREÁVEL: cada real aqui tem um lançamento com data,
+ *      categoria, status e anexos por trás.
+ *
+ *   2. MENSALIDADES do cadastro (sustentação vigente, API mensal, mensalidade
+ *      de conta ativa) — o recorrente contratado, que nem sempre é lançado
+ *      linha a linha.
+ *
+ * A regra que evita contar duas vezes: se existir lançamento de natureza
+ * SUSTENTACAO vinculado ao parceiro no período, a sustentação do CADASTRO sai
+ * da parcela recorrente — o valor lançado é a verdade, e o cadastro vira
+ * apenas o contrato de referência.
+ *
+ * O vínculo é fotografado no lançamento: alterar a condição comercial do
+ * parceiro amanhã não reescreve a receita já atribuída a ele ontem.
  */
-export async function receitaPorWhiteLabel(): Promise<ReceitaWhiteLabel[]> {
-  const wls = await prisma.condicaoComercial.findMany({
-    where: { tipo: 'WHITE_LABEL', ativo: true },
-    select: { id: true, nomeFantasia: true, identificacao: true, sustentacao: true, apiMensal: true },
-    orderBy: { nomeFantasia: 'asc' },
-  })
+export async function receitaPorParceiro(periodo: string): Promise<ReceitaParceiro[]> {
+  const { inicio, fim } = intervaloMes(periodo)
+  const referencia = fimDoPeriodo(periodo)
 
-  return wls
-    .map((w) => {
-      const sustentacao = w.sustentacao ?? 0
-      const apiMensal = w.apiMensal ?? 0
+  const [parceiros, vinculados] = await Promise.all([
+    prisma.condicaoComercial.findMany({
+      where: { ativo: true },
+      select: {
+        id: true, nomeFantasia: true, identificacao: true, tipo: true,
+        sustentacao: true, apiMensal: true, mensalidadeContaAtiva: true,
+        sustentacaoInicio: true,
+      },
+      orderBy: { nomeFantasia: 'asc' },
+    }),
+    prisma.lancamentoFinanceiro.findMany({
+      where: {
+        tipo: 'RECEITA',
+        condicaoId: { not: null },
+        data: { gte: inicio, lt: fim },
+        status: { not: 'CANCELADO' },
+      },
+      select: { condicaoId: true, valor: true, categoria: { select: { natureza: true } } },
+    }),
+  ])
+
+  const porParceiro = new Map<string, { total: number; sustentacao: number; linhas: number }>()
+  for (const l of vinculados) {
+    if (!l.condicaoId) continue
+    const atual = porParceiro.get(l.condicaoId) ?? { total: 0, sustentacao: 0, linhas: 0 }
+    atual.total += l.valor
+    atual.linhas += 1
+    if (l.categoria.natureza === 'SUSTENTACAO') atual.sustentacao += l.valor
+    porParceiro.set(l.condicaoId, atual)
+  }
+
+  return parceiros
+    .map((p) => {
+      const lanc = porParceiro.get(p.id) ?? { total: 0, sustentacao: 0, linhas: 0 }
+      const sust = sustentacaoVigente(p.sustentacaoInicio, referencia) ? (p.sustentacao ?? 0) : 0
+      // Sustentação lançada substitui a do cadastro — nunca somam.
+      const recorrente =
+        (lanc.sustentacao > 0 ? 0 : sust) + (p.apiMensal ?? 0) + (p.mensalidadeContaAtiva ?? 0)
+
       return {
-        id: w.id,
-        nomeFantasia: w.nomeFantasia,
-        identificacao: w.identificacao,
-        sustentacao,
-        apiMensal,
-        total: sustentacao + apiMensal,
+        id: p.id,
+        nomeFantasia: p.nomeFantasia,
+        identificacao: p.identificacao,
+        tipo: p.tipo,
+        lancado: lanc.total,
+        recorrente,
+        total: lanc.total + recorrente,
+        lancamentos: lanc.linhas,
       }
     })
     .sort((a, b) => b.total - a.total)
+}
+
+/* ========================================================================= *
+ * CONTAS A PAGAR
+ * ========================================================================= */
+
+export type SituacaoPagar = 'PAGA' | 'VENCIDA' | 'A_VENCER' | 'CANCELADA'
+
+export interface TituloPagar {
+  id: string
+  descricao: string
+  valor: number
+  /** Data em que a despesa foi lançada (competência). */
+  data: string
+  /** Data em que a despesa vence. Nunca nula em Contas a Pagar. */
+  dataVencimento: string
+  status: 'PENDENTE' | 'PAGO' | 'CANCELADO'
+  situacao: SituacaoPagar
+  /** Dias até o vencimento; negativo quando já venceu. Null quando paga. */
+  diasParaVencer: number | null
+  categoria: { id: string; nome: string }
+  fornecedor: { id: string; razaoSocial: string } | null
+  parcela: number | null
+  totalParcelas: number | null
+}
+
+export interface ResumoPagar {
+  total: number
+  pagas: number
+  pendentes: number
+  vencidas: number
+  aVencer: number
+  titulos: number
+}
+
+const DIA_MS = 86_400_000
+
+/** Meia-noite UTC do dia informado — o grão das colunas DATE. */
+function diaUtc(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+}
+
+/**
+ * Situação de um título a pagar. Função pura para ser exercitável sem banco —
+ * é ela que decide o que aparece como "vencido" na tela.
+ *
+ * PAGO ganha de tudo: um título pago depois do vencimento não é "vencido", é
+ * pago. CANCELADO idem — é despesa que não aconteceu.
+ */
+export function situacaoDoTitulo(
+  status: 'PENDENTE' | 'PAGO' | 'CANCELADO',
+  vencimento: Date,
+  hoje: Date = new Date(),
+): { situacao: SituacaoPagar; diasParaVencer: number | null } {
+  if (status === 'PAGO') return { situacao: 'PAGA', diasParaVencer: null }
+  if (status === 'CANCELADO') return { situacao: 'CANCELADA', diasParaVencer: null }
+
+  const dias = Math.round((diaUtc(vencimento) - diaUtc(hoje)) / DIA_MS)
+  return { situacao: dias < 0 ? 'VENCIDA' : 'A_VENCER', diasParaVencer: dias }
+}
+
+export interface FiltroPagar {
+  periodo?: string
+  situacao?: SituacaoPagar
+  categoriaId?: string
+  fornecedorId?: string
+  descricao?: string
+}
+
+/**
+ * Contas a Pagar — a MESMA base de Lançamentos, filtrada por tipo DESPESA.
+ *
+ * Não existe uma segunda tabela de despesas: o que muda aqui é a data de
+ * referência (vencimento, não lançamento) e o recorte por situação. Uma
+ * despesa editada em Lançamentos aparece corrigida aqui no mesmo instante,
+ * porque é a mesma linha.
+ */
+export async function contasAPagar(
+  filtro: FiltroPagar, hoje: Date = new Date(),
+): Promise<{ titulos: TituloPagar[]; resumo: ResumoPagar }> {
+  const janela = filtro.periodo && /^\d{4}-\d{2}$/.test(filtro.periodo)
+    ? intervaloMes(filtro.periodo)
+    : null
+
+  const linhas = await prisma.lancamentoFinanceiro.findMany({
+    where: {
+      tipo: 'DESPESA',
+      ...(janela ? { dataVencimento: { gte: janela.inicio, lt: janela.fim } } : {}),
+      ...(filtro.categoriaId ? { categoriaId: filtro.categoriaId } : {}),
+      ...(filtro.fornecedorId ? { fornecedorId: filtro.fornecedorId } : {}),
+      ...(filtro.descricao
+        ? { descricao: { contains: filtro.descricao, mode: 'insensitive' as const } }
+        : {}),
+    },
+    include: {
+      categoria: { select: { id: true, nome: true } },
+      fornecedor: { select: { id: true, razaoSocial: true } },
+    },
+    orderBy: [{ dataVencimento: 'asc' }, { data: 'asc' }],
+    take: 500,
+  })
+
+  const titulos: TituloPagar[] = linhas.map((l) => {
+    // Despesas antigas, anteriores ao campo, caem na data de lançamento — é a
+    // única informação verdadeira que existe sobre elas.
+    const venc = l.dataVencimento ?? l.data
+    const { situacao, diasParaVencer } = situacaoDoTitulo(l.status, venc, hoje)
+    return {
+      id: l.id,
+      descricao: l.descricao,
+      valor: l.valor,
+      data: l.data.toISOString().slice(0, 10),
+      dataVencimento: venc.toISOString().slice(0, 10),
+      status: l.status,
+      situacao,
+      diasParaVencer,
+      categoria: l.categoria,
+      fornecedor: l.fornecedor,
+      parcela: l.parcela,
+      totalParcelas: l.totalParcelas,
+    }
+  })
+
+  const filtrados = filtro.situacao
+    ? titulos.filter((t) => t.situacao === filtro.situacao)
+    : titulos
+
+  // O resumo descreve o CONJUNTO ANTES do filtro de situação: filtrar por
+  // "vencidas" não pode fazer o total do mês mudar.
+  const soma = (p: (t: TituloPagar) => boolean) =>
+    titulos.filter(p).reduce((s, t) => s + t.valor, 0)
+
+  return {
+    titulos: filtrados,
+    resumo: {
+      total: soma((t) => t.situacao !== 'CANCELADA'),
+      pagas: soma((t) => t.situacao === 'PAGA'),
+      pendentes: soma((t) => t.situacao === 'VENCIDA' || t.situacao === 'A_VENCER'),
+      vencidas: soma((t) => t.situacao === 'VENCIDA'),
+      aVencer: soma((t) => t.situacao === 'A_VENCER'),
+      titulos: filtrados.length,
+    },
+  }
 }
 
 /* ========================================================================= *
@@ -267,6 +562,48 @@ export async function inadimplenciaDoPeriodo(periodo: string): Promise<Inadimple
 }
 
 /* ========================================================================= *
+ * EVOLUÇÃO TEMPORAL
+ * ========================================================================= */
+
+export interface PontoEvolucao {
+  periodo: string
+  receita: number
+  despesa: number
+  resultado: number
+}
+
+/**
+ * Receita, despesa e resultado mês a mês. UMA consulta para toda a série — a
+ * alternativa (N chamadas a `resultadoDoPeriodo`) faria N×2 idas ao banco só
+ * para desenhar um gráfico.
+ */
+export async function evolucaoFinanceira(periodos: string[]): Promise<PontoEvolucao[]> {
+  if (periodos.length === 0) return []
+
+  const inicio = intervaloMes(periodos[0]).inicio
+  const fim = intervaloMes(periodos[periodos.length - 1]).fim
+
+  const linhas = await prisma.lancamentoFinanceiro.findMany({
+    where: { data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' } },
+    select: { tipo: true, valor: true, data: true },
+  })
+
+  const acumulado = new Map<string, { receita: number; despesa: number }>()
+  for (const l of linhas) {
+    const chave = `${l.data.getUTCFullYear()}-${String(l.data.getUTCMonth() + 1).padStart(2, '0')}`
+    const atual = acumulado.get(chave) ?? { receita: 0, despesa: 0 }
+    if (l.tipo === 'RECEITA') atual.receita += l.valor
+    else atual.despesa += l.valor
+    acumulado.set(chave, atual)
+  }
+
+  return periodos.map((p) => {
+    const a = acumulado.get(p) ?? { receita: 0, despesa: 0 }
+    return { periodo: p, receita: a.receita, despesa: a.despesa, resultado: a.receita - a.despesa }
+  })
+}
+
+/* ========================================================================= *
  * VISÃO GERAL
  * ========================================================================= */
 
@@ -277,20 +614,28 @@ export interface VisaoGeralFinanceiro {
   resultado: ResultadoPeriodo
   inadimplencia: Inadimplencia
   gastoPorCategoria: GastoCategoria[]
-  receitaPorWhiteLabel: ReceitaWhiteLabel[]
-  parceiros: ContagensParceiros
+  receitaPorBaas: ReceitaParceiro[]
+  receitaPorWhiteLabel: ReceitaParceiro[]
+  porNatureza: ReceitaPorNatureza
+  evolucao: PontoEvolucao[]
+  contasAPagar: ResumoPagar
 }
 
-/** Tudo que a Visão Geral mostra, numa ida só ao banco. */
-export async function visaoGeralFinanceiro(periodo: string): Promise<VisaoGeralFinanceiro> {
-  const [mrr, resultado, inadimplencia, gastos, wls, parceiros] = await Promise.all([
-    calcularMrr(),
-    resultadoDoPeriodo(periodo),
-    inadimplenciaDoPeriodo(periodo),
-    gastoPorCategoria(periodo),
-    receitaPorWhiteLabel(),
-    contagensParceiros(),
-  ])
+/** Tudo que a Visão Geral mostra. */
+export async function visaoGeralFinanceiro(
+  periodo: string, periodosSerie: string[] = [],
+): Promise<VisaoGeralFinanceiro> {
+  const [mrr, resultado, inadimplencia, gastos, parceiros, natureza, evolucao, pagar] =
+    await Promise.all([
+      calcularMrr(periodo),
+      resultadoDoPeriodo(periodo),
+      inadimplenciaDoPeriodo(periodo),
+      gastoPorCategoria(periodo),
+      receitaPorParceiro(periodo),
+      receitaPorNatureza(periodo),
+      evolucaoFinanceira(periodosSerie),
+      contasAPagar({ periodo }),
+    ])
 
   return {
     periodo,
@@ -299,8 +644,11 @@ export async function visaoGeralFinanceiro(periodo: string): Promise<VisaoGeralF
     resultado,
     inadimplencia,
     gastoPorCategoria: gastos,
-    receitaPorWhiteLabel: wls,
-    parceiros,
+    receitaPorBaas: parceiros.filter((p) => p.tipo === 'BAAS'),
+    receitaPorWhiteLabel: parceiros.filter((p) => p.tipo === 'WHITE_LABEL'),
+    porNatureza: natureza,
+    evolucao,
+    contasAPagar: pagar.resumo,
   }
 }
 
@@ -326,6 +674,27 @@ export interface LinhaGerada {
 }
 
 /**
+ * Horizonte de uma recorrência SEM data final.
+ *
+ * A recorrência indefinida não pede data ao usuário, mas alguma quantidade de
+ * linhas precisa existir — o sistema materializa as linhas em vez de expandir
+ * a recorrência na leitura (ver abaixo). Cinco anos cobre qualquer horizonte de
+ * planejamento do produto e mantém o custo por cadastro trivial.
+ */
+export const MESES_RECORRENCIA_INDEFINIDA = 60
+
+/** Teto de segurança para recorrência com data: 20 anos de linhas. */
+export const MESES_RECORRENCIA_MAXIMO = 240
+
+/** Quantos meses vão de `inicio` até o fim do mês de `fim`, inclusive. */
+export function mesesEntre(inicio: Date, fim: Date): number {
+  const meses =
+    (fim.getUTCFullYear() - inicio.getUTCFullYear()) * 12 +
+    (fim.getUTCMonth() - inicio.getUTCMonth())
+  return meses + 1
+}
+
+/**
  * Expande um cadastro de lançamento nas linhas que serão gravadas.
  *
  * Por que materializar em vez de guardar "é recorrente" e expandir na leitura:
@@ -335,13 +704,14 @@ export interface LinhaGerada {
  *
  *   UNICA      → 1 linha
  *   PARCELADA  → `totalParcelas` linhas mensais; valor é o da parcela
- *   RECORRENTE → 1 linha por mês até `meses` (padrão 12), mesmo valor
+ *   RECORRENTE → 1 linha por mês, até `recorrenciaFim` quando houver data, ou
+ *                até o horizonte de recorrência indefinida quando não houver
  */
 export function expandirLancamento(
   periodicidade: 'UNICA' | 'RECORRENTE' | 'PARCELADA',
   data: Date,
   valor: number,
-  opcoes: { totalParcelas?: number | null; meses?: number | null } = {},
+  opcoes: { totalParcelas?: number | null; recorrenciaFim?: Date | null } = {},
 ): LinhaGerada[] {
   if (periodicidade === 'PARCELADA') {
     const n = Math.max(1, Math.round(opcoes.totalParcelas ?? 1))
@@ -354,7 +724,9 @@ export function expandirLancamento(
   }
 
   if (periodicidade === 'RECORRENTE') {
-    const n = Math.max(1, Math.round(opcoes.meses ?? 12))
+    const n = opcoes.recorrenciaFim
+      ? Math.min(MESES_RECORRENCIA_MAXIMO, Math.max(1, mesesEntre(data, opcoes.recorrenciaFim)))
+      : MESES_RECORRENCIA_INDEFINIDA
     return Array.from({ length: n }, (_, i) => ({
       data: somarMeses(data, i),
       valor,

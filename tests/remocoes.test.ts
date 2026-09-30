@@ -95,6 +95,8 @@ test('os ambientes que ficam continuam registrados', () => {
     'carteira.clientes', 'carteira.volumetria', 'carteira.certificados',
     'operacoes.compliance', 'comercial.pipeline', 'comercial.funis',
     'comercial.leads', 'comercial.followup', 'comercial.crm',
+    'financeiro.visao', 'financeiro.lancamentos', 'financeiro.contas',
+    'financeiro.pagar', 'financeiro.condicoes',
   ]) {
     assert.ok(isFeatureEnabled(chave), `${chave} deveria continuar ligada`)
   }
@@ -134,12 +136,26 @@ test('Funis é só de ADMIN; Pipeline não é', () => {
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
 
-test('o Financeiro tem exatamente os seis menus da especificação, nessa ordem', () => {
+test('o Financeiro tem exatamente os sete menus da especificação, nessa ordem', () => {
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
-    ['Visão Geral', 'Lançamentos', 'Contas a Receber', 'Categorias', 'Fornecedores', 'Condições Comerciais BaaS'],
+    [
+      'Visão Geral', 'Lançamentos', 'Contas a Receber', 'Contas a Pagar',
+      'Categorias', 'Fornecedores', 'Condições Comerciais BaaS',
+    ],
   )
+})
+
+test('Contas a Pagar e Contas a Receber são menus e rotas distintos', () => {
+  // Leem bases diferentes (despesa × ContaReceber) e não podem casar por
+  // prefixo um com o outro, como Pipeline e Funis já casavam.
+  const pagar = activeFeatures().find((f) => f.key === 'financeiro.pagar')!
+  const receber = activeFeatures().find((f) => f.key === 'financeiro.contas')!
+  assert.equal(pagar.route, '/dashboard/financeiro/contas-pagar')
+  assert.equal(receber.route, '/dashboard/financeiro/contas-receber')
+  assert.ok(!pagar.route.startsWith(receber.route + '/'))
+  assert.ok(!receber.route.startsWith(pagar.route + '/'))
 })
 
 test('a Visão Geral não engole os menus abaixo dela', () => {

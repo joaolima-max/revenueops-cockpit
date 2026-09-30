@@ -27,7 +27,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const etapaOrigemId = ctx.deal.etapaId
   const stage = stageLegado(destino.id)
-  const encerra = destino.tipo === 'GANHO' || destino.tipo === 'PERDIDO'
+  // Mover de etapa NAO encerra o card: quem encerra e o RESULTADO, que tem
+  // rota propria (PATCH .../resultado). Antes, arrastar para a coluna "Ganho"
+  // fazia as duas coisas de uma vez e nao havia como desfazer uma sem a outra.
 
   const card = await prisma.$transaction(async (tx) => {
     const atualizado = await tx.deal.update({
@@ -38,7 +40,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // `stage` é o campo legado do Deal, anterior aos funis. Só é tocado quando
         // a etapa de destino tem um valor legado correspondente (funil Vendas).
         ...(stage ? { stage: stage as never } : {}),
-        closedAt: encerra ? new Date() : null,
       },
       include: INCLUDE_CARD,
     })

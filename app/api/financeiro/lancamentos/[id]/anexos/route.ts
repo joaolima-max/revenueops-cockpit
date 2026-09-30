@@ -7,6 +7,7 @@ import {
   enviarArquivo, removerArquivo, storageConfigurado,
   validarArquivo, chaveLancamento,
 } from '@/lib/storage'
+import { limiteAnexosAtingido, MAX_ANEXOS_LANCAMENTO } from '@/lib/arquivos'
 
 function podeGerenciar(session: TokenPayload): boolean {
   return hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
@@ -33,7 +34,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     orderBy: { createdAt: 'asc' },
   })
 
-  return NextResponse.json({ anexos })
+  return NextResponse.json({ anexos, maximo: MAX_ANEXOS_LANCAMENTO })
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -49,6 +50,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     where: { id }, select: { id: true, descricao: true },
   })
   if (!lancamento) return NextResponse.json({ error: 'Lançamento não encontrado.' }, { status: 404 })
+
+  // TETO DE 4 ANEXOS, validado no SERVIDOR. Esconder o botão na tela não
+  // impede um POST — e o limite é o que mantém o anexo como comprovação do
+  // lançamento, e não como um repositório de arquivos disfarçado.
+  const jaTem = await prisma.lancamentoAnexo.count({ where: { lancamentoId: lancamento.id } })
+  const cheio = limiteAnexosAtingido(jaTem)
+  if (cheio) return NextResponse.json({ error: cheio }, { status: 409 })
 
   const form = await request.formData()
   const arquivo = form.get('arquivo')

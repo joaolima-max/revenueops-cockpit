@@ -50,7 +50,9 @@ export default async function ConselhoPage() {
     { label: '% de MEDs', fig: kpis.percentMed === null ? null : figuraPercentual(kpis.percentMed, 2), delta: varDe(k => k.percentMed) },
   ]
 
-  /* NÍVEL 5 — a carteira em números inteiros. */
+  /* NÍVEL 5 — a carteira em números inteiros. MESMAS fontes do Cockpit e do
+     Financeiro: `indicadoresEstrutura` é a única função que produz estes três
+     números, e nenhuma tela repete a consulta. */
   const carteira = [
     { label: 'Clientes ativos', v: estrutura.clientesAtivos },
     { label: 'White Labels ativos', v: estrutura.whiteLabelsAtivos },
@@ -143,7 +145,7 @@ export default async function ConselhoPage() {
           title="Onde está a receita"
           sub={maiorLinha
             ? `${maiorLinha[0]} concentra ${((maiorLinha[1] / receita!.total) * 100).toFixed(1)}% do faturamento do período.`
-            : 'A soma das cinco linhas é o faturamento do período.'}
+            : 'A soma das quatro linhas é o faturamento do período.'}
         />
         {!receita ? (
           <Panel padded={false}>
@@ -165,7 +167,7 @@ export default async function ConselhoPage() {
                 ))}
               </div>
             )}
-            <HairlineGrid cols={5}>
+            <HairlineGrid cols={4}>
               {linhas.map(([label, valor]) => (
                 <HairlineCell key={label} className="gap-2.5">
                   <p className="t-label text-subtle">{label}</p>

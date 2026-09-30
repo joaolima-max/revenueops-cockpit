@@ -3,12 +3,9 @@
 import { useState, useMemo, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { figuraMoeda, figuraQuantidade, figuraPercentual, eixoMoeda } from '@/lib/format-financeiro'
+import { figuraMoeda, figuraQuantidade, eixoMoeda } from '@/lib/format-financeiro'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
-import HairlineGrid from '@/components/ui/HairlineGrid'
-import StatTile from '@/components/ui/StatTile'
-import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 
 export interface LancamentoDTO {
@@ -21,20 +18,6 @@ export interface LancamentoDTO {
   /** Fotografia do dia. null = não informado, que não é o mesmo que zero. */
   clientesAtivos: number | null
   notas: string | null
-}
-
-export interface KpisDTO {
-  temDados: boolean
-  diasLancados: number
-  tpv: number | null
-  receitaTarifaria: number | null
-  qtdTransacoes: number | null
-  qtdMed: number | null
-  saldoMedio: number | null
-  float: number | null
-  takeRate: number | null
-  percentMed: number | null
-  clientesAtivos: number | null
 }
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -62,12 +45,22 @@ function hojeISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * LANÇAMENTO DIÁRIO — a tela começa direto pelo calendário.
+ *
+ * Os cards de indicadores que ficavam no topo saíram: esta é uma tela de
+ * ENTRADA de dado, e os indicadores derivados dela têm casa própria no Cockpit
+ * e no Conselho. Repeti-los aqui criava uma terceira leitura dos mesmos
+ * números no meio do fluxo de digitação.
+ *
+ * Os DADOS do lançamento diário continuam intactos: ele segue sendo a fonte de
+ * verdade dos realizados gerais.
+ */
 export default function CalendarioLancamentos({
-  periodo, lancamentos, kpis, podeEditar, podeExcluir,
+  periodo, lancamentos, podeEditar, podeExcluir,
 }: {
   periodo: string
   lancamentos: LancamentoDTO[]
-  kpis: KpisDTO
   podeEditar: boolean
   podeExcluir: boolean
 }) {
@@ -146,22 +139,13 @@ export default function CalendarioLancamentos({
     }
   }
 
-  const resumo = [
-    { label: 'TPV', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv) },
-    { label: 'Receita Tarifária', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria) },
-    { label: 'Float (derivado)', fig: kpis.float === null ? null : figuraMoeda(kpis.float) },
-    { label: 'Saldo Médio', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio) },
-    { label: 'Clientes Ativos', fig: kpis.clientesAtivos === null ? null : figuraQuantidade(kpis.clientesAtivos) },
-    { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes) },
-    { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3) },
-  ]
-
-
   return (
     <div className="space-y-8">
       <PageHeader
         title="Lançamento Diário"
-        sub="Registro do realizado. O Float é calculado automaticamente a partir do saldo em conta."
+        sub={podeEditar
+          ? 'Registro do realizado. Selecione um dia do calendário para lançar.'
+          : 'Registro do realizado. Seu perfil não tem permissão para lançar dados.'}
         actions={
           <div className="flex items-center gap-1 rounded-lg border border-line p-1">
             <button
@@ -180,25 +164,6 @@ export default function CalendarioLancamentos({
           </div>
         }
       />
-
-      {kpis.temDados ? (
-        <HairlineGrid cols={6}>
-          {resumo.map((r, i) => (
-            <StatTile key={r.label} label={r.label} figura={r.fig} primary={i === 0} size="sm" />
-          ))}
-        </HairlineGrid>
-      ) : (
-        <Panel padded={false}>
-          <EmptyState
-            title={`Nenhum lançamento em ${MESES[mes - 1]} de ${ano}`}
-            description={
-              podeEditar
-                ? 'Selecione um dia do calendário para registrar os indicadores.'
-                : 'Seu perfil não tem permissão para lançar dados.'
-            }
-          />
-        </Panel>
-      )}
 
       <Panel>
         <div className="grid grid-cols-7 gap-1.5 sm:gap-2 mb-3">

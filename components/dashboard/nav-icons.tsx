@@ -41,6 +41,7 @@ export const ICONS: Record<string, ReactNode> = {
   'financeiro.visao': I.financeiro,
   'financeiro.lancamentos': I.forecast,
   'financeiro.contas': I.financeiro,
+  'financeiro.pagar': I.tarefas,
   'financeiro.categorias': I.parametros,
   'financeiro.fornecedores': I.clientes,
   'financeiro.condicoes': I.metricas,

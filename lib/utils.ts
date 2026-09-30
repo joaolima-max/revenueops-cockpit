@@ -135,9 +135,14 @@ export const CLIENTE_STATUS_LABELS: Record<string, string> = {
 
 export const META_TIPO_LABELS: Record<string, string> = {
   RECEITA_TARIFARIA: 'Receita Tarifária', SALDO_EM_CONTA: 'Saldo em Conta', MEDS: 'MEDs',
-  RECEITA: 'Receita', TPV: 'TPV', MRR: 'MRR', FLOATING: 'Floating',
-  CLIENTES_ATIVOS: 'Clientes Ativos', NOVOS_CLIENTES: 'Novos Clientes',
-  RETENCAO: 'Retenção (%)', TRANSACOES: 'Transações',
+  TPV: 'TPV', TRANSACOES: 'Transações',
+  // Indicadores percentuais. A unidade fica no rótulo porque é a primeira
+  // coisa que diferencia "MEDs" (quantidade) de "MED %" (proporção).
+  MED_PERCENTUAL: 'MED (% das transações)', TAKE_RATE: 'Take Rate (%)',
+  // Legado: metas criadas antes da revisão da taxonomia.
+  RECEITA: 'Receita (legado)', MRR: 'MRR (legado)', FLOATING: 'Floating (legado)',
+  CLIENTES_ATIVOS: 'Clientes Ativos (legado)', NOVOS_CLIENTES: 'Novos Clientes (legado)',
+  RETENCAO: 'Retenção (legado)',
 }
 
 export const SEGMENTO_LABELS: Record<string, string> = {

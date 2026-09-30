@@ -108,6 +108,34 @@ export function LINE(p: Paleta) {
   }
 }
 
+/* ---------- rampa categórica (pizza / donut) ------------------------------ */
+
+/**
+ * N tons para um gráfico circular.
+ *
+ * MONOCROMÁTICA, derivada do accent da marca: a leitura acontece por
+ * INTENSIDADE, do mais escuro (maior fatia) ao mais claro. Uma paleta de
+ * matizes diferentes diria que as categorias têm naturezas diferentes — e
+ * "Infraestrutura" e "Pessoal" são só duas linhas de despesa.
+ *
+ * A rampa é calculada, não tabelada: um gráfico com 3 categorias e outro com
+ * 11 usam a mesma linguagem, sem cor repetida nem lista a manter.
+ */
+export function rampaCategorias(tema: Tema, n: number): string[] {
+  if (n <= 0) return []
+  // Matiz e saturação do accent (#2F6BFF em HSL). Só a luminosidade varia.
+  const H = 225
+  const S = 100
+  // No claro a rampa desce (escuro→médio) para manter contraste sobre branco;
+  // no escuro ela sobe (médio→claro) pelo mesmo motivo, invertido.
+  const [ini, fim] = tema === 'light' ? [38, 78] : [66, 30]
+  return Array.from({ length: n }, (_, i) => {
+    const t = n === 1 ? 0 : i / (n - 1)
+    const l = ini + (fim - ini) * t
+    return `hsl(${H} ${S}% ${l.toFixed(1)}%)`
+  })
+}
+
 /** Uma série só existe se houver ao menos um valor finito diferente de zero. */
 export function hasSeries<T extends Record<string, unknown>>(rows: T[], ...keys: (keyof T)[]): boolean {
   return rows.some((r) => keys.some((k) => {

@@ -1,12 +1,14 @@
 /**
  * REGISTRO DE KPIs — cada indicador tem UMA fonte oficial.
  *
- *   LancamentoDiario  → TPV, Receita Tarifária, Saldo em Conta, Transações,
- *                       MEDs e Clientes Ativos
- *   FloatConfig       → multiplicador do Float (derivado, nunca lançado)
- *   CondicaoComercial → Sustentação, MRR, BaaS ativos, White Labels ativos
- *   ContaReceber      → Setup
- *   Meta              → objetivos (somente o alvo; o realizado nunca vem daqui)
+ *   LancamentoDiario     → TPV, Receita Tarifária, Saldo em Conta, Transações,
+ *                          MEDs e Clientes Ativos
+ *   FloatConfig          → multiplicador do Float (derivado, nunca lançado)
+ *   CondicaoComercial    → MRR, BaaS ativos, White Labels ativos e a
+ *                          sustentação usada quando nada foi lançado
+ *   LancamentoFinanceiro → Float, Setup e Sustentação lançados (pela natureza
+ *                          da categoria), que têm precedência sobre o derivado
+ *   Meta                 → objetivos (somente o alvo; o realizado nunca vem daqui)
  *
  * Regra que substitui os 36 fallbacks anteriores: quando não há dado, o valor é
  * `null` e a tela mostra estado vazio. Zero é usado apenas quando é o resultado
@@ -16,7 +18,11 @@
 import { prisma } from '@/lib/prisma'
 import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/float'
 import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
-import { calcularMrr, contagensParceiros, type Mrr, type ContagensParceiros } from '@/lib/financeiro'
+import {
+  calcularMrr, contagensParceiros, receitaPorNatureza, sustentacaoVigente,
+  type Mrr, type ContagensParceiros,
+} from '@/lib/financeiro'
+import { avaliarMeta, type Avaliacao, type MetaDirecao, type MetaUnidade } from '@/lib/metas'
 import { intervaloMes, periodoAtual, ultimosPeriodos } from '@/lib/periodo'
 
 // Reexportados porque muitas telas já os importavam daqui. A implementação
@@ -145,31 +151,35 @@ export interface LinhasReceita {
  * dava para dizer que receita era aquela. Os títulos com esse tipo continuam
  * existindo em Contas a Receber; só não formam mais uma vertical de receita.
  *
- * `sustentacao` passou a vir de CondicaoComercial — mesma fonte do MRR — e não
- * mais de campos do cadastro de Cliente, que deixaram de existir.
+ * FLOAT, SETUP E SUSTENTAÇÃO: a CATEGORIA do lançamento financeiro é a fonte
+ * de verdade. Quando existe lançamento real de uma dessas naturezas no
+ * período, é o valor LANÇADO que entra. Quando não existe, entra o valor
+ * DERIVADO — sustentação vigente das condições comerciais (a mesma parcela do
+ * MRR) e Float calculado do saldo em conta. Nunca os dois: é exatamente aí
+ * que a dupla contagem apareceria.
+ *
+ * Setup não tem derivação: ou foi lançado, ou é zero.
  */
 export async function linhasReceita(periodo: string): Promise<LinhasReceita | null> {
-  const { inicio, fim } = intervaloMes(periodo)
-  const kpis = await kpisDoPeriodo(periodo)
-
-  const [condicoes, contas] = await Promise.all([
-    prisma.condicaoComercial.aggregate({
+  const referencia = new Date(intervaloMes(periodo).fim.getTime() - 1)
+  const [kpis, lancado, parceiros] = await Promise.all([
+    kpisDoPeriodo(periodo),
+    receitaPorNatureza(periodo),
+    prisma.condicaoComercial.findMany({
       where: { ativo: true },
-      _sum: { sustentacao: true },
-    }),
-    prisma.contaReceber.groupBy({
-      by: ['tipo'],
-      where: { status: 'PAGO', dataVenc: { gte: inicio, lt: fim } },
-      _sum: { valor: true },
+      select: { sustentacao: true, sustentacaoInicio: true },
     }),
   ])
 
-  const porTipo = (t: string) => contas.find((c) => c.tipo === t)?._sum.valor ?? 0
+  const sustentacaoCadastro = parceiros.reduce(
+    (a, p) => a + (sustentacaoVigente(p.sustentacaoInicio, referencia) ? (p.sustentacao ?? 0) : 0),
+    0,
+  )
 
   const tarifario = kpis.receitaTarifaria ?? 0
-  const flt = kpis.float ?? 0
-  const sustentacao = condicoes._sum.sustentacao ?? 0
-  const setup = porTipo('SETUP')
+  const flt = lancado.FLOAT > 0 ? lancado.FLOAT : (kpis.float ?? 0)
+  const sustentacao = lancado.SUSTENTACAO > 0 ? lancado.SUSTENTACAO : sustentacaoCadastro
+  const setup = lancado.SETUP
   const total = tarifario + flt + sustentacao + setup
 
   if (!kpis.temDados && total === 0) return null
@@ -207,7 +217,7 @@ export async function indicadoresEstrutura(periodo: string): Promise<Indicadores
   const [kpis, parceiros, mrr] = await Promise.all([
     kpisDoPeriodo(periodo),
     contagensParceiros(),
-    calcularMrr(),
+    calcularMrr(periodo),
   ])
 
   return {
@@ -220,35 +230,59 @@ export async function indicadoresEstrutura(periodo: string): Promise<Indicadores
 
 export type { ContagensParceiros }
 
-export interface MetaVsRealizado {
+export interface MetaVsRealizado extends Avaliacao {
   tipo: string
   meta: number
   realizado: number | null
+  direcao: MetaDirecao
+  unidade: MetaUnidade
+  /** Percentual de cumprimento. Mantém o nome que as telas já usavam. */
   atingimento: number | null
 }
 
-/** Meta × Realizado. A meta vem de Meta; o realizado, sempre do lançamento diário. */
+/**
+ * De onde sai o REALIZADO de cada tipo de meta. Sempre do lançamento diário —
+ * nunca do próprio registro de Meta, que guarda só o alvo.
+ *
+ * Exportada porque a API de metas precisa saber quais tipos têm realizado
+ * apurável, e ter uma segunda cópia da lista lá é como as duas divergem.
+ */
+export function realizadoPorTipo(kpis: KpisPeriodo): Record<string, number | null> {
+  return {
+    RECEITA_TARIFARIA: kpis.receitaTarifaria,
+    TPV: kpis.tpv,
+    SALDO_EM_CONTA: kpis.saldoMedio,
+    TRANSACOES: kpis.qtdTransacoes,
+    MEDS: kpis.qtdMed,
+    MED_PERCENTUAL: kpis.percentMed,
+    TAKE_RATE: kpis.takeRate,
+  }
+}
+
+/**
+ * Meta × Realizado. A meta vem de Meta; o realizado, sempre do lançamento
+ * diário. A comparação respeita a DIREÇÃO gravada na meta: uma meta de MED em
+ * 2% é atingida quando o realizado fica abaixo dela (ver lib/metas.ts).
+ */
 export async function metasDoPeriodo(periodo: string): Promise<MetaVsRealizado[]> {
   const [metas, kpis] = await Promise.all([
     prisma.meta.findMany({ where: { periodo }, orderBy: { tipo: 'asc' } }),
     kpisDoPeriodo(periodo),
   ])
 
-  const realizadoDe: Record<string, number | null> = {
-    RECEITA_TARIFARIA: kpis.receitaTarifaria,
-    TPV: kpis.tpv,
-    SALDO_EM_CONTA: kpis.saldoMedio,
-    TRANSACOES: kpis.qtdTransacoes,
-    MEDS: kpis.qtdMed,
-  }
+  const realizadoDe = realizadoPorTipo(kpis)
 
   return metas.map((m) => {
     const realizado = realizadoDe[m.tipo] ?? null
+    const avaliacao = avaliarMeta(m.valor, realizado, m.direcao)
     return {
       tipo: m.tipo,
       meta: m.valor,
       realizado,
-      atingimento: realizado !== null && m.valor > 0 ? (realizado / m.valor) * 100 : null,
+      direcao: m.direcao,
+      unidade: m.unidade,
+      atingimento: avaliacao.cumprimento,
+      ...avaliacao,
     }
   })
 }

@@ -34,6 +34,30 @@ enum DealStage {
   PERDIDO
 }
 
+/// Como comparar meta e realizado. Uma meta de MED em 2% e batida quando o
+/// realizado fica ABAIXO dela; uma de TPV, quando fica acima. Sem esta
+/// informacao o sistema teria que adivinhar pelo tipo do indicador.
+enum MetaDirecao {
+  MAIOR_MELHOR
+  MENOR_MELHOR
+}
+
+/// Como o valor da meta e do realizado devem ser lidos e formatados.
+enum MetaUnidade {
+  VALOR
+  QUANTIDADE
+  PERCENTUAL
+}
+
+/// Papel economico da categoria financeira. E o que deixa Float, Setup e
+/// Sustentacao serem reconhecidos pelos graficos sem depender do NOME que
+/// alguem digitou na categoria.
+enum CategoriaNatureza {
+  FLOAT
+  SETUP
+  SUSTENTACAO
+}
+
 enum ModeloOperacional {
   API
   WHITE_LABEL
@@ -54,13 +78,26 @@ enum MetaTipo {
   SALDO_EM_CONTA
   TRANSACOES
   MEDS
+  /// MEDs como PERCENTUAL das transacoes do periodo. Meta percentual: o alvo
+  /// e "no maximo 2%", e a direcao correta e MENOR_MELHOR.
+  MED_PERCENTUAL
+  /// Receita tarifaria / TPV, em percentual.
+  TAKE_RATE
 
   // Legado: metas criadas antes da revisao da taxonomia ainda usam estes
   // valores em Production. Mantidos para o client conseguir le-las; nao sao
   // oferecidos na criacao de novas metas.
+  //
+  // FLOATING, NOVOS_CLIENTES e RETENCAO existem no tipo do banco desde antes
+  // da v16 e faltavam aqui. Sem eles, o Prisma estoura ao LER uma linha que os
+  // use — hoje nao ha nenhuma, mas um enum do client que nao cobre o tipo do
+  // banco e uma falha esperando o primeiro registro.
   RECEITA
   MRR
   CLIENTES_ATIVOS
+  FLOATING
+  NOVOS_CLIENTES
+  RETENCAO
 }
 
 /// Taxonomia comercial. Os quatro primeiros valores sao os da revisao atual;
@@ -119,8 +156,14 @@ enum IncidenteCriticidade {
   CRITICA
 }
 
-/// Comportamento da etapa. GANHO e PERDIDO encerram o card: saem das colunas
-/// ativas do quadro e gravam `closedAt` no Deal.
+/// Comportamento da etapa.
+///
+/// So NORMAL e oferecido: Ganho e Perdido deixaram de ser etapas e viraram
+/// `Deal.resultado` (ver ResultadoCard). Os dois valores continuam no tipo do
+/// banco porque as etapas historicas "Ganho" e "Perdido" do funil de Vendas
+/// seguem existindo, inativas, referenciadas pelo historico de movimentacao.
+/// A aplicacao nao cria mais etapa com eles e nao usa `tipo` para encerrar
+/// card nenhum.
 enum EtapaTipo {
   NORMAL
   GANHO
@@ -131,6 +174,21 @@ enum MovimentacaoTipo {
   CRIACAO
   MOVIMENTO_ETAPA
   TRANSFERENCIA_FUNIL
+  /// Mudanca de RESULTADO do card. Ganho e Perdido nao sao etapas: sao o
+  /// desfecho do processo comercial, e mudam sem o card sair da coluna.
+  MUDANCA_RESULTADO
+}
+
+/// DESFECHO do card, independente da etapa em que ele esta.
+///
+/// Ganho e Perdido NAO sao etapas: sao o resultado do processo comercial. Um
+/// card pode estar em Negociacao e ja ter sido perdido, e um card ganho
+/// continua mostrando a etapa em que fechou — informacao que uma coluna
+/// "Ganho" destruia ao engolir todos os cards fechados no mesmo lugar.
+enum ResultadoCard {
+  EM_ANDAMENTO
+  GANHO
+  PERDIDO
 }
 
 enum NotificacaoOrigem {
@@ -233,6 +291,7 @@ model User {
   pendencias         PendenciaCompliance[]        @relation("PendenciaResponsavel")
   pendenciaEventos   PendenciaEvento[]
   comentariosLead    LeadComentario[]
+  comentariosDeal    DealComentario[]             @relation("DealComentarioAutor")
   lancamentos        LancamentoFinanceiro[]       @relation("LancamentoCriador")
   condicoesHistorico CondicaoComercialHistorico[] @relation("CondicaoHistoricoAutor")
 }
@@ -276,10 +335,20 @@ model LeadComentario {
   @@index([leadId, createdAt])
 }
 
+/// CARD DO PIPELINE.
+///
+/// ETAPA e RESULTADO sao coisas separadas:
+///   * `etapaId`   — onde o card esta no processo (Prospeccao..Fechamento)
+///   * `resultado` — o desfecho (Em andamento / Ganho / Perdido)
+///
+/// O card NAO tem valor financeiro. `value` permanece como coluna zerada por
+/// default porque ha historico gravado nela; nenhuma tela le e nenhuma rota
+/// escreve.
 model Deal {
   id          String       @id @default(cuid())
   title       String
-  value       Float
+  /// LEGADO. Nao e cadastrado nem exibido desde a remocao do valor do card.
+  value       Float        @default(0)
   stage       DealStage    @default(PROSPECCAO)
   probability Int          @default(0)
   notes       String?
@@ -289,6 +358,12 @@ model Deal {
   operacao    OperacaoCom?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  /// Desfecho do card. Independe da etapa: um card em Negociacao pode ja ter
+  /// sido perdido, e um card ganho continua mostrando a etapa em que fechou.
+  resultado   ResultadoCard @default(EM_ANDAMENTO)
+  /// Quando o resultado deixou de ser EM_ANDAMENTO.
+  resultadoEm DateTime?
 
   ownerId    String
   owner      User       @relation("DealOwner", fields: [ownerId], references: [id])
@@ -307,8 +382,24 @@ model Deal {
   cliente   Cliente?       @relation(fields: [clienteId], references: [id])
 
   movimentacoes PipelineMovimentacao[]
+  comentarios   DealComentario[]
 
   @@index([funilId, etapaId])
+  @@index([resultado])
+}
+
+/// Anotacao do card, com autor e data/hora. Mesma mecanica de LeadComentario:
+/// e conversa sobre a oportunidade, nao um campo de cadastro.
+model DealComentario {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  autorId   String
+  autor     User     @relation("DealComentarioAutor", fields: [autorId], references: [id])
+  texto     String
+  createdAt DateTime @default(now())
+
+  @@index([dealId, createdAt])
 }
 
 model Activity {
@@ -371,13 +462,22 @@ model Cliente {
   @@index([gestorId])
 }
 
+/// META = somente o ESPERADO. O realizado nunca e gravado aqui: vem de
+/// LancamentoDiario, sempre.
+///
+/// `direcao` existe porque nem toda meta e "quanto maior melhor". Uma meta de
+/// MED em 2% e atingida quando o realizado fica ABAIXO dela. Sem o campo, o
+/// sistema teria que adivinhar pelo tipo — e erraria no primeiro indicador
+/// percentual novo.
 model Meta {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   tipo      MetaTipo
   valor     Float
   periodo   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  direcao   MetaDirecao @default(MAIOR_MELHOR)
+  unidade   MetaUnidade @default(VALOR)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@unique([tipo, periodo])
 }
@@ -659,6 +759,11 @@ model PipelineMovimentacao {
   etapaDestinoId String
   etapaDestino   PipelineEtapa  @relation("MovEtapaDestino", fields: [etapaDestinoId], references: [id])
 
+  /// Preenchidos apenas em MUDANCA_RESULTADO. Nos demais tipos o funil/etapa
+  /// de destino ja contam a historia; aqui o card nao saiu do lugar.
+  resultadoAnterior ResultadoCard?
+  resultadoNovo     ResultadoCard?
+
   userId     String
   user       User     @relation(fields: [userId], references: [id])
   observacao String?
@@ -911,18 +1016,23 @@ enum TipoParceiro {
 /// Categoria de receita OU de despesa. O `tipo` e o que separa as duas listas
 /// na tela; nao existem duas tabelas para a mesma coisa.
 model CategoriaFinanceira {
-  id        String         @id @default(cuid())
+  id        String             @id @default(cuid())
   nome      String
   tipo      TipoLancamento
-  ativo     Boolean        @default(true)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  /// Papel economico, quando a categoria e uma das tres que os graficos
+  /// financeiros reconhecem por si (Float, Setup, Sustentacao). Nulo nas
+  /// demais. E o que evita depender do NOME digitado na categoria.
+  natureza  CategoriaNatureza?
+  ativo     Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
 
   lancamentos  LancamentoFinanceiro[]
   fornecedores Fornecedor[]
 
   @@unique([nome, tipo])
   @@index([tipo, ativo])
+  @@index([natureza])
 }
 
 model Fornecedor {
@@ -937,6 +1047,8 @@ model Fornecedor {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
+  lancamentos LancamentoFinanceiro[]
+
   @@index([ativo])
   @@index([categoriaId])
 }
@@ -950,20 +1062,45 @@ model Fornecedor {
 /// leitura, que e onde esse tipo de tela normalmente passa a divergir de si
 /// mesma dependendo do filtro aplicado.
 model LancamentoFinanceiro {
-  id            String                  @id @default(cuid())
-  tipo          TipoLancamento
-  descricao     String
-  categoriaId   String
-  categoria     CategoriaFinanceira     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
-  valor         Float
-  data          DateTime                @db.Date
-  status        StatusLancamento        @default(PENDENTE)
-  observacao    String?
-  periodicidade PeriodicidadeLancamento @default(UNICA)
+  id                   String                  @id @default(cuid())
+  tipo                 TipoLancamento
+  descricao            String
+  categoriaId          String
+  categoria            CategoriaFinanceira     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  valor                Float
+  /// DATA DE LANCAMENTO — quando a receita/despesa foi registrada. E a data de
+  /// competencia: e sobre ela que Receita, Despesa e Resultado somam.
+  data                 DateTime                @db.Date
+  /// DATA DE VENCIMENTO — quando a despesa vence. So faz sentido em DESPESA, e
+  /// e o que alimenta Contas a Pagar (vencidas, a vencer, pagas). Nao se
+  /// confunde com `data`: lancar nao e vencer.
+  dataVencimento       DateTime?               @db.Date
+  status               StatusLancamento        @default(PENDENTE)
+  observacao           String?
+  periodicidade        PeriodicidadeLancamento @default(UNICA)
   /// Amarra as linhas nascidas do mesmo cadastro. Nulo em lancamento unico.
-  grupoId       String?
-  parcela       Int?
-  totalParcelas Int?
+  grupoId              String?
+  parcela              Int?
+  totalParcelas        Int?
+  /// Recorrencia SEM data final. As linhas continuam materializadas (ver
+  /// expandirLancamento); a marca existe para a tela saber que o cadastro foi
+  /// "indefinido" e nao "ate uma data".
+  recorrenteIndefinido Boolean                 @default(false)
+  /// Ultimo mes coberto pela recorrencia, quando ela tem prazo. Nulo em
+  /// recorrencia indefinida e em lancamento nao recorrente.
+  recorrenciaFim       DateTime?               @db.Date
+
+  /// Fornecedor da despesa. Opcional: nem toda despesa passa por fornecedor
+  /// cadastrado.
+  fornecedorId String?
+  fornecedor   Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+
+  /// BaaS / White Label ao qual a RECEITA pertence. Opcional: um lancamento sem
+  /// vinculo continua valido, so nao entra em "Receita por BaaS/White Label".
+  /// O vinculo e fotografado no lancamento e NAO e reescrito quando a condicao
+  /// comercial do parceiro mudar depois.
+  condicaoId String?
+  condicao   CondicaoComercial? @relation(fields: [condicaoId], references: [id], onDelete: SetNull)
 
   criadoPorId String
   criadoPor   User   @relation("LancamentoCriador", fields: [criadoPorId], references: [id])
@@ -978,6 +1115,9 @@ model LancamentoFinanceiro {
   @@index([categoriaId])
   @@index([grupoId])
   @@index([status])
+  @@index([dataVencimento])
+  @@index([fornecedorId])
+  @@index([condicaoId])
 }
 
 /// Nota fiscal, comprovante de pagamento, print. Os bytes vivem no MESMO
@@ -1003,24 +1143,32 @@ model LancamentoAnexo {
 /// O passado nao e reescrito aqui: toda alteracao de taxa grava uma linha em
 /// CondicaoComercialHistorico antes de sobrescrever o valor.
 model CondicaoComercial {
-  id               String       @id @default(cuid())
-  nomeFantasia     String
+  id                    String       @id @default(cuid())
+  nomeFantasia          String
   /// Numero da conta / identificacao do parceiro.
-  identificacao    String       @unique
-  tipo             TipoParceiro
+  identificacao         String       @unique
+  tipo                  TipoParceiro
   /// Tarifas por transacao.
-  pix              Float?
-  kyc              Float?
-  /// Mensalidades. Sao as duas parcelas do MRR que vem daqui.
-  sustentacao      Float?
-  apiMensal        Float?
-  overpricePercent Float?
-  ativo            Boolean      @default(true)
-  observacao       String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  pix                   Float?
+  kyc                   Float?
+  /// Mensalidades. Sao as parcelas do MRR que vem daqui.
+  sustentacao           Float?
+  apiMensal             Float?
+  /// Mensalidade cobrada por conta ativa do parceiro. Terceira parcela de MRR
+  /// que sai deste cadastro.
+  mensalidadeContaAtiva Float?
+  /// A partir de quando a sustentacao passa a ser cobrada. Antes desta data a
+  /// sustentacao NAO entra no MRR — cobrar sustentacao de um parceiro que
+  /// ainda esta em implantacao inflaria o recorrente.
+  sustentacaoInicio     DateTime?    @db.Date
+  overpricePercent      Float?
+  ativo                 Boolean      @default(true)
+  observacao            String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
-  historico CondicaoComercialHistorico[]
+  historico   CondicaoComercialHistorico[]
+  lancamentos LancamentoFinanceiro[]
 
   @@index([tipo, ativo])
 }

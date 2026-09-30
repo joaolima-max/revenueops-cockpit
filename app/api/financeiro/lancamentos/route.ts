@@ -26,6 +26,17 @@ function parseData(iso: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/** Inclui categoria, fornecedor, parceiro e anexos — o que a tela lista. */
+const INCLUDE_LANCAMENTO = {
+  categoria: { select: { id: true, nome: true, tipo: true, natureza: true } },
+  criadoPor: { select: { id: true, name: true } },
+  fornecedor: { select: { id: true, razaoSocial: true } },
+  condicao: { select: { id: true, nomeFantasia: true, tipo: true } },
+  anexos: {
+    include: { documento: { select: { id: true, nome: true, mime: true, tamanho: true } } },
+  },
+} as const
+
 /**
  * GET /api/financeiro/lancamentos
  *
@@ -73,13 +84,7 @@ export async function GET(request: NextRequest) {
   const [lancamentos, resultado] = await Promise.all([
     prisma.lancamentoFinanceiro.findMany({
       where,
-      include: {
-        categoria: { select: { id: true, nome: true, tipo: true } },
-        criadoPor: { select: { id: true, name: true } },
-        anexos: {
-          include: { documento: { select: { id: true, nome: true, mime: true, tamanho: true } } },
-        },
-      },
+      include: INCLUDE_LANCAMENTO,
       orderBy: [{ data: 'desc' }, { createdAt: 'desc' }],
       take: 500,
     }),
@@ -102,7 +107,10 @@ export async function POST(request: NextRequest) {
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const body = await request.json()
-  const { tipo, descricao, categoriaId, valor, data, status, observacao, periodicidade } = body
+  const {
+    tipo, descricao, categoriaId, valor, data, status, observacao, periodicidade,
+    dataVencimento, fornecedorId, condicaoId,
+  } = body
 
   if (!TIPOS.includes(tipo)) {
     return NextResponse.json({ error: 'Escolha se o lançamento é receita ou despesa.' }, { status: 400 })
@@ -133,13 +141,64 @@ export async function POST(request: NextRequest) {
   if (per === 'PARCELADA' && (!Number.isFinite(totalParcelas!) || totalParcelas! < 2)) {
     return NextResponse.json({ error: 'Um lançamento parcelado precisa de pelo menos 2 parcelas.' }, { status: 400 })
   }
-  const meses = per === 'RECORRENTE' ? Math.round(Number(body.meses ?? 12)) : null
-  if (per === 'RECORRENTE' && (!Number.isFinite(meses!) || meses! < 1 || meses! > 60)) {
-    return NextResponse.json({ error: 'A recorrência deve ter entre 1 e 60 meses.' }, { status: 400 })
+
+  // RECORRÊNCIA: indefinida (sem data final) ou com prazo. A data final NUNCA é
+  // obrigatória — "recorrente" sem prazo é o caso comum de aluguel, salário e
+  // mensalidade, e exigir uma data faria o usuário inventar uma.
+  let recorrenciaFim: Date | null = null
+  if (per === 'RECORRENTE' && body.recorrenciaFim) {
+    recorrenciaFim = parseData(String(body.recorrenciaFim))
+    if (!recorrenciaFim) {
+      return NextResponse.json({ error: 'Data final da recorrência inválida. Use YYYY-MM-DD.' }, { status: 400 })
+    }
+    if (recorrenciaFim < dt) {
+      return NextResponse.json({ error: 'A data final da recorrência não pode ser anterior à data do lançamento.' }, { status: 400 })
+    }
+  }
+  const indefinido = per === 'RECORRENTE' && !recorrenciaFim
+
+  // DESPESA tem duas datas: lançamento (competência) e vencimento. Sem
+  // vencimento informado, vale a data de lançamento — é a única informação
+  // verdadeira disponível, e Contas a Pagar precisa de uma data para ordenar.
+  let vencimento: Date | null = null
+  if (tipo === 'DESPESA') {
+    vencimento = dataVencimento ? parseData(String(dataVencimento)) : dt
+    if (!vencimento) {
+      return NextResponse.json({ error: 'Data de vencimento inválida. Use YYYY-MM-DD.' }, { status: 400 })
+    }
+    if (vencimento < dt) {
+      return NextResponse.json({
+        error: 'O vencimento não pode ser anterior à data de lançamento.',
+      }, { status: 400 })
+    }
   }
 
-  const linhas = expandirLancamento(per, dt, n, { totalParcelas, meses })
+  // Fornecedor é da DESPESA; parceiro BaaS/White Label é da RECEITA. Os dois
+  // são opcionais — um lançamento sem vínculo continua válido.
+  let fornecedor: string | null = null
+  if (tipo === 'DESPESA' && fornecedorId) {
+    const existe = await prisma.fornecedor.count({ where: { id: String(fornecedorId) } })
+    if (!existe) return NextResponse.json({ error: 'Fornecedor não encontrado.' }, { status: 404 })
+    fornecedor = String(fornecedorId)
+  }
+
+  let condicao: string | null = null
+  if (tipo === 'RECEITA' && condicaoId) {
+    const existe = await prisma.condicaoComercial.count({ where: { id: String(condicaoId) } })
+    if (!existe) return NextResponse.json({ error: 'BaaS / White Label não encontrado.' }, { status: 404 })
+    condicao = String(condicaoId)
+  }
+
+  const linhas = expandirLancamento(per, dt, n, { totalParcelas, recorrenciaFim })
   const grupoId = linhas.length > 1 ? randomUUID() : null
+
+  // O vencimento acompanha cada linha: a 3ª parcela vence três meses depois da
+  // 1ª. O deslocamento é o mesmo que a data de lançamento sofreu, para que a
+  // distância entre lançar e vencer seja preservada em todas as linhas.
+  const deslocamento = (l: { data: Date }) =>
+    vencimento
+      ? new Date(vencimento.getTime() + (l.data.getTime() - dt.getTime()))
+      : null
 
   await prisma.lancamentoFinanceiro.createMany({
     data: linhas.map((l) => ({
@@ -148,12 +207,17 @@ export async function POST(request: NextRequest) {
       categoriaId: categoria.id,
       valor: l.valor,
       data: l.data,
+      dataVencimento: deslocamento(l),
       status: st,
       observacao: observacao ? String(observacao).slice(0, 1000) : null,
       periodicidade: per,
       grupoId,
       parcela: l.parcela,
       totalParcelas: l.totalParcelas,
+      recorrenteIndefinido: indefinido,
+      recorrenciaFim,
+      fornecedorId: fornecedor,
+      condicaoId: condicao,
       criadoPorId: session.userId,
     })),
   })
@@ -162,7 +226,7 @@ export async function POST(request: NextRequest) {
   const primeiro = await prisma.lancamentoFinanceiro.findFirst({
     where: grupoId ? { grupoId } : { criadoPorId: session.userId, descricao: desc, data: dt },
     orderBy: { data: 'asc' },
-    include: { categoria: { select: { id: true, nome: true, tipo: true } } },
+    include: INCLUDE_LANCAMENTO,
   })
 
   await logAudit(

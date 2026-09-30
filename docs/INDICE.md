@@ -1,12 +1,24 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V16.md`](./RODADA-V16.md)** — remodelagem de Operações e
+> **Comece por [`RODADA-V17.md`](./RODADA-V17.md)** — a rodada mais recente.
+> Nela: Ganho e Perdido deixam de ser etapas do Pipeline e viram **resultado**
+> do card (que perdeu o valor financeiro); Metas ganham **direção** e
+> **unidade** (meta de MED em 2%); Lançamentos ganham data de vencimento,
+> fornecedor, vínculo com BaaS/White Label e recorrência indefinida; nasce
+> **Contas a Pagar**; a Visão Geral Financeira vira visual; e a logo oficial da
+> Bass Pago entra no topo do sistema.
+>
+> Em seguida, [`RODADA-V16.md`](./RODADA-V16.md) — remodelagem de Operações e
 > Financeiro. Os capítulos 15 (Documentos), 18 (Automações) e 19 (Formulários)
 > descrevem ambientes que **não existem mais**, e os capítulos 5, 7, 8 e 11
 > mudaram de conteúdo. Ficam abaixo como registro histórico.
 >
 > A v16 também derivou o downtime de Incidentes, restringiu edição/exclusão de
 > Incidentes e de Volumetria a ADMIN e adicionou exclusão de etapa de funil.
+>
+> **Capítulos superados pela v17:** 8 (Dashboard — Float e Margem saíram),
+> 12 (CRM — analítica reescrita sobre o resultado), 13 (Pipeline — etapa ×
+> resultado) e 23 (Testes — 192).
 
 Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 
@@ -46,6 +58,8 @@ Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 
 | Arquivo | Conteúdo |
 |---|---|
+| `docs/RODADA-V17.md` | **a rodada mais recente** — pipeline, metas, financeiro, marca |
+| `docs/RODADA-V16.md` | rodada anterior — remoção de ambientes, incidentes, financeiro |
 | `docs/DOCUMENTACAO-COMPLETA.md` | documento integral, editável |
 | `docs/RESUMO-EXECUTIVO.md` | 2 páginas para diretoria e conselho |
 | `docs/INDICE.md` | este índice |

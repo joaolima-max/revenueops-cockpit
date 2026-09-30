@@ -10,13 +10,16 @@ import StatTile from '@/components/ui/StatTile'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import { figuraMoeda } from '@/lib/format-financeiro'
 import { formatDate, formatMesRef } from '@/lib/utils'
-import { validarArquivo, EXTENSOES_ACEITAS } from '@/lib/arquivos'
+import { validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO } from '@/lib/arquivos'
 
 type Tipo = 'RECEITA' | 'DESPESA'
 type Periodicidade = 'UNICA' | 'RECORRENTE' | 'PARCELADA'
 type Status = 'PENDENTE' | 'PAGO' | 'CANCELADO'
+type Natureza = 'FLOAT' | 'SETUP' | 'SUSTENTACAO' | null
 
-interface Categoria { id: string; nome: string; tipo: Tipo; ativo: boolean }
+interface Categoria { id: string; nome: string; tipo: Tipo; natureza: Natureza; ativo: boolean }
+interface Fornecedor { id: string; razaoSocial: string; ativo: boolean }
+interface Parceiro { id: string; nomeFantasia: string; tipo: 'BAAS' | 'WHITE_LABEL'; ativo: boolean }
 
 interface Anexo {
   id: string
@@ -29,13 +32,18 @@ interface Lancamento {
   descricao: string
   valor: number
   data: string
+  dataVencimento: string | null
   status: Status
   observacao: string | null
   periodicidade: Periodicidade
+  recorrenteIndefinido: boolean
+  recorrenciaFim: string | null
   grupoId: string | null
   parcela: number | null
   totalParcelas: number | null
   categoria: Categoria
+  fornecedor: { id: string; razaoSocial: string } | null
+  condicao: { id: string; nomeFantasia: string; tipo: 'BAAS' | 'WHITE_LABEL' } | null
   criadoPor: { id: string; name: string }
   anexos: Anexo[]
 }
@@ -61,23 +69,35 @@ function hojeISO(): string {
 
 const FORM_VAZIO = {
   descricao: '', categoriaId: '', valor: '', data: hojeISO(),
-  status: 'PENDENTE' as Status, observacao: '',
-  periodicidade: 'UNICA' as Periodicidade, totalParcelas: '2', meses: '12',
+  dataVencimento: '', status: 'PENDENTE' as Status, observacao: '',
+  periodicidade: 'UNICA' as Periodicidade, totalParcelas: '2',
+  /** 'INDEFINIDA' | 'ATE_DATA' — só lida quando a periodicidade é RECORRENTE. */
+  duracao: 'INDEFINIDA' as 'INDEFINIDA' | 'ATE_DATA',
+  recorrenciaFim: '',
+  fornecedorId: '', condicaoId: '',
 }
 
 const FILTRO_VAZIO = { descricao: '', categoriaId: '', de: '', ate: '', valorMin: '', valorMax: '' }
 
 /**
- * LANÇAMENTOS — receita e despesa com os MESMOS campos.
+ * LANÇAMENTOS — receita e despesa com os MESMOS campos base.
  *
- * A criação começa escolhendo RECEITA ou DESPESA, e a partir daí o formulário
- * é idêntico: descrição, categoria, valor, data, status, observação e período.
+ * A criação começa escolhendo RECEITA ou DESPESA. O que muda entre os dois é
+ * pequeno e deliberado:
+ *
+ *   DESPESA → data de vencimento (alimenta Contas a Pagar) e fornecedor
+ *   RECEITA → vínculo opcional com um BaaS / White Label
+ *
+ * Nenhum dos dois é obrigatório, e nenhum cria uma segunda base: são colunas
+ * da mesma linha de LancamentoFinanceiro.
  */
 export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: boolean }) {
   const [periodo, setPeriodo] = useState(() => hojeISO().slice(0, 7))
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
   const [resultado, setResultado] = useState({ receita: 0, despesa: 0, resultado: 0 })
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
+  const [parceiros, setParceiros] = useState<Parceiro[]>([])
   const [filtro, setFiltro] = useState(FILTRO_VAZIO)
   const [carregando, setCarregando] = useState(true)
 
@@ -89,6 +109,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
 
   const [anexosDe, setAnexosDe] = useState<Lancamento | null>(null)
   const [enviando, setEnviando] = useState(false)
+  const [erroAnexo, setErroAnexo] = useState('')
 
   // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
   // `.then`, e `vivo` evita escrever em componente já desmontado.
@@ -126,9 +147,17 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
 
   useEffect(() => {
     let vivo = true
-    fetch('/api/financeiro/categorias')
-      .then((r) => (r.ok ? r.json() : { categorias: [] }))
-      .then((d) => { if (vivo) setCategorias(d.categorias ?? []) })
+    Promise.all([
+      fetch('/api/financeiro/categorias').then((r) => (r.ok ? r.json() : { categorias: [] })),
+      fetch('/api/financeiro/fornecedores').then((r) => (r.ok ? r.json() : { fornecedores: [] })),
+      fetch('/api/financeiro/condicoes-baas').then((r) => (r.ok ? r.json() : { condicoes: [] })),
+    ])
+      .then(([cat, forn, cond]) => {
+        if (!vivo) return
+        setCategorias(cat.categorias ?? [])
+        setFornecedores(forn.fornecedores ?? [])
+        setParceiros(cond.condicoes ?? [])
+      })
       .catch(() => {})
     return () => { vivo = false }
   }, [])
@@ -138,7 +167,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   const categoriasDoTipo = (t: Tipo) => categorias.filter((c) => c.tipo === t && c.ativo)
 
   function abrirNovo(tipo: Tipo) {
-    setForm(FORM_VAZIO); setErro(''); setEditando(null); setTipoNovo(tipo)
+    setForm({ ...FORM_VAZIO, dataVencimento: tipo === 'DESPESA' ? hojeISO() : '' })
+    setErro(''); setEditando(null); setTipoNovo(tipo)
   }
 
   function abrirEdicao(l: Lancamento) {
@@ -147,11 +177,15 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       categoriaId: l.categoria.id,
       valor: String(l.valor),
       data: l.data.slice(0, 10),
+      dataVencimento: l.dataVencimento?.slice(0, 10) ?? '',
       status: l.status,
       observacao: l.observacao ?? '',
       periodicidade: l.periodicidade,
       totalParcelas: String(l.totalParcelas ?? 2),
-      meses: '12',
+      duracao: l.recorrenteIndefinido ? 'INDEFINIDA' : 'ATE_DATA',
+      recorrenciaFim: l.recorrenciaFim?.slice(0, 10) ?? '',
+      fornecedorId: l.fornecedor?.id ?? '',
+      condicaoId: l.condicao?.id ?? '',
     })
     setErro(''); setTipoNovo(l.tipo); setEditando(l)
   }
@@ -175,7 +209,15 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       observacao: form.observacao,
       periodicidade: form.periodicidade,
       totalParcelas: form.periodicidade === 'PARCELADA' ? Number(form.totalParcelas) : undefined,
-      meses: form.periodicidade === 'RECORRENTE' ? Number(form.meses) : undefined,
+      // Recorrência indefinida manda `null`: é a ausência de data final que
+      // caracteriza "sem prazo", não um sentinela.
+      recorrenciaFim:
+        form.periodicidade === 'RECORRENTE' && form.duracao === 'ATE_DATA' && form.recorrenciaFim
+          ? form.recorrenciaFim
+          : null,
+      dataVencimento: tipoNovo === 'DESPESA' ? (form.dataVencimento || form.data) : null,
+      fornecedorId: tipoNovo === 'DESPESA' ? (form.fornecedorId || null) : null,
+      condicaoId: tipoNovo === 'RECEITA' ? (form.condicaoId || null) : null,
     }
 
     const res = await fetch(
@@ -215,9 +257,18 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   async function anexar(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0]
     if (!arquivo || !anexosDe) return
+    setErroAnexo('')
+
+    // Barreira de tela. A do SERVIDOR é a que vale — esta só evita o upload
+    // inteiro para receber um 409 no fim.
+    if (anexosDe.anexos.length >= MAX_ANEXOS_LANCAMENTO) {
+      setErroAnexo(`Este lançamento já tem ${MAX_ANEXOS_LANCAMENTO} anexos, que é o máximo. Remova um antes de enviar outro.`)
+      e.target.value = ''
+      return
+    }
 
     const problema = validarArquivo(arquivo.name, arquivo.type, arquivo.size)
-    if (problema) { alert(problema); e.target.value = ''; return }
+    if (problema) { setErroAnexo(problema); e.target.value = ''; return }
 
     setEnviando(true)
     const fd = new FormData()
@@ -227,7 +278,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
     })
     if (!res.ok) {
       const d = await res.json().catch(() => ({}))
-      alert(d.error ?? 'Não foi possível anexar o arquivo.')
+      setErroAnexo(d.error ?? 'Não foi possível anexar o arquivo.')
     } else {
       await carregar()
       const atualizado = await fetch(`/api/financeiro/lancamentos/${anexosDe.id}/anexos`)
@@ -242,7 +293,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
 
   async function baixar(lancamentoId: string, anexoId: string) {
     const res = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/anexos/${anexoId}`)
-    if (!res.ok) { alert('Não foi possível gerar o link.'); return }
+    if (!res.ok) { setErroAnexo('Não foi possível gerar o link.'); return }
     const d = await res.json()
     window.open(d.url, '_blank', 'noopener')
   }
@@ -253,6 +304,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       method: 'DELETE',
     })
     if (res.ok) {
+      setErroAnexo('')
       setAnexosDe((p) => (p ? { ...p, anexos: p.anexos.filter((a) => a.id !== anexo.id) } : p))
       carregar()
     }
@@ -260,6 +312,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
 
   const inp = 'bp-field'
   const lbl = 'bp-field-label'
+  const cheio = !!anexosDe && anexosDe.anexos.length >= MAX_ANEXOS_LANCAMENTO
 
   return (
     <div className="space-y-8">
@@ -280,12 +333,13 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
         }
       />
 
-      {/* Resultado | Receita | Despesa */}
+      {/* Receita | Despesa | Resultado — nesta ordem. O resultado é a
+          consequência dos dois primeiros, e vem depois deles. */}
       <HairlineGrid cols={3}>
-        <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
-          note="Receita − Despesa" />
         <StatTile label="Receita" figura={figuraMoeda(resultado.receita)} />
         <StatTile label="Despesa" figura={figuraMoeda(resultado.despesa)} />
+        <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
+          note="Receita − Despesa" />
       </HairlineGrid>
 
       {/* Filtros: descrição, categoria, data e valor. */}
@@ -319,7 +373,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
             <HeadRow>
               <Th className="pl-5">Descrição</Th>
               <Th>Categoria</Th>
-              <Th>Data</Th>
+              <Th>Lançamento</Th>
+              <Th>Vencimento</Th>
               <Th>Período</Th>
               <Th align="center">Status</Th>
               <Th align="right">Valor</Th>
@@ -328,23 +383,35 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
           </THead>
           <tbody>
             {carregando ? (
-              <EmptyRow colSpan={7}>Carregando…</EmptyRow>
+              <EmptyRow colSpan={8}>Carregando…</EmptyRow>
             ) : lancamentos.length === 0 ? (
-              <EmptyRow colSpan={7}>Nenhum lançamento com esses filtros.</EmptyRow>
+              <EmptyRow colSpan={8}>Nenhum lançamento com esses filtros.</EmptyRow>
             ) : lancamentos.map((l) => (
               <Row key={l.id}>
                 <Td className="pl-5">
                   <span className="block t-body font-medium text-fg">{l.descricao}</span>
                   <span className="block t-label text-subtle mt-0.5">
                     {l.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
+                    {l.fornecedor && ` · ${l.fornecedor.razaoSocial}`}
+                    {l.condicao && ` · ${l.condicao.nomeFantasia}`}
                     {l.anexos.length > 0 && ` · ${l.anexos.length} anexo${l.anexos.length === 1 ? '' : 's'}`}
                   </span>
                 </Td>
                 <Td><Badge>{l.categoria.nome}</Badge></Td>
                 <Td className="text-subtle t-num">{formatDate(l.data)}</Td>
+                <Td className="text-subtle t-num">
+                  {l.dataVencimento ? formatDate(l.dataVencimento) : '—'}
+                </Td>
                 <Td className="t-sm text-muted">
                   {PERIODICIDADE_LABEL[l.periodicidade]}
                   {l.parcela && l.totalParcelas ? ` ${l.parcela}/${l.totalParcelas}` : ''}
+                  {l.periodicidade === 'RECORRENTE' && (
+                    <span className="block t-label text-subtle">
+                      {l.recorrenteIndefinido
+                        ? 'sem data final'
+                        : l.recorrenciaFim ? `até ${formatDate(l.recorrenciaFim)}` : ''}
+                    </span>
+                  )}
                 </Td>
                 <Td align="center">
                   <Badge tone={STATUS_TONE[l.status]}>{STATUS_LABEL[l.status]}</Badge>
@@ -354,7 +421,9 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                 </Td>
                 <Td align="right">
                   <span className="inline-flex gap-2">
-                    <Button size="sm" onClick={() => setAnexosDe(l)}>Anexos</Button>
+                    <Button size="sm" onClick={() => { setAnexosDe(l); setErroAnexo('') }}>
+                      Anexos {l.anexos.length > 0 && `(${l.anexos.length})`}
+                    </Button>
                     {podeGerenciar && (
                       <>
                         <Button size="sm" onClick={() => abrirEdicao(l)}>Editar</Button>
@@ -403,20 +472,80 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                   <input id="l-valor" required type="number" step="0.01" min="0.01" value={form.valor} className={inp}
                     onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} />
                 </div>
+
                 <div>
-                  <label className={lbl} htmlFor="l-data">Data *</label>
+                  <label className={lbl} htmlFor="l-data">Data de lançamento *</label>
                   <input id="l-data" required type="date" value={form.data} className={inp}
                     onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} />
+                  <p className="t-label text-subtle mt-1">Quando a despesa/receita foi registrada.</p>
                 </div>
-                <div>
-                  <label className={lbl} htmlFor="l-status">Status *</label>
-                  <select id="l-status" value={form.status} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as Status }))}>
-                    {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
-                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
-                </div>
+
+                {/* VENCIMENTO só existe em despesa — é o que alimenta Contas a
+                    Pagar. Lançar não é vencer. */}
+                {tipoNovo === 'DESPESA' ? (
+                  <div>
+                    <label className={lbl} htmlFor="l-venc">Data de vencimento *</label>
+                    <input id="l-venc" required type="date" value={form.dataVencimento} className={inp}
+                      min={form.data}
+                      onChange={(e) => setForm((p) => ({ ...p, dataVencimento: e.target.value }))} />
+                    <p className="t-label text-subtle mt-1">Alimenta Contas a Pagar.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className={lbl} htmlFor="l-status">Status *</label>
+                    <select id="l-status" value={form.status} className={inp}
+                      onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as Status }))}>
+                      {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
+                        <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {tipoNovo === 'DESPESA' && (
+                  <>
+                    <div>
+                      <label className={lbl} htmlFor="l-status-d">Status *</label>
+                      <select id="l-status-d" value={form.status} className={inp}
+                        onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as Status }))}>
+                        {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
+                          <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={lbl} htmlFor="l-forn">Fornecedor</label>
+                      <select id="l-forn" value={form.fornecedorId} className={inp}
+                        onChange={(e) => setForm((p) => ({ ...p, fornecedorId: e.target.value }))}>
+                        <option value="">Sem fornecedor</option>
+                        {fornecedores.filter((f) => f.ativo).map((f) => (
+                          <option key={f.id} value={f.id}>{f.razaoSocial}</option>
+                        ))}
+                      </select>
+                      <p className="t-label text-subtle mt-1">Opcional.</p>
+                    </div>
+                  </>
+                )}
+
+                {/* VÍNCULO DE BaaS / White Label — opcional, só em receita.
+                    Alimenta "Receita por BaaS" e "Receita por White Label". */}
+                {tipoNovo === 'RECEITA' && (
+                  <div className="sm:col-span-2">
+                    <label className={lbl} htmlFor="l-parceiro">BaaS / White Label</label>
+                    <select id="l-parceiro" value={form.condicaoId} className={inp}
+                      onChange={(e) => setForm((p) => ({ ...p, condicaoId: e.target.value }))}>
+                      <option value="">Sem vínculo</option>
+                      {parceiros.filter((c) => c.ativo).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nomeFantasia} ({c.tipo === 'BAAS' ? 'BaaS' : 'White Label'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="t-label text-subtle mt-1">
+                      Opcional. Com vínculo, a receita entra em “Receita por BaaS / White Label”.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Período só na criação: as linhas já existem depois disso. */}
@@ -431,6 +560,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                       ))}
                     </select>
                   </div>
+
                   {form.periodicidade === 'PARCELADA' && (
                     <div>
                       <label className={lbl} htmlFor="l-parcelas">Parcelas *</label>
@@ -439,11 +569,39 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                       <p className="t-label text-subtle mt-1">O valor informado é o da parcela.</p>
                     </div>
                   )}
+
+                  {/* RECORRÊNCIA: indefinida ou com data final. A data NUNCA é
+                      obrigatória — aluguel e mensalidade não têm data de fim. */}
                   {form.periodicidade === 'RECORRENTE' && (
-                    <div>
-                      <label className={lbl} htmlFor="l-meses">Repetir por (meses) *</label>
-                      <input id="l-meses" type="number" min="1" max="60" value={form.meses} className={inp}
-                        onChange={(e) => setForm((p) => ({ ...p, meses: e.target.value }))} />
+                    <div className="sm:col-span-2 space-y-3 border border-line rounded-xl p-4">
+                      <p className="t-label text-subtle">Duração da recorrência</p>
+                      <div className="flex flex-wrap gap-4">
+                        <label className="inline-flex items-center gap-2 t-sm text-fg cursor-pointer">
+                          <input type="radio" name="l-duracao" value="INDEFINIDA"
+                            checked={form.duracao === 'INDEFINIDA'}
+                            onChange={() => setForm((p) => ({ ...p, duracao: 'INDEFINIDA', recorrenciaFim: '' }))} />
+                          Indefinida
+                        </label>
+                        <label className="inline-flex items-center gap-2 t-sm text-fg cursor-pointer">
+                          <input type="radio" name="l-duracao" value="ATE_DATA"
+                            checked={form.duracao === 'ATE_DATA'}
+                            onChange={() => setForm((p) => ({ ...p, duracao: 'ATE_DATA' }))} />
+                          Até uma data
+                        </label>
+                      </div>
+                      {form.duracao === 'ATE_DATA' && (
+                        <div>
+                          <label className={lbl} htmlFor="l-recfim">Data final *</label>
+                          <input id="l-recfim" required type="date" min={form.data}
+                            value={form.recorrenciaFim} className={inp}
+                            onChange={(e) => setForm((p) => ({ ...p, recorrenciaFim: e.target.value }))} />
+                        </div>
+                      )}
+                      <p className="t-label text-subtle">
+                        {form.duracao === 'INDEFINIDA'
+                          ? 'Sem data final. O lançamento se repete mensalmente por prazo indeterminado.'
+                          : 'O lançamento se repete mensalmente até o mês da data informada, inclusive.'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -477,12 +635,18 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
             <div className="flex items-center justify-between p-5 border-b border-line flex-none">
               <div className="min-w-0">
                 <h2 className="t-h2 text-fg bp-truncate">{anexosDe.descricao}</h2>
-                <p className="t-sm text-muted mt-0.5">Nota fiscal, comprovante, print.</p>
+                <p className="t-sm text-muted mt-0.5">
+                  Nota fiscal, comprovante, contrato, print · {anexosDe.anexos.length} de {MAX_ANEXOS_LANCAMENTO}
+                </p>
               </div>
               <button onClick={() => setAnexosDe(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
             </div>
 
             <div className="p-5 space-y-3 overflow-y-auto">
+              {erroAnexo && (
+                <div className="bg-neg/10 border border-neg/25 text-neg px-3 py-2 rounded-lg t-sm">{erroAnexo}</div>
+              )}
+
               {anexosDe.anexos.length === 0 ? (
                 <p className="t-sm text-subtle">Nenhum arquivo anexado.</p>
               ) : (
@@ -507,9 +671,13 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
               {podeGerenciar && (
                 <div className="pt-2">
                   <label className={lbl} htmlFor="l-arquivo">Anexar arquivo</label>
-                  <input id="l-arquivo" type="file" disabled={enviando} onChange={anexar} className="t-sm text-muted" />
+                  <input id="l-arquivo" type="file" disabled={enviando || cheio} onChange={anexar}
+                    className="t-sm text-muted disabled:opacity-40" />
                   <p className="t-label text-subtle mt-1.5">
-                    Aceitos: {EXTENSOES_ACEITAS.join(', ')}. {enviando && 'Enviando…'}
+                    {cheio
+                      ? `Limite de ${MAX_ANEXOS_LANCAMENTO} anexos atingido. Remova um arquivo para enviar outro.`
+                      : `Aceitos: ${EXTENSOES_ACEITAS.join(', ')}. Máximo de ${MAX_ANEXOS_LANCAMENTO} por lançamento.`}
+                    {enviando && ' Enviando…'}
                   </p>
                 </div>
               )}

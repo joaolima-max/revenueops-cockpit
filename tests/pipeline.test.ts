@@ -10,7 +10,9 @@ import { test } from 'node:test'
 import {
   resolverAcesso, podeAdministrarPipeline, reordenar, validarReordenacao,
   validarTransferencia, validarMovimento, validarInativacaoEtapa, validarLinhaPermissao,
-  type LinhaPermissao,
+  validarMudancaResultado, podeAlterarResultado, encerraCard,
+  RESULTADOS, RESULTADO_LABEL,
+  type LinhaPermissao, type AcessoFunil,
 } from '../lib/pipeline'
 
 const admin = { userId: 'u-adm', role: 'ADMIN' }
@@ -188,4 +190,66 @@ test('uma regra vale para uma role OU um usuario, nunca ambos nem nenhum', () =>
   assert.equal(validarLinhaPermissao({ role: null, userId: 'u1' }), null)
   assert.ok(validarLinhaPermissao({ role: 'COMERCIAL', userId: 'u1' }))
   assert.ok(validarLinhaPermissao({ role: null, userId: null }))
+})
+
+/* ========================================================================= *
+ * RESULTADO DO CARD
+ *
+ * Ganho e Perdido deixaram de ser ETAPAS. Sao o desfecho do processo, e moram
+ * num eixo proprio do card.
+ * ========================================================================= */
+
+test('os resultados possiveis sao exatamente tres, e nenhum deles e uma etapa', () => {
+  assert.deepEqual([...RESULTADOS], ['EM_ANDAMENTO', 'GANHO', 'PERDIDO'])
+  assert.equal(RESULTADO_LABEL.EM_ANDAMENTO, 'Em andamento')
+})
+
+test('so um resultado diferente de EM_ANDAMENTO encerra o card', () => {
+  assert.equal(encerraCard('EM_ANDAMENTO'), false)
+  assert.equal(encerraCard('GANHO'), true)
+  assert.equal(encerraCard('PERDIDO'), true)
+})
+
+test('mudar para um resultado valido e permitido', () => {
+  assert.equal(validarMudancaResultado('EM_ANDAMENTO', 'GANHO'), null)
+  assert.equal(validarMudancaResultado('EM_ANDAMENTO', 'PERDIDO'), null)
+})
+
+test('reabrir um card ganho e permitido — negocio volta atras', () => {
+  // A alternativa seria o operador criar um card duplicado para corrigir o
+  // desfecho, que e como uma base de pipeline vira duas.
+  assert.equal(validarMudancaResultado('GANHO', 'EM_ANDAMENTO'), null)
+  assert.equal(validarMudancaResultado('PERDIDO', 'GANHO'), null)
+})
+
+test('repetir o resultado atual e recusado', () => {
+  assert.ok(validarMudancaResultado('GANHO', 'GANHO'))
+})
+
+test('valor fora do enum e recusado — inclusive nome de etapa', () => {
+  assert.ok(validarMudancaResultado('EM_ANDAMENTO', 'FECHAMENTO'))
+  assert.ok(validarMudancaResultado('EM_ANDAMENTO', ''))
+  assert.ok(validarMudancaResultado('EM_ANDAMENTO', null))
+  assert.ok(validarMudancaResultado('EM_ANDAMENTO', undefined))
+})
+
+const acesso = (p: Partial<AcessoFunil>): AcessoFunil => ({
+  ver: true, editar: false, mover: false, criar: false,
+  transferir: false, administrar: false, apenasProprios: false, ...p,
+})
+
+test('quem opera o card decide o desfecho', () => {
+  assert.equal(podeAlterarResultado(acesso({ mover: true })), true)
+  assert.equal(podeAlterarResultado(acesso({ editar: true })), true)
+})
+
+test('acesso somente de leitura nao muda resultado', () => {
+  assert.equal(podeAlterarResultado(acesso({})), false)
+})
+
+/* ── Etapa e resultado sao eixos independentes ───────────────────────────── */
+
+test('mover de etapa continua sendo uma operacao de ETAPA, nao de desfecho', () => {
+  // `validarMovimento` nao conhece resultado nenhum: mover nao encerra card.
+  assert.equal(validarMovimento('f1', { id: 'e2', funilId: 'f1', ativo: true }), null)
 })

@@ -9,10 +9,12 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const stage = searchParams.get('stage')
+  const resultado = searchParams.get('resultado')
   const search = searchParams.get('search')
 
   const where: Record<string, unknown> = {}
   if (stage) where.stage = stage
+  if (resultado) where.resultado = resultado
   if (search) {
     where.OR = [
       { title: { contains: search, mode: 'insensitive' } },
@@ -84,13 +86,14 @@ export async function POST(request: NextRequest) {
 
   const stage = etapa ? stageLegado(etapa.id) : null
 
+  // O card NAO tem valor financeiro (§4 da especificacao). `value` continua no
+  // banco como coluna legada, com default 0, e nao e aceita no corpo: aceita-la
+  // recriaria o campo pela API depois de ele ter saido da tela.
   const deal = await prisma.$transaction(async (tx) => {
     const criado = await tx.deal.create({
       data: {
         title: titulo,
-        value: parseFloat(data.value),
         stage: (stage ?? data.stage ?? 'PROSPECCAO') as never,
-        probability: data.probability || 0,
         notes: data.notes,
         leadId,
         clienteId: data.clienteId || null,

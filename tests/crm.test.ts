@@ -4,8 +4,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   tempoMedioPorEtapa, conversaoPorEtapa, conversaoPorResponsavel,
-  conversaoEntreFunis, cicloMedioDias, gargalos,
-  type MovimentoBruto, type CardBruto,
+  conversaoEntreFunis, cicloMedioDias, gargalos, evolucaoMensal,
+  distribuicaoPorResultado,
+  type MovimentoBruto, type CardBruto, type ResultadoCard,
 } from '../lib/crm'
 
 const D = (dia: number) => new Date(`2026-09-${String(dia).padStart(2, '0')}T00:00:00Z`)
@@ -63,31 +64,80 @@ test('etapa sem entrada tem taxa nula, nunca zero', () => {
   assert.equal(c.get('e1')?.taxa, null)
 })
 
+/**
+ * O card NAO tem valor, e ganho/perda vem do RESULTADO — nao da etapa. Um card
+ * perdido continua morando na etapa em que o processo parou.
+ */
 const card = (
-  id: string, ownerId: string, etapaId: string | null, valor = 100,
+  id: string, ownerId: string, etapaId: string | null,
+  resultado: ResultadoCard = 'EM_ANDAMENTO',
   fechadoEm: Date | null = null,
+  criadoEm: Date = D(1),
 ): CardBruto => ({
   id, ownerId, ownerNome: ownerId.toUpperCase(), funilId: 'f1', etapaId,
-  valor, criadoEm: D(1), fechadoEm,
+  resultado, criadoEm, fechadoEm,
 })
 
-test('taxa por responsavel considera so os cards decididos', () => {
-  const r = conversaoPorResponsavel(
-    [card('c1', 'ana', 'ganho'), card('c2', 'ana', 'perda'), card('c3', 'ana', 'e1', 500)],
-    new Set(['ganho']), new Set(['perda']),
-  )
+test('ganho e perda vem do resultado, nao da etapa em que o card esta', () => {
+  // Os tres cards estao na MESMA etapa (Negociacao). O desfecho e outro eixo.
+  const r = conversaoPorResponsavel([
+    card('c1', 'ana', 'negociacao', 'GANHO', D(9)),
+    card('c2', 'ana', 'negociacao', 'PERDIDO', D(9)),
+    card('c3', 'ana', 'negociacao', 'EM_ANDAMENTO'),
+  ])
   const ana = r.find((x) => x.ownerId === 'ana')!
   assert.equal(ana.total, 3)
   assert.equal(ana.ganhos, 1)
   assert.equal(ana.perdas, 1)
   assert.equal(ana.abertos, 1)
-  assert.equal(ana.valorAberto, 500)
   assert.equal(ana.taxa, 50, 'o card em aberto nao pune quem tem pipeline cheio')
 })
 
 test('responsavel sem card decidido tem taxa nula', () => {
-  const r = conversaoPorResponsavel([card('c1', 'bia', 'e1')], new Set(['ganho']), new Set(['perda']))
+  const r = conversaoPorResponsavel([card('c1', 'bia', 'e1')])
   assert.equal(r[0].taxa, null)
+})
+
+test('distribuicao por resultado devolve os tres estados, sempre na mesma ordem', () => {
+  const d = distribuicaoPorResultado([
+    card('c1', 'ana', 'e1', 'GANHO', D(5)),
+    card('c2', 'ana', 'e1', 'GANHO', D(5)),
+    card('c3', 'ana', 'e1'),
+  ])
+  assert.deepEqual(d.map((x) => x.resultado), ['EM_ANDAMENTO', 'GANHO', 'PERDIDO'])
+  assert.deepEqual(d.map((x) => x.total), [1, 2, 0])
+})
+
+/* ── Evolucao mensal ─────────────────────────────────────────────────────── */
+
+test('criacao conta pelo mes de criacao; desfecho, pelo mes do desfecho', () => {
+  const e = evolucaoMensal(
+    [
+      // Criado em janeiro, ganho em marco: cada evento no seu mes.
+      card('c1', 'ana', 'e1', 'GANHO', new Date('2026-03-04T00:00:00Z'), new Date('2026-01-10T00:00:00Z')),
+      card('c2', 'ana', 'e1', 'PERDIDO', new Date('2026-03-20T00:00:00Z'), new Date('2026-02-02T00:00:00Z')),
+      card('c3', 'ana', 'e1', 'EM_ANDAMENTO', null, new Date('2026-03-01T00:00:00Z')),
+    ],
+    ['2026-01', '2026-02', '2026-03'],
+  )
+  assert.deepEqual(e.map((x) => x.criados), [1, 1, 1])
+  assert.deepEqual(e.map((x) => x.ganhos), [0, 0, 1])
+  assert.deepEqual(e.map((x) => x.perdidos), [0, 0, 1])
+})
+
+test('evolucao devolve um ponto por periodo pedido, mesmo sem card nenhum', () => {
+  const e = evolucaoMensal([], ['2026-01', '2026-02'])
+  assert.equal(e.length, 2)
+  assert.deepEqual(e.map((x) => x.criados), [0, 0])
+})
+
+test('card decidido sem data de desfecho nao entra em nenhum mes', () => {
+  const e = evolucaoMensal(
+    [card('c1', 'ana', 'e1', 'GANHO', null, new Date('2026-01-10T00:00:00Z'))],
+    ['2026-01'],
+  )
+  assert.equal(e[0].criados, 1)
+  assert.equal(e[0].ganhos, 0, 'sem data do desfecho nao da para dizer em que mes ele aconteceu')
 })
 
 test('conversao entre funis agrega so as transferencias', () => {
@@ -101,9 +151,24 @@ test('conversao entre funis agrega so as transferencias', () => {
   assert.deepEqual(t[0], { origemId: 'f1', destinoId: 'f2', total: 2 })
 })
 
-test('ciclo medio olha so os cards ja fechados', () => {
-  assert.equal(cicloMedioDias([card('c1', 'ana', 'ganho', 100, D(11))]), 10)
-  assert.equal(cicloMedioDias([card('c1', 'ana', 'e1')]), null, 'sem card fechado, sem ciclo')
+test('ciclo medio olha so os cards ja decididos', () => {
+  assert.equal(cicloMedioDias([card('c1', 'ana', 'e1', 'GANHO', D(11))]), 10)
+  assert.equal(cicloMedioDias([card('c1', 'ana', 'e1')]), null, 'sem card decidido, sem ciclo')
+  assert.equal(
+    cicloMedioDias([card('c1', 'ana', 'e1', 'EM_ANDAMENTO', D(11))]), null,
+    'data de fechamento sem desfecho nao conta — o card foi reaberto',
+  )
+})
+
+test('mudanca de resultado nao conta como passagem de etapa', () => {
+  // Sem este recorte, marcar "Ganho" zeraria o tempo de permanencia da etapa,
+  // porque o evento entraria como uma nova entrada na mesma coluna.
+  const t = tempoMedioPorEtapa([
+    mov('d1', 'e1', 1),
+    mov('d1', 'e1', 5, { tipo: 'MUDANCA_RESULTADO' }),
+  ], AGORA)
+  assert.equal(t.get('e1')?.amostras, 1)
+  assert.equal(t.get('e1')?.dias, 20, 'de 1 ate 21 — o card nunca saiu de e1')
 })
 
 test('gargalo e a etapa acima do dobro da mediana e com card parado', () => {

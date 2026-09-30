@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { formatDate } from '@/lib/utils'
 
 export default async function AuditoriaPage() {
   const session = await getSession()

@@ -32,7 +32,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const atual = await prisma.lancamentoFinanceiro.findUnique({ where: { id } })
   if (!atual) return NextResponse.json({ error: 'Lançamento não encontrado.' }, { status: 404 })
 
-  const { descricao, categoriaId, valor, data, status, observacao } = await request.json()
+  const {
+    descricao, categoriaId, valor, data, status, observacao,
+    dataVencimento, fornecedorId, condicaoId,
+  } = await request.json()
 
   const desc = descricao === undefined ? undefined : String(descricao).trim()
   if (desc !== undefined && !desc) {
@@ -64,6 +67,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
   }
 
+  // Vencimento só existe em DESPESA. Validado contra a data que vai VIGORAR
+  // depois da edição, não só contra o que veio no corpo.
+  let venc: Date | null | undefined
+  if (dataVencimento !== undefined && atual.tipo === 'DESPESA') {
+    if (!dataVencimento) {
+      venc = null
+    } else {
+      const p = parseData(String(dataVencimento))
+      if (!p) return NextResponse.json({ error: 'Data de vencimento inválida. Use YYYY-MM-DD.' }, { status: 400 })
+      const competencia = dt ?? atual.data
+      if (p < competencia) {
+        return NextResponse.json({
+          error: 'O vencimento não pode ser anterior à data de lançamento.',
+        }, { status: 400 })
+      }
+      venc = p
+    }
+  }
+
+  if (fornecedorId) {
+    const existe = await prisma.fornecedor.count({ where: { id: String(fornecedorId) } })
+    if (!existe) return NextResponse.json({ error: 'Fornecedor não encontrado.' }, { status: 404 })
+  }
+  if (condicaoId) {
+    const existe = await prisma.condicaoComercial.count({ where: { id: String(condicaoId) } })
+    if (!existe) return NextResponse.json({ error: 'BaaS / White Label não encontrado.' }, { status: 404 })
+  }
+
   const lancamento = await prisma.lancamentoFinanceiro.update({
     where: { id },
     data: {
@@ -75,8 +106,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ...(observacao !== undefined
         ? { observacao: observacao ? String(observacao).slice(0, 1000) : null }
         : {}),
+      ...(venc !== undefined ? { dataVencimento: venc } : {}),
+      ...(fornecedorId !== undefined && atual.tipo === 'DESPESA'
+        ? { fornecedorId: fornecedorId ? String(fornecedorId) : null }
+        : {}),
+      // O vínculo com o parceiro é FOTOGRAFADO no lançamento: só muda quando
+      // alguém o corrige aqui, nunca por alteração da condição comercial.
+      ...(condicaoId !== undefined && atual.tipo === 'RECEITA'
+        ? { condicaoId: condicaoId ? String(condicaoId) : null }
+        : {}),
     },
-    include: { categoria: { select: { id: true, nome: true, tipo: true } } },
+    include: {
+      categoria: { select: { id: true, nome: true, tipo: true, natureza: true } },
+      fornecedor: { select: { id: true, razaoSocial: true } },
+      condicao: { select: { id: true, nomeFantasia: true, tipo: true } },
+    },
   })
 
   await logAudit(session.userId, 'EDITOU_LANCAMENTO_FINANCEIRO', 'LancamentoFinanceiro', id, lancamento.descricao)

@@ -8,6 +8,10 @@ function podeGerenciar(session: TokenPayload): boolean {
   return hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
 }
 
+/** Ver a rota de criacao: natureza so existe em categoria de RECEITA. */
+const NATUREZAS = ['FLOAT', 'SETUP', 'SUSTENTACAO'] as const
+type Natureza = (typeof NATUREZAS)[number]
+
 /** Renomeia ou ativa/inativa. O tipo é imutável: mudá-lo reclassificaria
  *  lançamentos já feitos de receita para despesa. */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +20,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { id } = await params
-  const { nome, ativo } = await request.json()
+  const { nome, ativo, natureza } = await request.json()
 
   const atual = await prisma.categoriaFinanceira.findUnique({ where: { id } })
   if (!atual) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 })
@@ -32,7 +36,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const categoria = await prisma.categoriaFinanceira.update({
     where: { id },
-    data: { ...(n ? { nome: n } : {}), ...(typeof ativo === 'boolean' ? { ativo } : {}) },
+    data: {
+      ...(n ? { nome: n } : {}),
+      ...(typeof ativo === 'boolean' ? { ativo } : {}),
+      // Vazio limpa a natureza; valor invalido e ignorado, nao apaga o que ha.
+      ...(natureza !== undefined && atual.tipo === 'RECEITA'
+        ? { natureza: NATUREZAS.includes(natureza as Natureza) ? (natureza as Natureza) : null }
+        : {}),
+    },
   })
 
   await logAudit(session.userId, 'EDITOU_CATEGORIA_FINANCEIRA', 'CategoriaFinanceira', id, categoria.nome)

@@ -123,6 +123,9 @@ export const MODULES: Module[] = [
       { key: 'financeiro.visao', label: 'Visão Geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
       { key: 'financeiro.lancamentos', label: 'Lançamentos', route: '/dashboard/financeiro/lancamentos', api: ['/api/financeiro/lancamentos'], enabled: true },
       { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
+      // Contas a Pagar le os MESMOS lancamentos de despesa da tela de
+      // Lancamentos, pela data de vencimento. Nao existe uma segunda base.
+      { key: 'financeiro.pagar', label: 'Contas a Pagar', route: '/dashboard/financeiro/contas-pagar', api: ['/api/financeiro/contas-pagar'], enabled: true },
       { key: 'financeiro.categorias', label: 'Categorias', route: '/dashboard/financeiro/categorias', api: ['/api/financeiro/categorias'], enabled: true },
       { key: 'financeiro.fornecedores', label: 'Fornecedores', route: '/dashboard/financeiro/fornecedores', api: ['/api/financeiro/fornecedores'], enabled: true },
       { key: 'financeiro.condicoes', label: 'Condições Comerciais BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },

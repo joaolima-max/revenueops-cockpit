@@ -2,13 +2,19 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency, formatDate, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SEGMENTO_CRM_LABELS, CANAL_LABELS } from '@/lib/utils'
+import { formatDate, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, SEGMENTO_CRM_LABELS, CANAL_LABELS } from '@/lib/utils'
+import { RESULTADO_LABEL } from '@/lib/pipeline'
+import Badge from '@/components/ui/Badge'
+import { TOM_RESULTADO } from '@/components/pipeline/CardDetalheModal'
+import type { ResultadoCard } from '@/components/pipeline/tipos'
 
+/** O card do pipeline NÃO tem valor financeiro — tem etapa e resultado. */
 interface Deal {
   id: string
   title: string
-  value: number
-  stage: string
+  resultado: ResultadoCard
+  etapa: { nome: string } | null
+  funil: { nome: string } | null
   owner: { id: string; name: string }
 }
 
@@ -230,9 +236,16 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
               <h2 className="t-label text-subtle mb-4">Negócios Vinculados</h2>
               <div className="space-y-2">
                 {lead.deals.map((deal) => (
-                  <div key={deal.id} className="flex items-center justify-between p-3 bg-surface-2 rounded-lg">
-                    <p className="text-sm font-medium text-fg">{deal.title}</p>
-                    <span className="text-sm font-semibold text-muted">{formatCurrency(deal.value)}</span>
+                  <div key={deal.id} className="flex items-center justify-between gap-3 p-3 bg-surface-2 rounded-lg flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-fg">{deal.title}</p>
+                      <p className="text-xs text-subtle mt-0.5">
+                        {deal.funil?.nome ?? '—'} · {deal.etapa?.nome ?? 'sem etapa'}
+                      </p>
+                    </div>
+                    <Badge tone={TOM_RESULTADO[deal.resultado]}>
+                      {RESULTADO_LABEL[deal.resultado]}
+                    </Badge>
                   </div>
                 ))}
               </div>

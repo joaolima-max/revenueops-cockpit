@@ -12,6 +12,9 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   if (!ctx) return NextResponse.json({ error: 'Card não encontrado' }, { status: 404 })
   if (!ctx.acesso.ver) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
+  // A linha do tempo do card: criacao, movimento de etapa, transferencia de
+  // funil e mudanca de resultado — na MESMA tabela, porque sao eventos do
+  // mesmo objeto e separa-los obrigaria a tela a intercalar duas listas.
   const historico = await prisma.pipelineMovimentacao.findMany({
     where: { dealId: id },
     include: {

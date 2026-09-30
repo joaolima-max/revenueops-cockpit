@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { formatCurrency, formatMesRef, formatDate} from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 interface Cliente { id: string; nome: string; modeloOperacional: string }
 
@@ -54,17 +54,28 @@ export default function ContasReceberClient({ clientes }: Props) {
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState<'lista' | 'inadimplentes' | 'calendario'>('lista')
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
+  // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
+  // `.then`, e `vivo` evita escrever em componente já desmontado.
+  const buscar = useCallback(async (): Promise<ContaReceber[] | null> => {
     const p = new URLSearchParams()
     if (filterStatus) p.set('status', filterStatus)
     if (filterMes) p.set('mes', filterMes)
     const res = await fetch(`/api/financeiro/contas-receber?${p}`)
-    if (res.ok) { const d = await res.json(); setContas(d.contas) }
-    setLoading(false)
+    if (!res.ok) return null
+    const d = await res.json()
+    return (d.contas ?? []) as ContaReceber[]
   }, [filterStatus, filterMes])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  const aplicar = useCallback((lista: ContaReceber[] | null) => {
+    if (lista) setContas(lista)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    let vivo = true
+    buscar().then((d) => { if (vivo) aplicar(d) })
+    return () => { vivo = false }
+  }, [buscar, aplicar])
 
   const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [field]: e.target.value }))

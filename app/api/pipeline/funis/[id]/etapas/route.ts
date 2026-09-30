@@ -3,7 +3,12 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { acessoAoFunil, auditarPipeline } from '@/lib/pipeline-db'
 
-const TIPOS = ['NORMAL', 'GANHO', 'PERDIDO'] as const
+/**
+ * So NORMAL. Ganho e Perdido deixaram de ser etapas e viraram o RESULTADO do
+ * card (Deal.resultado): criar uma coluna "Ganho" recriaria, dentro do funil,
+ * exatamente o problema que esta rodada eliminou.
+ */
+const TIPOS = ['NORMAL'] as const
 type Tipo = (typeof TIPOS)[number]
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +41,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const n = String(nome ?? '').trim()
   if (!n) return NextResponse.json({ error: 'Informe o nome da etapa.' }, { status: 400 })
 
-  const t: Tipo = TIPOS.includes(tipo) ? tipo : 'NORMAL'
+  if (tipo !== undefined && !TIPOS.includes(tipo)) {
+    return NextResponse.json({
+      error: 'Ganho e Perdido nao sao etapas — sao o resultado do card. '
+        + 'Crie a etapa como parte do processo e marque o desfecho no proprio card.',
+    }, { status: 400 })
+  }
+  const t: Tipo = 'NORMAL'
 
   const duplicada = await prisma.pipelineEtapa.findUnique({ where: { funilId_nome: { funilId: id, nome: n } } })
   if (duplicada) return NextResponse.json({ error: `Este funil já tem uma etapa "${n}".` }, { status: 409 })

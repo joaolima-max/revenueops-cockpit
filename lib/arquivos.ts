@@ -82,3 +82,25 @@ export function chaveDocumento(clienteId: string, documentoId: string, nome: str
 export function chaveLancamento(lancamentoId: string, documentoId: string, nome: string): string {
   return `financeiro/lancamentos/${lancamentoId}/${documentoId}/${nomeSeguro(nome)}`
 }
+
+/* ========================================================================= *
+ * LIMITE DE ANEXOS POR LANCAMENTO
+ *
+ * Vive aqui, e nao em lib/financeiro.ts, pela mesma razao que o resto deste
+ * arquivo: a tela de Lancamentos precisa da regra no NAVEGADOR, e importar
+ * lib/financeiro la arrastaria o Prisma inteiro para o bundle do cliente.
+ * ========================================================================= */
+
+/**
+ * Teto de anexos por lancamento. Quatro cobre nota fiscal, comprovante,
+ * contrato e um print — que e o conjunto que sustenta um lancamento. O limite
+ * e validado no SERVIDOR: esconder o botao na tela nao impede um POST.
+ */
+export const MAX_ANEXOS_LANCAMENTO = 4
+
+/** Devolve a mensagem de impedimento, ou null quando ainda cabe anexo. */
+export function limiteAnexosAtingido(quantidadeAtual: number): string | null {
+  if (quantidadeAtual < MAX_ANEXOS_LANCAMENTO) return null
+  return `Este lançamento já tem ${MAX_ANEXOS_LANCAMENTO} anexos, que é o máximo. `
+    + 'Remova um arquivo antes de enviar outro.'
+}

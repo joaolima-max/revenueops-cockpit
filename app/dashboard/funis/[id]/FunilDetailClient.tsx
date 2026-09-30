@@ -17,7 +17,16 @@ const ACAO_LABEL: Record<Acao, string> = {
 }
 
 const ROLES = ['ADMIN', 'OPERACIONAL', 'COMERCIAL'] as const
-const TIPOS = ['NORMAL', 'GANHO', 'PERDIDO'] as const
+/*
+ * Etapa so tem um comportamento: NORMAL — por isso nao ha mais um seletor de
+ * "Comportamento" no formulario. Ganho e Perdido deixaram de ser etapas e
+ * viraram o RESULTADO do card, marcado na visao de detalhes do Pipeline.
+ *
+ * As etapas historicas "Ganho" e "Perdido" do funil de Vendas continuam
+ * existindo no banco, inativas: o historico de movimentacao as referencia, e
+ * apaga-las reescreveria o passado do pipeline. A lista as marca como legado
+ * em vez de esconde-las.
+ */
 
 interface Etapa {
   id: string; nome: string; descricao: string | null; ordem: number
@@ -46,7 +55,7 @@ interface FormEtapa {
   nome: string
   descricao: string
   cor: string
-  tipo: 'NORMAL' | 'GANHO' | 'PERDIDO'
+  tipo: 'NORMAL'
 }
 
 const ETAPA_VAZIA: FormEtapa = { nome: '', descricao: '', cor: '', tipo: 'NORMAL' }
@@ -91,7 +100,7 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
   function abrirNovaEtapa() { setFormEtapa(ETAPA_VAZIA); setErro(''); setModalEtapa('nova') }
 
   function abrirEdicaoEtapa(e: Etapa) {
-    setFormEtapa({ nome: e.nome, descricao: e.descricao ?? '', cor: e.cor ?? '', tipo: e.tipo })
+    setFormEtapa({ nome: e.nome, descricao: e.descricao ?? '', cor: e.cor ?? '', tipo: 'NORMAL' })
     setErro(''); setModalEtapa(e)
   }
 
@@ -261,7 +270,7 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
                   {e.descricao && <p className="t-sm text-subtle mt-0.5">{e.descricao}</p>}
                 </div>
                 {e.tipo !== 'NORMAL' && (
-                  <Badge tone={e.tipo === 'GANHO' ? 'pos' : 'neg'}>{e.tipo === 'GANHO' ? 'Ganho' : 'Perdido'}</Badge>
+                  <Badge tone="neutral">Etapa legada · virou resultado do card</Badge>
                 )}
                 <span className="t-label text-subtle">{e._count?.deals ?? 0} card(s)</span>
                 {!e.ativo && <Badge tone="neutral">Inativa</Badge>}
@@ -371,18 +380,7 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
                 <textarea id="et-desc" rows={2} maxLength={500} value={formEtapa.descricao} className={inp}
                   onChange={(e) => setFormEtapa((p) => ({ ...p, descricao: e.target.value }))} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={lbl} htmlFor="et-tipo">Comportamento</label>
-                  <select id="et-tipo" value={formEtapa.tipo} className={inp}
-                    onChange={(e) => setFormEtapa((p) => ({ ...p, tipo: e.target.value as typeof p.tipo }))}>
-                    {TIPOS.map((t) => (
-                      <option key={t} value={t}>
-                        {t === 'NORMAL' ? 'Normal' : t === 'GANHO' ? 'Encerra como ganho' : 'Encerra como perdido'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
                 <div>
                   <label className={lbl} htmlFor="et-cor">Cor</label>
                   <input id="et-cor" type="color" value={formEtapa.cor || '#2F6BFF'}

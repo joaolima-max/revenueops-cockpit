@@ -11,7 +11,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     where: { id },
     include: {
       owner: { select: { id: true, name: true, email: true } },
-      deals: { include: { owner: { select: { id: true, name: true } } } },
+      // O card do pipeline nao tem valor: o que interessa aqui e ONDE ele esta
+      // (etapa) e COMO terminou (resultado).
+      deals: {
+        select: {
+          id: true, title: true, resultado: true,
+          etapa: { select: { nome: true } },
+          funil: { select: { nome: true } },
+          owner: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      },
     },
   })
 

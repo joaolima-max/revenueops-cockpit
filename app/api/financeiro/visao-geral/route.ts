@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { hasPermission } from '@/lib/permissions'
 import { visaoGeralFinanceiro } from '@/lib/financeiro'
-import { periodoAtual } from '@/lib/periodo'
+import { periodoAtual, ultimosPeriodos } from '@/lib/periodo'
 
 /** Todos os números da Visão Geral do Financeiro, de uma fonte cada. */
 export async function GET(request: NextRequest) {
@@ -17,5 +17,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Período inválido. Use YYYY-MM.' }, { status: 400 })
   }
 
-  return NextResponse.json(await visaoGeralFinanceiro(periodo))
+  return NextResponse.json(await visaoGeralFinanceiro(periodo, ultimosPeriodos(12)))
 }

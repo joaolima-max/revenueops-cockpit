@@ -27,7 +27,7 @@ const FUNNEL_TEXT: Record<string, string> = {
   NEGOCIACAO: 'text-accent-soft', GANHO: 'text-pos', PERDIDO: 'text-neg',
 }
 
-export default function LeadsClient({ leads: initialLeads, role }: { leads: Lead[]; role: string; userId?: string }) {
+export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) {
   const router = useRouter()
   const [leads, setLeads] = useState(initialLeads)
   const [search, setSearch] = useState('')

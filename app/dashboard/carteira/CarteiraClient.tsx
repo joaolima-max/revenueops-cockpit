@@ -46,7 +46,7 @@ const emptyForm = {
 /** Os três modelos operacionais do produto. */
 const MODELOS = ['API', 'BAAS', 'WHITE_LABEL'] as const
 
-export default function CarteiraClient({ role }: { role: string }) {
+export default function CarteiraClient() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   // Indicador operacional dos ultimos 5 dias. Carregado a parte para nao
   // atrasar a lista de clientes, que e o conteudo principal da tela.
@@ -64,16 +64,29 @@ export default function CarteiraClient({ role }: { role: string }) {
   const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
 
-  const fetchClientes = useCallback(async () => {
+  // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
+  // `.then`, e `vivo` evita escrever em componente já desmontado.
+  const buscarClientes = useCallback(async (): Promise<Cliente[] | null> => {
     const p = new URLSearchParams()
     if (search) p.set('search', search)
     if (statusFilter) p.set('status', statusFilter)
     if (modeloFilter) p.set('modelo', modeloFilter)
     if (segFilter) p.set('segmento', segFilter)
     const res = await fetch(`/api/clientes?${p}`)
-    if (res.ok) { const data = await res.json(); setClientes(data.clientes) }
-    setLoading(false)
+    if (!res.ok) return null
+    const data = await res.json()
+    return (data.clientes ?? []) as Cliente[]
   }, [search, statusFilter, modeloFilter, segFilter])
+
+  const aplicarClientes = useCallback((lista: Cliente[] | null) => {
+    if (lista) setClientes(lista)
+    setLoading(false)
+  }, [])
+
+  const fetchClientes = useCallback(
+    async () => { aplicarClientes(await buscarClientes()) },
+    [buscarClientes, aplicarClientes],
+  )
 
   useEffect(() => {
     let vivo = true
@@ -99,7 +112,11 @@ export default function CarteiraClient({ role }: { role: string }) {
     }).catch(() => {})
   }
 
-  useEffect(() => { fetchClientes() }, [fetchClientes])
+  useEffect(() => {
+    let vivo = true
+    buscarClientes().then((d) => { if (vivo) aplicarClientes(d) })
+    return () => { vivo = false }
+  }, [buscarClientes, aplicarClientes])
 
   function resetModal() {
     setShowModal(false)

@@ -9,6 +9,7 @@ import HairlineGrid from '@/components/ui/HairlineGrid'
 import StatTile from '@/components/ui/StatTile'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import { figuraMoeda, figuraContagem, figuraPercentual } from '@/lib/format-financeiro'
+import { formatDate } from '@/lib/utils'
 
 type TipoParceiro = 'BAAS' | 'WHITE_LABEL'
 
@@ -21,6 +22,9 @@ interface Condicao {
   kyc: number | null
   sustentacao: number | null
   apiMensal: number | null
+  mensalidadeContaAtiva: number | null
+  /** ISO "YYYY-MM-DD". Antes dela a sustentação não entra no MRR. */
+  sustentacaoInicio: string | null
   overpricePercent: number | null
   ativo: boolean
   observacao: string | null
@@ -39,7 +43,9 @@ interface Mrr {
   sustentacaoBaas: number
   sustentacaoWhiteLabel: number
   apiMensalParceiros: number
+  mensalidadeContaAtiva: number
   apiMensalCarteira: number
+  sustentacaoAguardandoInicio: number
   total: number
 }
 
@@ -54,12 +60,15 @@ const TIPO_TONE: Record<TipoParceiro, BadgeTone> = { BAAS: 'accent', WHITE_LABEL
 
 const CAMPO_LABEL: Record<string, string> = {
   pix: 'PIX', kyc: 'KYC', sustentacao: 'Sustentação', apiMensal: 'API mensal',
+  mensalidadeContaAtiva: 'Mensalidade de conta ativa',
+  sustentacaoInicio: 'Início da sustentação',
   overpricePercent: 'Overprice (%)', tipo: 'Tipo', ativo: 'Ativo',
 }
 
 const FORM_VAZIO = {
   nomeFantasia: '', identificacao: '', tipo: 'BAAS' as TipoParceiro,
-  pix: '', kyc: '', sustentacao: '', apiMensal: '', overpricePercent: '', observacao: '',
+  pix: '', kyc: '', sustentacao: '', apiMensal: '', mensalidadeContaAtiva: '',
+  sustentacaoInicio: '', overpricePercent: '', observacao: '',
 }
 
 /** Valor monetário opcional: vazio é "não contratado", não R$ 0,00. */
@@ -130,6 +139,8 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
       kyc: c.kyc != null ? String(c.kyc) : '',
       sustentacao: c.sustentacao != null ? String(c.sustentacao) : '',
       apiMensal: c.apiMensal != null ? String(c.apiMensal) : '',
+      mensalidadeContaAtiva: c.mensalidadeContaAtiva != null ? String(c.mensalidadeContaAtiva) : '',
+      sustentacaoInicio: c.sustentacaoInicio ? c.sustentacaoInicio.slice(0, 10) : '',
       overpricePercent: c.overpricePercent != null ? String(c.overpricePercent) : '',
       observacao: c.observacao ?? '',
     })
@@ -199,11 +210,22 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
 
       <HairlineGrid cols={3}>
         <StatTile label="MRR destes cadastros"
-          figura={mrr ? figuraMoeda(mrr.sustentacaoBaas + mrr.sustentacaoWhiteLabel + mrr.apiMensalParceiros) : null}
-          note="Sustentação + API mensal" />
+          figura={mrr ? figuraMoeda(
+            mrr.sustentacaoBaas + mrr.sustentacaoWhiteLabel + mrr.apiMensalParceiros + mrr.mensalidadeContaAtiva,
+          ) : null}
+          note="Sustentação vigente + API mensal + conta ativa" />
         <StatTile label="BaaS ativos" figura={figuraContagem(parceiros.baasAtivos)} />
         <StatTile label="White Labels ativos" figura={figuraContagem(parceiros.whiteLabelsAtivos)} />
       </HairlineGrid>
+
+      {/* Sustentação contratada que ainda não começou: fora do MRR, mas a tela
+          precisa poder dizer isso — senão o número só parece faltar. */}
+      {mrr && mrr.sustentacaoAguardandoInicio > 0 && (
+        <Badge tone="warn">
+          {figuraMoeda(mrr.sustentacaoAguardandoInicio).completo} de sustentação contratada ainda
+          não entra no MRR — a data de início não chegou
+        </Badge>
+      )}
 
       <Panel padded={false}>
         <label className="p-3 flex items-center gap-2 t-sm text-muted cursor-pointer">
@@ -224,15 +246,16 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
               <Th align="right">KYC</Th>
               <Th align="right">Sustentação</Th>
               <Th align="right">API mensal</Th>
+              <Th align="right">Conta ativa</Th>
               <Th align="right">Overprice</Th>
               <Th align="right">Ações</Th>
             </HeadRow>
           </THead>
           <tbody>
             {carregando ? (
-              <EmptyRow colSpan={9}>Carregando…</EmptyRow>
+              <EmptyRow colSpan={10}>Carregando…</EmptyRow>
             ) : condicoes.length === 0 ? (
-              <EmptyRow colSpan={9}>Nenhum BaaS ou White Label cadastrado.</EmptyRow>
+              <EmptyRow colSpan={10}>Nenhum BaaS ou White Label cadastrado.</EmptyRow>
             ) : condicoes.map((c) => (
               <Row key={c.id}>
                 <Td className="pl-5">
@@ -245,8 +268,16 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
                 <Td><Badge tone={TIPO_TONE[c.tipo]}>{TIPO_LABEL[c.tipo]}</Badge></Td>
                 <Td align="right" numeric>{moeda(c.pix)}</Td>
                 <Td align="right" numeric>{moeda(c.kyc)}</Td>
-                <Td align="right" numeric>{moeda(c.sustentacao)}</Td>
+                <Td align="right" numeric>
+                  <span className="block">{moeda(c.sustentacao)}</span>
+                  {c.sustentacaoInicio && (
+                    <span className="block t-label text-subtle">
+                      a partir de {formatDate(c.sustentacaoInicio)}
+                    </span>
+                  )}
+                </Td>
                 <Td align="right" numeric>{moeda(c.apiMensal)}</Td>
+                <Td align="right" numeric>{moeda(c.mensalidadeContaAtiva)}</Td>
                 <Td align="right" numeric>
                   {c.overpricePercent === null ? '—' : figuraPercentual(c.overpricePercent, 2).completo}
                 </Td>
@@ -318,6 +349,20 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
                   <input id="c-api" type="number" step="0.01" min="0" value={form.apiMensal} className={inp}
                     onChange={(e) => setForm((p) => ({ ...p, apiMensal: e.target.value }))} />
                 </div>
+                <div>
+                  <label className={lbl} htmlFor="c-conta">Mensalidade de conta ativa (R$/mês)</label>
+                  <input id="c-conta" type="number" step="0.01" min="0" value={form.mensalidadeContaAtiva}
+                    className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, mensalidadeContaAtiva: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="c-sust-ini">Início da sustentação</label>
+                  <input id="c-sust-ini" type="date" value={form.sustentacaoInicio} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, sustentacaoInicio: e.target.value }))} />
+                  <p className="t-label text-subtle mt-1">
+                    Antes desta data a sustentação não entra no MRR. Vazio = já vigente.
+                  </p>
+                </div>
                 <div className="sm:col-span-2">
                   <label className={lbl} htmlFor="c-over">Overprice (%)</label>
                   <input id="c-over" type="number" step="0.01" min="0" value={form.overpricePercent} className={inp}
@@ -376,6 +421,9 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
                     ['KYC', moeda(historico.condicao.kyc)],
                     ['Sustentação', moeda(historico.condicao.sustentacao)],
                     ['API mensal', moeda(historico.condicao.apiMensal)],
+                    ['Mensalidade de conta ativa', moeda(historico.condicao.mensalidadeContaAtiva)],
+                    ['Início da sustentação', historico.condicao.sustentacaoInicio
+                      ? formatDate(historico.condicao.sustentacaoInicio) : '—'],
                     ['Overprice', historico.condicao.overpricePercent === null
                       ? '—' : figuraPercentual(historico.condicao.overpricePercent, 2).completo],
                     ['Situação', historico.condicao.ativo ? 'Ativo' : 'Inativo'],

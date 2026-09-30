@@ -1,212 +1,320 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { formatCurrency, formatPercent, getCurrentMonth, META_TIPO_LABELS } from '@/lib/utils'
+import { useState, useEffect, useCallback } from 'react'
+import { getCurrentMonth, META_TIPO_LABELS } from '@/lib/utils'
+import { figuraMoeda, figuraQuantidade, figuraPercentual } from '@/lib/format-financeiro'
+import {
+  META_TIPOS, META_DIRECOES, META_UNIDADES, PADRAO_POR_TIPO,
+  DIRECAO_LABEL, UNIDADE_LABEL,
+  type MetaDirecao, type MetaUnidade, type MetaTipo, type SituacaoMeta,
+} from '@/lib/metas'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import Button from '@/components/ui/Button'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
 
-interface Meta { id: string; tipo: string; valor: number; periodo: string; realizado: number | null }
+interface Meta {
+  id: string
+  tipo: string
+  valor: number
+  periodo: string
+  direcao: MetaDirecao
+  unidade: MetaUnidade
+  realizado: number | null
+  atingimento: number | null
+  situacao: SituacaoMeta
+  positivo: boolean
+  diferenca: number | null
+}
 
-const TIPOS = ['RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS']
-// A meta é só o ESPERADO. O realizado vem do Lançamento Diário e nunca é
-// digitado aqui — por isso o formulário não tem campo para ele.
-const emptyForm = { tipo: 'RECEITA_TARIFARIA', valor: '', periodo: getCurrentMonth() }
+const SITUACAO: Record<SituacaoMeta, { label: string; tone: BadgeTone }> = {
+  ATINGIDA: { label: 'Atingida', tone: 'pos' },
+  NAO_ATINGIDA: { label: 'Não atingida', tone: 'neg' },
+  SEM_REALIZADO: { label: 'Sem realizado', tone: 'neutral' },
+}
 
-function formatVal(tipo: string, val: number) {
-  if (tipo === 'CLIENTES_ATIVOS' || tipo === 'TRANSACOES') return val.toLocaleString('pt-BR')
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
+/**
+ * Formata pela UNIDADE da meta, não pelo tipo. É o que permite uma meta
+ * percentual (MED = 2%) conviver com uma monetária (TPV) e uma de contagem
+ * (Transações) na mesma lista, cada uma lida do jeito certo.
+ */
+function formatar(unidade: MetaUnidade, valor: number): string {
+  if (unidade === 'PERCENTUAL') return figuraPercentual(valor, 2).completo
+  if (unidade === 'QUANTIDADE') return figuraQuantidade(valor).completo
+  return figuraMoeda(valor).completo
+}
+
+const FORM_VAZIO = {
+  tipo: 'RECEITA_TARIFARIA' as MetaTipo,
+  valor: '',
+  periodo: getCurrentMonth(),
+  direcao: PADRAO_POR_TIPO.RECEITA_TARIFARIA.direcao,
+  unidade: PADRAO_POR_TIPO.RECEITA_TARIFARIA.unidade,
 }
 
 export default function MetasClient() {
   const [metas, setMetas] = useState<Meta[]>([])
-  const [loading, setLoading] = useState(true)
+  const [carregando, setCarregando] = useState(true)
   const [periodo, setPeriodo] = useState(getCurrentMonth())
-  const [showModal, setShowModal] = useState(false)
-  const [editModal, setEditModal] = useState<Meta | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({ valor: '' })
-  const [form, setForm] = useState(emptyForm)
+  const [modal, setModal] = useState<'nova' | Meta | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [form, setForm] = useState(FORM_VAZIO)
 
-  async function fetchData(p: string) {
-    setLoading(true)
+  // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
+  // `.then`, e `vivo` evita escrever em componente já desmontado.
+  const buscar = useCallback(async (p: string): Promise<Meta[] | null> => {
     const res = await fetch(`/api/metas?periodo=${p}`)
-    if (res.ok) { const d = await res.json(); setMetas(d.metas) }
-    setLoading(false)
+    if (!res.ok) return null
+    const d = await res.json()
+    return (d.metas ?? []) as Meta[]
+  }, [])
+
+  const aplicar = useCallback((lista: Meta[] | null) => {
+    if (lista) setMetas(lista)
+    setCarregando(false)
+  }, [])
+
+  const carregar = useCallback(async (p: string) => { aplicar(await buscar(p)) }, [buscar, aplicar])
+
+  useEffect(() => {
+    let vivo = true
+    buscar(periodo).then((d) => { if (vivo) aplicar(d) })
+    return () => { vivo = false }
+  }, [periodo, buscar, aplicar])
+
+  function abrirNova() {
+    setForm({ ...FORM_VAZIO, periodo })
+    setErro('')
+    setModal('nova')
   }
 
-  useEffect(() => { fetchData(periodo) }, [periodo])
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
-    await fetch('/api/metas', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tipo: form.tipo, valor: parseFloat(form.valor) || 0,
-        periodo: form.periodo,
-      }),
+  function abrirEdicao(m: Meta) {
+    setForm({
+      tipo: m.tipo as MetaTipo,
+      valor: String(m.valor),
+      periodo: m.periodo,
+      direcao: m.direcao,
+      unidade: m.unidade,
     })
-    setShowModal(false); setForm(emptyForm); fetchData(periodo); setSaving(false)
+    setErro('')
+    setModal(m)
   }
 
-  function openEdit(meta: Meta) {
-    setEditModal(meta)
-    setEditForm({ valor: String(meta.valor) })
+  /** Trocar o tipo reposiciona unidade e direção no padrão daquele indicador. */
+  function trocarTipo(tipo: MetaTipo) {
+    const padrao = PADRAO_POR_TIPO[tipo]
+    setForm((p) => ({ ...p, tipo, direcao: padrao.direcao, unidade: padrao.unidade }))
   }
 
-  async function handleEdit(e: React.FormEvent) {
+  async function salvar(e: React.FormEvent) {
     e.preventDefault()
-    if (!editModal) return
-    setSaving(true)
-    await fetch(`/api/metas/${editModal.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    setSalvando(true); setErro('')
+
+    const editando = modal !== 'nova' && modal !== null
+    const res = await fetch(editando ? `/api/metas/${modal.id}` : '/api/metas', {
+      method: editando ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        valor: editForm.valor ? parseFloat(editForm.valor) : undefined,
+        tipo: form.tipo,
+        periodo: form.periodo,
+        valor: parseFloat(form.valor.replace(',', '.')) || 0,
+        direcao: form.direcao,
+        unidade: form.unidade,
       }),
     })
-    setEditModal(null); fetchData(periodo); setSaving(false)
+
+    if (res.ok) {
+      setModal(null)
+      carregar(periodo)
+    } else {
+      const d = await res.json().catch(() => ({}))
+      setErro(d.error ?? 'Não foi possível salvar a meta.')
+    }
+    setSalvando(false)
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Excluir esta meta?')) return
-    await fetch(`/api/metas/${id}`, { method: 'DELETE' })
-    fetchData(periodo)
+  async function excluir(m: Meta) {
+    if (!confirm(`Excluir a meta de ${META_TIPO_LABELS[m.tipo] ?? m.tipo} em ${m.periodo}?`)) return
+    const res = await fetch(`/api/metas/${m.id}`, { method: 'DELETE' })
+    if (res.ok) carregar(periodo)
   }
 
   const inp = 'bp-field'
   const lbl = 'bp-field-label'
 
-  const tiposComMeta = new Set(metas.map(m => m.tipo))
-  const tiposFaltando = TIPOS.filter(t => !tiposComMeta.has(t))
+  const semMeta = META_TIPOS.filter((t) => !metas.some((m) => m.tipo === t))
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="t-h1 text-fg">Metas</h1>
-          <p className="text-subtle text-sm mt-0.5">Acompanhamento de metas por período</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <input type="month" value={periodo} onChange={e => { setPeriodo(e.target.value) }}
-            className="bp-field text-sm" />
-          <button onClick={() => setShowModal(true)} className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
-            + Definir Meta
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Metas"
+        sub="A meta é só o esperado. O realizado vem do Lançamento Diário e nunca é digitado aqui."
+        actions={
+          <div className="flex items-center gap-2">
+            <input type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)}
+              aria-label="Período" className="bp-field w-auto" />
+            <Button variant="primary" onClick={abrirNova}>+ Definir meta</Button>
+          </div>
+        }
+      />
 
-      {loading ? (
-        <p className="text-subtle text-sm">Carregando...</p>
+      {carregando ? (
+        <p className="t-sm text-subtle">Carregando…</p>
+      ) : metas.length === 0 ? (
+        <Panel padded={false}>
+          <EmptyState
+            title="Nenhuma meta definida para este período"
+            description="Defina o alvo de cada indicador. O realizado é apurado automaticamente."
+            action={<Button variant="primary" onClick={abrirNova}>Definir meta</Button>}
+          />
+        </Panel>
       ) : (
-        <div className="space-y-4">
-          {metas.length === 0 && (
-            <div className="bg-surface border border-line rounded-xl p-8 text-center">
-              <p className="text-subtle text-sm">Nenhuma meta definida para este período.</p>
-              <button onClick={() => setShowModal(true)} className="mt-3 text-pos hover:text-pos text-sm">Definir metas →</button>
-            </div>
-          )}
-          {metas.map(meta => {
-            const pct = meta.realizado !== null && meta.valor > 0 ? Math.min((meta.realizado / meta.valor) * 100, 100) : null
-            const color = pct === null ? 'bg-surface-2' : pct >= 90 ? 'bg-pos' : pct >= 70 ? 'bg-warn' : 'bg-neg'
-            const textColor = pct === null ? 'text-subtle' : pct >= 90 ? 'text-pos' : pct >= 70 ? 'text-warn' : 'text-neg'
+        <div className="space-y-3">
+          {metas.map((m) => {
+            const s = SITUACAO[m.situacao]
+            // A barra mostra CUMPRIMENTO, que já respeita a direção: 100% é
+            // "no alvo" tanto para TPV quanto para MED.
+            const pct = m.atingimento === null ? null : Math.min(m.atingimento, 150)
+            const cor = m.situacao === 'SEM_REALIZADO' ? 'bg-surface-2'
+              : m.positivo ? 'bg-pos'
+              : (m.atingimento ?? 0) >= 70 ? 'bg-warn' : 'bg-neg'
+
             return (
-              <div key={meta.id} className="bg-surface border border-line rounded-xl p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <p className="text-sm font-semibold text-fg">{META_TIPO_LABELS[meta.tipo] || meta.tipo}</p>
-                    <p className="text-xs text-subtle mt-0.5">Meta: {formatVal(meta.tipo, meta.valor)}</p>
+              <Panel key={m.id}>
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="t-body font-semibold text-fg">
+                      {META_TIPO_LABELS[m.tipo] ?? m.tipo}
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                      <Badge tone={s.tone}>{s.label}</Badge>
+                      <Badge>{DIRECAO_LABEL[m.direcao]}</Badge>
+                      <span className="t-label text-subtle">
+                        Meta {formatar(m.unidade, m.valor)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
+
+                  <div className="flex items-start gap-4">
                     <div className="text-right">
-                      <p className={`text-xl font-bold tnum ${textColor}`}>
-                        {pct !== null ? formatPercent(pct, 1) : '—'}
+                      <p className={`t-h2 tabular-nums ${
+                        m.situacao === 'SEM_REALIZADO' ? 'text-subtle'
+                          : m.positivo ? 'text-pos' : 'text-neg'
+                      }`}>
+                        {m.realizado === null ? '—' : formatar(m.unidade, m.realizado)}
                       </p>
-                      <p className="text-xs text-subtle mt-0.5">
-                        {meta.realizado !== null ? formatVal(meta.tipo, meta.realizado) : 'Sem realizado'}
+                      <p className="t-label text-subtle mt-1">
+                        {m.atingimento === null
+                          ? 'Sem realizado no período'
+                          : `${m.atingimento.toFixed(0)}% de cumprimento`}
                       </p>
                     </div>
-                    {/* Edit / Delete buttons */}
-                    <div className="flex flex-col gap-1 ml-2">
-                      <button onClick={() => openEdit(meta)} title="Editar"
-                        className="p-1.5 rounded-lg bg-surface-2 hover:bg-accent/20 text-subtle hover:text-accent-soft transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                      </button>
-                      <button onClick={() => handleDelete(meta.id)} title="Excluir"
-                        className="p-1.5 rounded-lg bg-surface-2 hover:bg-neg/20 text-subtle hover:text-neg transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+                    <div className="inline-flex gap-1.5">
+                      <Button size="sm" onClick={() => abrirEdicao(m)}>Editar</Button>
+                      <Button size="sm" variant="danger" onClick={() => excluir(m)}>Excluir</Button>
                     </div>
                   </div>
                 </div>
-                <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-                  <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${pct ?? 0}%` }} />
+
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden mt-4">
+                  <div className={`h-full rounded-full transition-all duration-[380ms] ease-bp ${cor}`}
+                    style={{ width: `${Math.max(pct ?? 0, 0) / 1.5}%` }} />
                 </div>
-                {meta.realizado !== null && meta.valor > 0 && (
-                  <div className="flex justify-between mt-2 text-xs text-subtle">
-                    <span>0</span>
-                    <span>{formatVal(meta.tipo, meta.valor)}</span>
-                  </div>
+                {m.diferenca !== null && (
+                  <p className="t-label text-subtle mt-2">
+                    {m.diferenca === 0
+                      ? 'Exatamente no alvo.'
+                      : `${formatar(m.unidade, Math.abs(m.diferenca))} ${m.diferenca > 0 ? 'acima' : 'abaixo'} da meta.`}
+                  </p>
                 )}
-              </div>
+              </Panel>
             )
           })}
-          {tiposFaltando.length > 0 && metas.length > 0 && (
-            <p className="text-xs text-subtle">Sem meta definida para: {tiposFaltando.map(t => META_TIPO_LABELS[t] || t).join(', ')}</p>
+
+          {semMeta.length > 0 && (
+            <p className="t-label text-subtle">
+              Sem meta definida para: {semMeta.map((t) => META_TIPO_LABELS[t] ?? t).join(', ')}
+            </p>
           )}
         </div>
       )}
 
-      {/* Criar Meta Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+      {modal && (
+        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => e.target === e.currentTarget && setModal(null)}>
           <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-line">
-              <h2 className="t-h2 text-fg">Definir Meta</h2>
-              <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
+              <h2 className="t-h2 text-fg">
+                {modal === 'nova' ? 'Definir meta' : `Editar — ${META_TIPO_LABELS[modal.tipo] ?? modal.tipo}`}
+              </h2>
+              <button onClick={() => setModal(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
             </div>
-            <form onSubmit={handleSave} className="p-5 space-y-4">
-              <div>
-                <label className={lbl}>Tipo de Meta *</label>
-                <select required value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className={inp}>
-                  {TIPOS.map(t => <option key={t} value={t}>{META_TIPO_LABELS[t] || t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={lbl}>Período *</label>
-                <input required type="month" value={form.periodo} onChange={e => setForm(p => ({ ...p, periodo: e.target.value }))} className={inp} />
-              </div>
-              <div>
-                <label className={lbl}>Valor da Meta *</label>
-                <input required type="number" step="0.01" value={form.valor} onChange={e => setForm(p => ({ ...p, valor: e.target.value }))} className={inp} />
-              </div>
-              <p className="t-sm text-subtle">
-                O realizado é apurado automaticamente do Lançamento Diário.
-              </p>
-              <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Editar Meta Modal */}
-      {editModal && (
-        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setEditModal(null)}>
-          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-line">
-              <h2 className="t-h2 text-fg">Editar Meta — {META_TIPO_LABELS[editModal.tipo] || editModal.tipo}</h2>
-              <button onClick={() => setEditModal(null)} className="text-subtle hover:text-fg">✕</button>
-            </div>
-            <form onSubmit={handleEdit} className="p-5 space-y-4">
-              <div>
-                <label className={lbl}>Valor da Meta</label>
-                <input type="number" step="0.01" value={editForm.valor} onChange={e => setEditForm(p => ({ ...p, valor: e.target.value }))} className={inp} />
+            <form onSubmit={salvar} className="p-5 space-y-4">
+              {erro && <div className="bg-neg/10 border border-neg/25 text-neg px-3 py-2 rounded-lg t-sm">{erro}</div>}
+
+              {modal === 'nova' && (
+                <>
+                  <div>
+                    <label className={lbl} htmlFor="mt-tipo">Indicador *</label>
+                    <select id="mt-tipo" required value={form.tipo} className={inp}
+                      onChange={(e) => trocarTipo(e.target.value as MetaTipo)}>
+                      {META_TIPOS.map((t) => (
+                        <option key={t} value={t}>{META_TIPO_LABELS[t] ?? t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl} htmlFor="mt-periodo">Período *</label>
+                    <input id="mt-periodo" required type="month" value={form.periodo} className={inp}
+                      onChange={(e) => setForm((p) => ({ ...p, periodo: e.target.value }))} />
+                  </div>
+                </>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={lbl} htmlFor="mt-unidade">Unidade *</label>
+                  <select id="mt-unidade" value={form.unidade} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, unidade: e.target.value as MetaUnidade }))}>
+                    {META_UNIDADES.map((u) => <option key={u} value={u}>{UNIDADE_LABEL[u]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="mt-valor">
+                    Valor da meta {form.unidade === 'PERCENTUAL' ? '(%)' : form.unidade === 'VALOR' ? '(R$)' : ''} *
+                  </label>
+                  <input id="mt-valor" required type="number" step="0.01" min="0"
+                    max={form.unidade === 'PERCENTUAL' ? 100 : undefined}
+                    value={form.valor} className={inp}
+                    onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} />
+                </div>
               </div>
+
+              <div>
+                <label className={lbl} htmlFor="mt-direcao">Direção da meta *</label>
+                <select id="mt-direcao" value={form.direcao} className={inp}
+                  onChange={(e) => setForm((p) => ({ ...p, direcao: e.target.value as MetaDirecao }))}>
+                  {META_DIRECOES.map((d) => <option key={d} value={d}>{DIRECAO_LABEL[d]}</option>)}
+                </select>
+                <p className="t-label text-subtle mt-1.5">
+                  {form.direcao === 'MENOR_MELHOR'
+                    ? 'A meta é atingida quando o realizado fica ABAIXO do alvo. Ex.: MED de 2% com realizado de 1,5%.'
+                    : 'A meta é atingida quando o realizado fica ACIMA do alvo. Ex.: TPV e receita.'}
+                </p>
+              </div>
+
               <p className="t-sm text-subtle">
-                O realizado é apurado automaticamente do Lançamento Diário.
+                O realizado é apurado automaticamente do Lançamento Diário — não há campo para digitá-lo.
               </p>
+
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setEditModal(null)} className="px-4 py-2 text-subtle border border-line-2 hover:text-fg text-sm rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-accent hover:bg-accent disabled:opacity-50 text-fg text-sm font-medium rounded-lg transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
+                <Button type="button" onClick={() => setModal(null)}>Cancelar</Button>
+                <Button type="submit" variant="primary" disabled={salvando}>
+                  {salvando ? 'Salvando…' : 'Salvar'}
+                </Button>
               </div>
             </form>
           </div>

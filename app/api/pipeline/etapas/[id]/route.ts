@@ -4,7 +4,8 @@ import { getSession } from '@/lib/auth'
 import { validarInativacaoEtapa, impedimentoExclusaoEtapa } from '@/lib/pipeline'
 import { acessoAoFunil, auditarPipeline } from '@/lib/pipeline-db'
 
-const TIPOS = ['NORMAL', 'GANHO', 'PERDIDO'] as const
+/** So NORMAL — ver a rota de criacao de etapas. */
+const TIPOS = ['NORMAL'] as const
 
 async function carregar(session: { userId: string; role: string; permissoes?: string[] }, id: string) {
   const etapa = await prisma.pipelineEtapa.findUnique({
@@ -28,6 +29,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { nome, descricao, cor, tipo } = await request.json()
   const n = nome !== undefined ? String(nome).trim() : undefined
   if (n !== undefined && !n) return NextResponse.json({ error: 'Informe o nome da etapa.' }, { status: 400 })
+
+  if (tipo !== undefined && !TIPOS.includes(tipo)) {
+    return NextResponse.json({
+      error: 'Ganho e Perdido nao sao etapas — sao o resultado do card.',
+    }, { status: 400 })
+  }
 
   if (n && n !== etapa!.nome) {
     const dup = await prisma.pipelineEtapa.findUnique({
