@@ -84,3 +84,46 @@ test('a mensagem de impedimento nunca oferece apagar movimentação', () => {
     assert.ok(!/apagar o hist|remova o hist|excluir o hist/i.test(msg), `mensagem sugere apagar histórico: ${msg}`)
   }
 })
+
+/* ── Título do card vem do Lead ──────────────────────────────────────────── */
+
+/**
+ * Mesma precedência que `POST /api/deals` aplica: título informado (se não for
+ * vazio), senão a empresa do lead, senão o nome do executivo.
+ *
+ * Existe porque a rota quebrava com 500 quando o corpo vinha sem `title` —
+ * `Deal.title` é obrigatório no schema e nada derivava o valor no servidor. A
+ * interface mandava certo; a API confiava nela.
+ */
+function tituloDoCard(
+  informado: unknown,
+  lead: { name: string; company: string | null },
+): string {
+  return String(informado ?? '').trim() || lead.company || lead.name
+}
+
+test('sem título informado, o card usa a empresa do lead', () => {
+  assert.equal(tituloDoCard(undefined, { name: 'Ana', company: 'Acme' }), 'Acme')
+  assert.equal(tituloDoCard(null, { name: 'Ana', company: 'Acme' }), 'Acme')
+})
+
+test('lead sem empresa cai no nome do executivo', () => {
+  assert.equal(tituloDoCard(undefined, { name: 'Ana', company: null }), 'Ana')
+})
+
+test('título em branco não vira o título do card', () => {
+  assert.equal(tituloDoCard('   ', { name: 'Ana', company: 'Acme' }), 'Acme')
+  assert.equal(tituloDoCard('', { name: 'Ana', company: 'Acme' }), 'Acme')
+})
+
+test('título informado de verdade é respeitado', () => {
+  assert.equal(tituloDoCard('Renovação 2027', { name: 'Ana', company: 'Acme' }), 'Renovação 2027')
+})
+
+test('o título nunca sai vazio — Deal.title é obrigatório no schema', () => {
+  for (const informado of [undefined, null, '', '   ']) {
+    for (const lead of [{ name: 'Ana', company: 'Acme' }, { name: 'Ana', company: null }]) {
+      assert.ok(tituloDoCard(informado, lead).length > 0)
+    }
+  }
+})

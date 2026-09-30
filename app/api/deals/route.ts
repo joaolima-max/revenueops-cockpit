@@ -50,8 +50,16 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     )
   }
-  const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } })
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId }, select: { id: true, name: true, company: true },
+  })
   if (!lead) return NextResponse.json({ error: 'Lead nao encontrado.' }, { status: 404 })
+
+  // O titulo do card VEM DO LEAD. A interface ja manda derivado, mas quem
+  // decide e o servidor: assim nao existe um segundo lugar onde escrever o nome
+  // da oportunidade e depois ele divergir do cadastro. Um titulo informado no
+  // corpo e aceito apenas se nao for vazio, para nao perder ajuste manual.
+  const titulo = String(data.title ?? '').trim() || lead.company || lead.name
 
   // Card criado a partir do quadro: nasce numa etapa de um funil. Sem etapa, o
   // comportamento antigo continua valendo, para nao quebrar quem chama a API
@@ -79,7 +87,7 @@ export async function POST(request: NextRequest) {
   const deal = await prisma.$transaction(async (tx) => {
     const criado = await tx.deal.create({
       data: {
-        title: data.title,
+        title: titulo,
         value: parseFloat(data.value),
         stage: (stage ?? data.stage ?? 'PROSPECCAO') as never,
         probability: data.probability || 0,
