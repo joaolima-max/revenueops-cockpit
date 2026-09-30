@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { checkAccess, firstAvailableRoute } from '@/lib/modules'
 
-// `/f/` e a pagina publica de formulario e `/api/formularios/publico/` a sua
-// API: sao acessadas por quem recebeu o link, sem conta no sistema.
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/f/', '/api/formularios/publico/']
+// Unicas rotas alcancaveis sem sessao. O ambiente Formularios saiu do produto
+// e com ele a pagina publica `/f/` e a API `/api/formularios/publico/`: manter
+// os prefixos aqui deixaria dois caminhos liberados sem autenticacao para
+// codigo que nao existe mais.
+const PUBLIC_PATHS = ['/login', '/api/auth/login']
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl

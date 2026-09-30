@@ -5,15 +5,11 @@ import { logAudit } from '@/lib/audit'
 import { volumetriaDoPeriodo } from '@/lib/kpi'
 import {
   listarContratos, conflitoDeVigencia, periodoValido, periodoAtual,
+  podeCriarVolumetria,
   type StatusContrato,
 } from '@/lib/volumetria'
 
 const STATUS: StatusContrato[] = ['VIGENTE', 'PROGRAMADA', 'ENCERRADA', 'INATIVA']
-
-/** Escrita segue a regra que já existia: COMERCIAL não configura volumetria. */
-function podeGerenciar(role: string): boolean {
-  return role !== 'COMERCIAL'
-}
 
 /**
  * Contratos de volumetria mínima por cliente + o consolidado do período de
@@ -48,7 +44,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (!podeGerenciar(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!podeCriarVolumetria(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { clienteId, qtdMinima, vigenciaInicio, vigenciaFim, notas } = await request.json()
 

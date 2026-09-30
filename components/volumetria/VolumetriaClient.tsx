@@ -52,7 +52,14 @@ function vigenciaTexto(c: Contrato): string {
   return c.vigenciaFim ? `${ini} — ${formatMesRef(c.vigenciaFim)}` : `${ini} — indeterminado`
 }
 
-export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boolean }) {
+/**
+ * `podeCriar` e `podeAdministrar` são alçadas DIFERENTES (§4):
+ * criar é trabalho de turno; editar e excluir mexem no mínimo consolidado de
+ * meses já apurados, e são só de ADMIN. A API nega o mesmo.
+ */
+export default function VolumetriaClient(
+  { podeCriar, podeAdministrar }: { podeCriar: boolean; podeAdministrar: boolean },
+) {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [consolidado, setConsolidado] = useState<Consolidado | null>(null)
   const [clientes, setClientes] = useState<ClienteOpcao[]>([])
@@ -205,7 +212,7 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
               aria-label="Período de referência"
               className="bg-surface border border-line rounded-lg px-3 py-2 t-sm text-muted focus:outline-none focus:border-accent"
             />
-            {podeGerenciar && <Button variant="primary" onClick={abrirNovo}>+ Nova configuração</Button>}
+            {podeCriar && <Button variant="primary" onClick={abrirNovo}>+ Nova configuração</Button>}
           </>
         }
       />
@@ -258,7 +265,7 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
           <EmptyState
             title="Nenhuma volumetria configurada"
             description="Vincule a quantidade mínima de transações contratada a um cliente e defina o período de vigência."
-            action={podeGerenciar ? <Button variant="primary" onClick={abrirNovo}>+ Nova configuração</Button> : undefined}
+            action={podeCriar ? <Button variant="primary" onClick={abrirNovo}>+ Nova configuração</Button> : undefined}
           />
         </Panel>
       ) : (
@@ -270,12 +277,12 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
                 <Th align="right">Mínimo / mês</Th>
                 <Th>Vigência</Th>
                 <Th align="center">Status</Th>
-                {podeGerenciar && <Th align="right">Ações</Th>}
+                {podeAdministrar && <Th align="right">Ações</Th>}
               </HeadRow>
             </THead>
             <tbody>
               {visiveis.length === 0 ? (
-                <EmptyRow colSpan={podeGerenciar ? 5 : 4}>Nenhum resultado para os filtros aplicados.</EmptyRow>
+                <EmptyRow colSpan={podeAdministrar ? 5 : 4}>Nenhum resultado para os filtros aplicados.</EmptyRow>
               ) : visiveis.map((c) => (
                 <Row key={c.id} className={c.ativo ? undefined : 'opacity-60'}>
                   <Td className="text-fg font-medium">
@@ -288,7 +295,7 @@ export default function VolumetriaClient({ podeGerenciar }: { podeGerenciar: boo
                   <Td align="center">
                     <Badge tone={TOM_STATUS[c.status]}>{VOLUMETRIA_STATUS_LABELS[c.status]}</Badge>
                   </Td>
-                  {podeGerenciar && (
+                  {podeAdministrar && (
                     <Td align="right">
                       {c.legado ? (
                         <span className="t-sm text-subtle">somente leitura</span>

@@ -1,19 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { prisma } from '@/lib/prisma'
+import { CRITICIDADES, calcularDowntime, formatarDuracao } from '@/lib/incidentes'
 
-const CRITICIDADES = ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'] as const
 
 /* Severidade crescente nos tokens semânticos — responde ao tema. */
 const COR_CRITICIDADE: Record<string, string> = {
   BAIXA: 'bg-subtle', MEDIA: 'bg-warn', ALTA: 'bg-alert', CRITICA: 'bg-neg',
-}
-
-function formatDuracao(mins: number): string {
-  if (mins < 60) return `${Math.round(mins)} min`
-  const h = Math.floor(mins / 60)
-  const m = Math.round(mins % 60)
-  return m === 0 ? `${h}h` : `${h}h ${m}min`
 }
 
 export default async function MetricasOpPage() {
@@ -35,9 +28,12 @@ export default async function MetricasOpPage() {
 
   const abertos = incidentes.filter((i) => !i.fim)
   const fechados = incidentes.filter((i) => i.fim)
-  const downtimeTotal = incidentes.reduce((s, i) => s + (i.downtimeMins ?? 0), 0)
-  const comDowntime = incidentes.filter((i) => i.downtimeMins != null)
-  const mttr = comDowntime.length > 0 ? downtimeTotal / comDowntime.length : null
+
+  // Downtime derivado da janela do incidente — mesma função que a tela de
+  // Incidentes usa. Só os ENCERRADOS entram: a duração de um incidente aberto
+  // ainda está crescendo, e somá-la faria o acumulado mudar a cada refresh.
+  const downtimeTotal = fechados.reduce((s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0)
+  const mttr = fechados.length > 0 ? downtimeTotal / fechados.length : null
 
   const porCriticidade = CRITICIDADES.map((c) => ({
     criticidade: c,
@@ -54,7 +50,9 @@ export default async function MetricasOpPage() {
     return {
       rotulo: d.toLocaleDateString('pt-BR', { month: 'short', timeZone: 'UTC' }),
       total: doMes.length,
-      downtime: doMes.reduce((s, i) => s + (i.downtimeMins ?? 0), 0),
+      downtime: doMes
+        .filter((i) => i.fim)
+        .reduce((s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0),
     }
   })
   const maxMes = Math.max(...meses.map((m) => m.total), 1)
@@ -62,8 +60,8 @@ export default async function MetricasOpPage() {
   const cards = [
     { label: 'Incidentes no total', valor: String(incidentes.length), sub: `${fechados.length} encerrados` },
     { label: 'Em aberto', valor: String(abertos.length), sub: abertos.length > 0 ? 'Requer acompanhamento' : 'Nenhum pendente' },
-    { label: 'Downtime acumulado', valor: formatDuracao(downtimeTotal), sub: `${comDowntime.length} com medição` },
-    { label: 'MTTR', valor: mttr === null ? '—' : formatDuracao(mttr), sub: 'Tempo médio de resolução' },
+    { label: 'Downtime acumulado', valor: formatarDuracao(downtimeTotal), sub: `${fechados.length} encerrados` },
+    { label: 'MTTR', valor: mttr === null ? '—' : formatarDuracao(mttr), sub: 'Tempo médio de resolução' },
   ]
 
   return (
@@ -109,7 +107,7 @@ export default async function MetricasOpPage() {
               <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
                 <div className="w-full bg-accent/70 rounded-t transition-all"
                   style={{ height: `${Math.max((m.total / maxMes) * 100, m.total > 0 ? 6 : 2)}%` }}
-                  title={`${m.total} incidentes · ${formatDuracao(m.downtime)}`} />
+                  title={`${m.total} incidentes · ${formatarDuracao(m.downtime)}`} />
                 <span className="t-mono text-subtle">{m.total}</span>
                 <span className="text-[9px] text-subtle capitalize">{m.rotulo}</span>
               </div>

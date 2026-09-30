@@ -33,8 +33,14 @@ const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const DIAS_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
 const WEEK_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
+/**
+ * Rótulo de TODO valor que pode vir do banco, inclusive o legado — usado para
+ * renderizar. PICO_OPERACIONAL era o nome anterior do mesmo conceito e recebe o
+ * mesmo rótulo, para a lista não mostrar dois nomes para a mesma coisa.
+ */
 const TIPO_LABELS: Record<string, string> = {
   PICO_TRANSACIONAL: 'Pico transacional',
+  PICO_OPERACIONAL: 'Pico transacional',
   REUNIAO: 'Reunião',
   MONITORAMENTO: 'Monitoramento',
   FOLLOW_UP: 'Follow-up',
@@ -42,8 +48,15 @@ const TIPO_LABELS: Record<string, string> = {
   OUTRO: 'Outro',
 }
 
+/** O que a interface OFERECE na criação. Sem o legado: ninguém escolhe um
+ *  valor que existe só para ler o passado. */
+const TIPOS_OFERECIDOS = [
+  'PICO_TRANSACIONAL', 'REUNIAO', 'MONITORAMENTO', 'FOLLOW_UP', 'ALERTA', 'OUTRO',
+] as const
+
 const TIPO_COLORS: Record<string, string> = {
   PICO_TRANSACIONAL: 'bg-warn/15 text-warn border border-warn/20',
+  PICO_OPERACIONAL: 'bg-warn/15 text-warn border border-warn/20',
   REUNIAO: 'bg-accent/15 text-accent-soft border border-accent/20',
   MONITORAMENTO: 'bg-accent/15 text-accent-soft border border-accent/20',
   FOLLOW_UP: 'bg-pos/15 text-pos border border-pos/20',
@@ -53,6 +66,7 @@ const TIPO_COLORS: Record<string, string> = {
 
 const TIPO_BG: Record<string, string> = {
   PICO_TRANSACIONAL: 'bg-warn/10 border-l-2 border-warn',
+  PICO_OPERACIONAL: 'bg-warn/10 border-l-2 border-warn',
   REUNIAO: 'bg-accent/10 border-l-2 border-accent',
   MONITORAMENTO: 'bg-accent/10 border-l-2 border-accent',
   FOLLOW_UP: 'bg-pos/10 border-l-2 border-pos',
@@ -415,8 +429,12 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* Summary chips */}
       <div className="flex gap-3 flex-wrap">
-        {Object.keys(TIPO_LABELS).map(tipo => {
-          const count = followUps.filter(fu => fu.tipo === tipo).length
+        {TIPOS_OFERECIDOS.map(tipo => {
+          // O legado conta junto com o valor novo: é o mesmo conceito.
+          const equivalentes = tipo === 'PICO_TRANSACIONAL'
+            ? ['PICO_TRANSACIONAL', 'PICO_OPERACIONAL']
+            : [tipo]
+          const count = followUps.filter(fu => equivalentes.includes(fu.tipo)).length
           if (!count) return null
           return (
             <span key={tipo} className={`text-xs px-2.5 py-1 rounded-full font-medium ${TIPO_COLORS[tipo]}`}>
@@ -647,7 +665,7 @@ export default function FollowUpClient({ clientes }: Props) {
               <div>
                 <label className={lbl}>Tipo</label>
                 <select value={picoForm.tipo} onChange={ff('tipo')} className={inp}>
-                  {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {TIPOS_OFERECIDOS.map((k) => <option key={k} value={k}>{TIPO_LABELS[k]}</option>)}
                 </select>
               </div>
               <div>
@@ -817,7 +835,7 @@ export default function FollowUpClient({ clientes }: Props) {
                 <div>
                   <label className={lbl}>Tipo</label>
                   <select value={form.tipo} onChange={f('tipo')} className={inp}>
-                    {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {TIPOS_OFERECIDOS.map((k) => <option key={k} value={k}>{TIPO_LABELS[k]}</option>)}
                   </select>
                 </div>
                 {!modoPico && (

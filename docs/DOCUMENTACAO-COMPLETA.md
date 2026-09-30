@@ -114,10 +114,11 @@ de referência:
 | Enums Prisma | 30 | **29** |
 | Rotas de API (`route.ts`) | 67 | **62** |
 | Páginas | 34 | **31** |
-| Componentes React | 29 | **28** |
+| Componentes React | 29 | **26** |
 | Módulos de domínio em `lib/` | 26 | **24** |
 | Migrations SQL versionadas | 14 (v1…v15) | **15** (v1…v16) |
-| Testes automatizados | 104 | **118**, todos passando |
+| Tabelas no banco de Production | 41 | **47** |
+| Testes automatizados | 104 | **142**, todos passando |
 | Chaves de permissão | 42 | **33** |
 | Linhas em `app/` + `lib/` + `components/` | ~21.300 | **~19.200** |
 | Chaves estrangeiras em Production | 67 |
@@ -660,9 +661,10 @@ notificações.
 | **Ativos** | `Documento`, `CertificadoVersao`, `LancamentoAnexo` |
 | **Relacionamento** | `FollowUp` |
 
-> Saíram na v16: `Formulario`, `FormularioVersao`, `FormularioLink`,
-> `FormularioResposta`, `FormularioAnexo`, `Automacao`, `AutomacaoExecucao`,
-> `Parametro`. Ver [`RODADA-V16.md`](./RODADA-V16.md) §1.
+> Saíram do `schema.prisma` na v16: `Formulario`, `FormularioVersao`,
+> `FormularioLink`, `FormularioResposta`, `FormularioAnexo`, `Automacao`,
+> `AutomacaoExecucao`, `Parametro`. As tabelas continuam no banco como legado
+> sem leitor — nada foi apagado. Ver [`RODADA-V16.md`](./RODADA-V16.md) §1 e §15.
 
 ## 7.3 Entidades centrais
 

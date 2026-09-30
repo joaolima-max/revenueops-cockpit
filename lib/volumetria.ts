@@ -222,3 +222,31 @@ export async function conflitoDeVigencia(
   const conflito = linhas.find((l) => vigenciasSobrepoem(l, vigencia))
   return conflito ? paraContrato(conflito, periodoAtual()) : null
 }
+
+/* ========================================================================= *
+ * ALÇADA
+ * ========================================================================= */
+
+/**
+ * Quem pode CRIAR volumetria: todo perfil menos COMERCIAL.
+ *
+ * Cadastrar o mínimo contratual de um cliente novo é parte do trabalho de quem
+ * opera a carteira.
+ */
+export function podeCriarVolumetria(role: string): boolean {
+  return role !== 'COMERCIAL'
+}
+
+/**
+ * Quem pode EDITAR e EXCLUIR volumetria: **somente ADMIN**.
+ *
+ * Alterar a quantidade mínima ou a vigência de um contrato já cadastrado muda o
+ * mínimo consolidado de meses que podem já ter sido reportados — e excluir muda
+ * inclusive o de meses fechados. Isso é decisão de administrador, não de turno.
+ *
+ * A UI esconde as ações e a API nega: são as duas pontas da mesma regra, lidas
+ * desta função.
+ */
+export function podeAdministrarVolumetria(role: string): boolean {
+  return role === 'ADMIN'
+}

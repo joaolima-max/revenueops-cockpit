@@ -3,53 +3,50 @@
 -- POR QUE EXISTE
 --   Esta rodada retira do produto seis ambientes (Relatorios, Documentos,
 --   Alertas, Parametros, Formularios, Automacoes), enxuga o cadastro de
---   Cliente e cria o ambiente Financeiro com seus quatro registros novos
---   (categorias, fornecedores, lancamentos, condicoes comerciais BaaS).
+--   Cliente, deriva o downtime de Incidente e cria o ambiente Financeiro com
+--   seus quatro registros novos.
 --
--- PRINCIPIOS SEGUIDOS AQUI
---   * Nenhum RESET, TRUNCATE ou DROP SCHEMA.
---   * Nada que sai e apagado sem antes ser copiado para o arquivo morto
---     `ArquivoRemocaoV16` — colunas de Cliente, titulos de pendencia, valor de
---     Lead, respostas de formulario e definicoes de automacao. O produto nao
---     mostra mais esses dados, mas eles continuam auditaveis.
---   * Historico financeiro, de taxas, de Pipeline e de Compliance: intocados.
---   * Idempotente. Rodar duas vezes nao causa erro nem duplica arquivo morto.
+-- ESTRATEGIA: COMPATIVEL, NAO DESTRUTIVA
 --
--- ORDEM
---   1. arquivo morto            6. Compliance / Lead
---   2. enums e tabelas novas    7. Cliente
---   3. Documento                8. remocao das tabelas dos ambientes que sairam
---   4. LancamentoDiario         9. usuarios/equipes
---   5. FollowUp
+--   Esta migration e ADITIVA. As unicas operacoes que nao criam nada sao dois
+--   DROP NOT NULL, que afrouxam restricao e portanto nao quebram nada.
 --
--- Ao final, um bloco de NOTICE informa o que foi tocado.
+--   Nao ha DROP TABLE, DROP COLUMN, DROP TYPE, DELETE de dado historico,
+--   TRUNCATE ou RESET. A razao e a ordem de implantacao: a migration e aplicada
+--   ANTES do deploy, e enquanto o novo codigo nao esta em Production o codigo
+--   ANTIGO continua rodando. Remover uma coluna que o codigo antigo le
+--   derrubaria o produto durante a janela.
+--
+--   As tabelas e colunas dos ambientes removidos ficam no banco como LEGADO:
+--   nao sao lidas nem escritas pelo produto, e nenhuma delas atrapalha o
+--   funcionamento (todas as colunas abandonadas sao nulaveis — verificado
+--   coluna por coluna antes de escrever isto). O que sai e a exposicao: menu,
+--   rota, API, permissao e referencia no codigo.
+--
+--   Objeto legado nao removido aqui pode ser retirado numa migration futura de
+--   limpeza, depois de o novo codigo estar estavel em Production. Nao se apaga
+--   dado historico para "limpar" o banco.
+--
+-- LEGADO QUE PERMANECE (intocado, sem leitor)
+--   Tabelas: Formulario, FormularioVersao, FormularioLink, FormularioResposta,
+--            FormularioAnexo, Automacao, AutomacaoExecucao, Parametro
+--   Colunas: Cliente.operacao, .scoreRisco, .sustentacaoWhiteLabel, .setup,
+--            .tpvEsperado, .qtdTransacoesEsperada, .qtdMedEsperada,
+--            .receitaPrevistaMensal, .descontoPercent, .overpricePercent,
+--            .volumeMinimo
+--            Lead.value
+--            Incidente.downtimeMins  (downtime agora e fim - inicio)
+--            FollowUp.frequenciaDias (dado copiado para picoIntervaloDias)
+--            PendenciaCompliance.titulo
+--   Tipos:   ScoreRisco, AutomacaoGatilho, AutomacaoAcao,
+--            AutomacaoExecucaoStatus, FormularioRespostaStatus
+--
+-- Idempotente. Rodar duas vezes nao causa erro nem duplica dado.
 
 BEGIN;
 
 -- ===========================================================================
--- 1. ARQUIVO MORTO
---    Uma linha por valor retirado do produto. Nao e modelo de dominio: e o
---    recibo desta migration, e por isso fica fora do schema.prisma.
--- ===========================================================================
-
-CREATE TABLE IF NOT EXISTS "ArquivoRemocaoV16" (
-  id          BIGSERIAL PRIMARY KEY,
-  entidade    TEXT        NOT NULL,
-  entidade_id TEXT,
-  campo       TEXT        NOT NULL,
-  valor       TEXT,
-  arquivado_em TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE "ArquivoRemocaoV16" IS
-  'Arquivo morto da migration v16. Valores retirados do produto, preservados para auditoria. Nao consultado pela aplicacao.';
-
--- A guarda de idempotencia: cada bloco abaixo so arquiva se ainda nao arquivou.
-CREATE UNIQUE INDEX IF NOT EXISTS "ArquivoRemocaoV16_unico"
-  ON "ArquivoRemocaoV16" (entidade, entidade_id, campo);
-
--- ===========================================================================
--- 2. ENUMS E TABELAS NOVAS DO FINANCEIRO
+-- 1. ENUMS E TABELAS NOVAS DO FINANCEIRO
 -- ===========================================================================
 
 DO $$ BEGIN
@@ -174,11 +171,14 @@ CREATE INDEX IF NOT EXISTS "CondicaoComercialHistorico_condicaoId_createdAt_idx"
   ON "CondicaoComercialHistorico" ("condicaoId", "createdAt");
 
 -- ===========================================================================
--- 3. DOCUMENTO — anexo sem cliente
+-- 2. DOCUMENTO — anexo sem cliente
+--
 --    O ambiente "Documentos" saiu, mas a capacidade de anexar arquivo
 --    permanece onde o produto exige: lancamento financeiro e ZIP de
---    certificado (estoque global, sem cliente). Por isso clienteId passa a
---    aceitar nulo.
+--    certificado (estoque global, sem cliente). `clienteId` era NOT NULL
+--    porque o unico caminho de upload era aquele ambiente.
+--
+--    DROP NOT NULL afrouxa: nenhum INSERT existente deixa de funcionar.
 -- ===========================================================================
 
 ALTER TABLE "Documento" ALTER COLUMN "clienteId" DROP NOT NULL;
@@ -186,7 +186,22 @@ ALTER TABLE "Documento" ALTER COLUMN "clienteId" DROP NOT NULL;
 ALTER TYPE "DocumentoOrigem" ADD VALUE IF NOT EXISTS 'LANCAMENTO_FINANCEIRO';
 
 -- ===========================================================================
+-- 3. COMPLIANCE — o Titulo sai do cadastro
+--
+--    A pendencia passa a ser identificada por cliente + motivo. A coluna era
+--    NOT NULL: sem este DROP NOT NULL, todo INSERT do codigo novo falharia,
+--    porque ele nao escreve mais o campo.
+--
+--    A coluna e o conteudo ja escrito permanecem, legiveis por consulta
+--    direta. Nao ha DROP COLUMN: seria destruir texto redigido por pessoas
+--    para ganhar uma coluna a menos.
+-- ===========================================================================
+
+ALTER TABLE "PendenciaCompliance" ALTER COLUMN "titulo" DROP NOT NULL;
+
+-- ===========================================================================
 -- 4. LANCAMENTO DIARIO — clientes ativos
+--
 --    Fotografia do dia, na mesma convencao de saldoEmConta. Nulo = nao
 --    informado, que e diferente de zero cliente ativo.
 -- ===========================================================================
@@ -195,211 +210,84 @@ ALTER TABLE "LancamentoDiario" ADD COLUMN IF NOT EXISTS "clientesAtivos" INTEGER
 
 -- ===========================================================================
 -- 5. FOLLOW-UP — "frequencia" deixa de ser a nomenclatura
---    Renomeacao, nao recriacao: o dado de cadencia existente e preservado.
+--
+--    Coluna NOVA, com o dado COPIADO da antiga. Nao e RENAME: um rename
+--    quebraria o codigo antigo, que le `frequenciaDias`, durante a janela
+--    entre esta migration e o deploy. A coluna velha fica como legado.
+--
+--    O valor de enum tambem e ADICIONADO, nao renomeado, pela mesma razao —
+--    e o schema do Prisma declara os dois, para conseguir ler linhas antigas.
 -- ===========================================================================
-
-DO $$ BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'FollowUp' AND column_name = 'frequenciaDias'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'FollowUp' AND column_name = 'picoIntervaloDias'
-  ) THEN
-    ALTER TABLE "FollowUp" RENAME COLUMN "frequenciaDias" TO "picoIntervaloDias";
-  END IF;
-END $$;
 
 ALTER TABLE "FollowUp" ADD COLUMN IF NOT EXISTS "picoIntervaloDias" INTEGER;
 
-DO $$ BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'FollowUpTipo' AND e.enumlabel = 'PICO_OPERACIONAL'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'FollowUpTipo' AND e.enumlabel = 'PICO_TRANSACIONAL'
-  ) THEN
-    ALTER TYPE "FollowUpTipo" RENAME VALUE 'PICO_OPERACIONAL' TO 'PICO_TRANSACIONAL';
-  END IF;
-END $$;
+-- Copia so o que ainda nao foi copiado: idempotente e nao sobrescreve ajuste
+-- feito depois pelo produto novo.
+UPDATE "FollowUp"
+SET "picoIntervaloDias" = "frequenciaDias"
+WHERE "picoIntervaloDias" IS NULL AND "frequenciaDias" IS NOT NULL;
+
+ALTER TYPE "FollowUpTipo" ADD VALUE IF NOT EXISTS 'PICO_TRANSACIONAL';
 
 -- ===========================================================================
--- 6. COMPLIANCE e LEAD — campos que saem do cadastro
---    Arquivados antes de cair: "titulo" e texto escrito por pessoa e
---    "value" e numero informado pelo comercial.
--- ===========================================================================
-
-INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-SELECT 'PendenciaCompliance', p."id", 'titulo', p."titulo"
-FROM "PendenciaCompliance" p
-WHERE EXISTS (
-  SELECT 1 FROM information_schema.columns
-  WHERE table_name = 'PendenciaCompliance' AND column_name = 'titulo'
-)
-ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-
-ALTER TABLE "PendenciaCompliance" DROP COLUMN IF EXISTS "titulo";
-
-INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-SELECT 'Lead', l."id", 'value', l."value"::text
-FROM "Lead" l
-WHERE l."value" IS NOT NULL
-  AND EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'Lead' AND column_name = 'value'
-  )
-ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-
-ALTER TABLE "Lead" DROP COLUMN IF EXISTS "value";
-
--- ===========================================================================
--- 7. CLIENTE — cadastro comercial enxuto
---    Permanecem: nome, cnpj, modeloOperacional, email, telefone, segmento,
---    dataFechamento, mensalidadeApi (parcela do MRR), status,
---    dataEncerramento, notas, owner, gestor.
+-- 6. USUARIOS / EQUIPES
 --
---    Saem os campos de expectativa financeira e o Score de Risco. Nenhum deles
---    era fonte de verdade: realizado vem de LancamentoDiario, condicoes de
---    BaaS/White Label vem de CondicaoComercial e o minimo contratual de
---    transacoes vem de VolumetriaMinima.
+--    VERIFICADO NO BANCO antes de escrever isto:
+--      * "Equipe Comercial" (user-com) e "Equipe Operacional" (user-op) sao
+--        USUARIOS reais, nao grupos, labels ou estrutura organizacional —
+--        nao existe tabela de grupo/equipe no schema;
+--      * os dois estao com active = false;
+--      * os dois tem ZERO registros em 19 caminhos de chave estrangeira
+--        (leads, deals, clientes, auditoria, tarefas, permissoes de funil,
+--        movimentacoes, notificacoes, documentos, certificados, pendencias,
+--        comentarios).
+--
+--    Com zero dependencia, o DELETE fisico e seguro e atende a instrucao de
+--    excluir os usuarios. O bloco abaixo conta as dependencias em tempo de
+--    execucao e SO deleta se der zero — em qualquer outro cenario apenas
+--    desativa, e avisa. Assim a migration vale em qualquer ambiente.
+--
+--    Os PAPEIS COMERCIAL e OPERACIONAL permanecem no enum Role: sao usados
+--    para atribuir perfil a pessoas reais e nao tem relacao com estes dois
+--    registros.
 -- ===========================================================================
 
 DO $$
 DECLARE
-  col TEXT;
+  alvo TEXT[] := ARRAY['comercial@revenueops.com.br', 'operacional@revenueops.com.br'];
+  u RECORD;
+  deps BIGINT;
 BEGIN
-  FOREACH col IN ARRAY ARRAY[
-    'operacao', 'scoreRisco', 'sustentacaoWhiteLabel', 'setup', 'tpvEsperado',
-    'qtdTransacoesEsperada', 'qtdMedEsperada', 'receitaPrevistaMensal',
-    'descontoPercent', 'overpricePercent'
-  ] LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'Cliente' AND column_name = col
-    ) THEN
-      EXECUTE format(
-        'INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-         SELECT ''Cliente'', c."id", %L, c.%I::text
-         FROM "Cliente" c WHERE c.%I IS NOT NULL
-         ON CONFLICT (entidade, entidade_id, campo) DO NOTHING',
-        col, col, col
-      );
-      EXECUTE format('ALTER TABLE "Cliente" DROP COLUMN %I', col);
+  FOR u IN SELECT "id", "name", "email" FROM "User" WHERE lower("email") = ANY(alvo) LOOP
+    SELECT
+      (SELECT count(*) FROM "Lead" WHERE "ownerId" = u.id)
+    + (SELECT count(*) FROM "Deal" WHERE "ownerId" = u.id)
+    + (SELECT count(*) FROM "Cliente" WHERE "ownerId" = u.id OR "gestorId" = u.id)
+    + (SELECT count(*) FROM "Auditoria" WHERE "userId" = u.id)
+    + (SELECT count(*) FROM "Activity" WHERE "userId" = u.id)
+    + (SELECT count(*) FROM "Tarefa" WHERE "criadoPorId" = u.id OR "responsavelId" = u.id)
+    + (SELECT count(*) FROM "PipelinePermissao" WHERE "userId" = u.id)
+    + (SELECT count(*) FROM "PipelineMovimentacao" WHERE "userId" = u.id)
+    + (SELECT count(*) FROM "Notificacao" WHERE "destinatarioId" = u.id)
+    + (SELECT count(*) FROM "Documento" WHERE "enviadoPorId" = u.id)
+    + (SELECT count(*) FROM "ClienteDiaMovimento" WHERE "registradoPorId" = u.id)
+    + (SELECT count(*) FROM "PendenciaEvento" WHERE "userId" = u.id)
+    + (SELECT count(*) FROM "PendenciaCompliance" WHERE "responsavelId" = u.id)
+    + (SELECT count(*) FROM "CertificadoVersao" WHERE "criadoPorId" = u.id)
+    + (SELECT count(*) FROM "CertificadoEnvio" WHERE "enviadoPorId" = u.id)
+    + (SELECT count(*) FROM "LeadComentario" WHERE "autorId" = u.id)
+    INTO deps;
+
+    IF deps = 0 THEN
+      DELETE FROM "User" WHERE "id" = u.id;
+      RAISE NOTICE 'usuario % (%) EXCLUIDO — zero dependencias', u.name, u.email;
+    ELSE
+      UPDATE "User" SET "active" = false, "updatedAt" = now() WHERE "id" = u.id;
+      RAISE NOTICE 'usuario % (%) DESATIVADO — % dependencia(s), historico preservado',
+        u.name, u.email, deps;
     END IF;
   END LOOP;
 END $$;
-
--- ScoreRisco so era usado pela coluna acima.
-DROP TYPE IF EXISTS "ScoreRisco";
-
--- ===========================================================================
--- 8. AMBIENTES QUE SAIRAM DO PRODUTO
---
---    Formularios e Automacoes deixam de existir como produto. O conteudo
---    gerado por pessoas — respostas de formulario e a definicao das regras de
---    automacao — vai para o arquivo morto como JSON antes das tabelas cairem.
---    Parametros sai como ambiente e a tabela nao tem mais leitor: o unico
---    parametro com consumidor ativo era o multiplicador do Float, que vive em
---    FloatConfig (preservado) e nao aqui.
--- ===========================================================================
-
--- Respostas de formulario: conteudo enviado por cliente.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'FormularioResposta') THEN
-    INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-    SELECT 'FormularioResposta', r."id", 'resposta',
-           jsonb_build_object(
-             'versaoId', r."versaoId", 'clienteId', r."clienteId",
-             'status', r."status"::text, 'enviadaEm', r."enviadaEm",
-             'valores', r."valores"
-           )::text
-    FROM "FormularioResposta" r
-    ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-  END IF;
-END $$;
-
--- Definicao das versoes de formulario: a estrutura que interpretava as respostas.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'FormularioVersao') THEN
-    INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-    SELECT 'FormularioVersao', v."id", 'definicao', v."definicao"::text
-    FROM "FormularioVersao" v
-    ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-  END IF;
-END $$;
-
--- Regras de automacao.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Automacao') THEN
-    INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-    SELECT 'Automacao', a."id", 'regra',
-           jsonb_build_object(
-             'nome', a."nome", 'ativo', a."ativo", 'gatilho', a."gatilho"::text,
-             'acao', a."acao"::text, 'condicao', a."condicao",
-             'funilId', a."funilId", 'etapaId', a."etapaId"
-           )::text
-    FROM "Automacao" a
-    ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-  END IF;
-END $$;
-
--- Parametros configurados.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Parametro') THEN
-    INSERT INTO "ArquivoRemocaoV16" (entidade, entidade_id, campo, valor)
-    SELECT 'Parametro', p."id", p."chave", p."valor"
-    FROM "Parametro" p
-    ON CONFLICT (entidade, entidade_id, campo) DO NOTHING;
-  END IF;
-END $$;
-
--- Na ordem das dependencias (filho antes do pai).
-DROP TABLE IF EXISTS "FormularioAnexo";
-DROP TABLE IF EXISTS "FormularioResposta";
-DROP TABLE IF EXISTS "FormularioLink";
-DROP TABLE IF EXISTS "FormularioVersao";
-DROP TABLE IF EXISTS "Formulario";
-DROP TABLE IF EXISTS "AutomacaoExecucao";
-DROP TABLE IF EXISTS "Automacao";
-DROP TABLE IF EXISTS "Parametro";
-
-DROP TYPE IF EXISTS "FormularioRespostaStatus";
-DROP TYPE IF EXISTS "AutomacaoExecucaoStatus";
-DROP TYPE IF EXISTS "AutomacaoAcao";
-DROP TYPE IF EXISTS "AutomacaoGatilho";
-
--- NAO removidos de proposito:
---   * NotificacaoOrigem.AUTOMACAO e .FORMULARIO — ha notificacoes historicas
---     gravadas com essas origens. Remover o valor do enum quebraria a leitura
---     do passado. A aplicacao nao produz mais nenhuma delas.
---   * DocumentoOrigem.FORMULARIO — mesma razao.
---   * FloatConfig — o Float sai do Cockpit mas segue sendo linha de receita no
---     Conselho, entao a configuracao continua sendo lida.
-
--- ===========================================================================
--- 9. USUARIOS / EQUIPES
---
---    "Equipe Comercial" e "Equipe Operacional" saem do sistema. Sao
---    DESATIVADOS, nao deletados: os dois possuem registros proprios (leads,
---    deals, clientes, auditoria) e um DELETE violaria as chaves estrangeiras
---    ou exigiria apagar historico de Pipeline e de Compliance — exatamente o
---    que esta rodada proibe.
---
---    Desativado significa: nao autentica, nao aparece em selecao de
---    responsavel, e o rastro do que a pessoa fez continua legivel.
---
---    Os PAPEIS COMERCIAL e OPERACIONAL permanecem: outros usuarios os usam.
--- ===========================================================================
-
-UPDATE "User"
-SET "active" = false, "updatedAt" = now()
-WHERE "active" = true
-  AND (
-    lower("name") IN ('equipe comercial', 'equipe operacional', 'comercial', 'operacional')
-    OR lower("email") IN ('comercial@revenueops.com.br', 'operacional@revenueops.com.br')
-  )
-  AND "role" <> 'ADMIN';
 
 -- ===========================================================================
 -- RELATORIO
@@ -407,23 +295,27 @@ WHERE "active" = true
 
 DO $$
 DECLARE
-  n_arquivo   BIGINT;
-  n_desativ   BIGINT;
+  n_tabelas   BIGINT;
+  n_usuarios  BIGINT;
+  n_ativos    BIGINT;
   n_clientes  BIGINT;
   n_lanc_dia  BIGINT;
+  n_followup  BIGINT;
 BEGIN
-  SELECT count(*) INTO n_arquivo FROM "ArquivoRemocaoV16";
-  SELECT count(*) INTO n_desativ FROM "User" WHERE "active" = false;
+  SELECT count(*) INTO n_tabelas  FROM information_schema.tables WHERE table_schema = 'public';
+  SELECT count(*) INTO n_usuarios FROM "User";
+  SELECT count(*) INTO n_ativos   FROM "User" WHERE "active";
   SELECT count(*) INTO n_clientes FROM "Cliente";
   SELECT count(*) INTO n_lanc_dia FROM "LancamentoDiario";
+  SELECT count(*) INTO n_followup FROM "FollowUp" WHERE "picoIntervaloDias" IS NOT NULL;
 
   RAISE NOTICE '--- migration v16 aplicada ---';
-  RAISE NOTICE 'valores no arquivo morto: %', n_arquivo;
-  RAISE NOTICE 'usuarios inativos agora:  %', n_desativ;
-  RAISE NOTICE 'clientes preservados:     %', n_clientes;
-  RAISE NOTICE 'lancamentos diarios:      %', n_lanc_dia;
-  RAISE NOTICE 'confira o arquivo morto com:';
-  RAISE NOTICE '  SELECT entidade, campo, count(*) FROM "ArquivoRemocaoV16" GROUP BY 1,2 ORDER BY 1,2;';
+  RAISE NOTICE 'tabelas no schema public:      %', n_tabelas;
+  RAISE NOTICE 'usuarios (ativos):             % (%)', n_usuarios, n_ativos;
+  RAISE NOTICE 'clientes preservados:          %', n_clientes;
+  RAISE NOTICE 'lancamentos diarios:           %', n_lanc_dia;
+  RAISE NOTICE 'follow-ups com pico definido:  %', n_followup;
+  RAISE NOTICE 'nenhuma tabela, coluna, tipo ou linha historica foi removida.';
 END $$;
 
 COMMIT;

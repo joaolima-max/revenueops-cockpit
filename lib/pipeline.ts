@@ -219,3 +219,52 @@ export function validarLinhaPermissao(l: { role?: string | null; userId?: string
   if (temRole === temUser) return 'Cada regra vale para uma role ou para um usuário, nunca para os dois.'
   return null
 }
+
+/* ========================================================================= *
+ * EXCLUSAO DE ETAPA
+ * ========================================================================= */
+
+/** O que ainda aponta para a etapa. Zerado = seguro excluir fisicamente. */
+export interface DependenciasEtapa {
+  /** Cards que estao NA etapa agora (Deal.etapaId). */
+  cards: number
+  /** Linhas de historico que citam a etapa como origem ou destino. */
+  movimentacoes: number
+}
+
+/**
+ * Decide se a etapa pode ser excluida FISICAMENTE.
+ *
+ * Devolve a mensagem de impedimento, ou null quando nao ha dependencia alguma.
+ *
+ * A regra existe porque ha dois tipos de vinculo, e eles pedem respostas
+ * diferentes:
+ *
+ *   * CARDS — o vinculo e o presente. Um card na etapa some do quadro se a
+ *     etapa deixar de existir. Quem quer tirar a etapa de uso com cards dentro
+ *     deve INATIVAR, que exige etapa de destino e realoca os cards.
+ *
+ *   * MOVIMENTACOES — o vinculo e o passado. PipelineMovimentacao e o historico
+ *     de como cada card andou, e a etapa aparece nele como origem ou destino.
+ *     Apagar a etapa exigiria apagar essas linhas, e isso reescreveria o
+ *     historico do pipeline para viabilizar uma operacao de cadastro. Nao se
+ *     faz: a etapa fica, inativa.
+ *
+ * Por isso a exclusao fisica so acontece no caso limpo — etapa criada e nunca
+ * usada, que e exatamente o caso de quem errou o nome ou duplicou a coluna.
+ */
+export function impedimentoExclusaoEtapa(dep: DependenciasEtapa): string | null {
+  if (dep.cards > 0 && dep.movimentacoes > 0) {
+    return `Esta etapa tem ${dep.cards} card(s) e ${dep.movimentacoes} registro(s) de historico. `
+      + 'Inative a etapa informando uma etapa de destino para os cards — excluir apagaria o historico de movimentacao do pipeline.'
+  }
+  if (dep.cards > 0) {
+    return `Esta etapa tem ${dep.cards} card(s). `
+      + 'Inative a etapa informando uma etapa de destino para eles, em vez de excluir.'
+  }
+  if (dep.movimentacoes > 0) {
+    return `Esta etapa nao tem cards, mas aparece em ${dep.movimentacoes} registro(s) do historico de movimentacao. `
+      + 'O historico do pipeline nao e apagado para permitir a exclusao — inative a etapa.'
+  }
+  return null
+}

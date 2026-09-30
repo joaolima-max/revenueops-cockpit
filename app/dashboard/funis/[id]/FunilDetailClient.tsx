@@ -166,6 +166,31 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
     recarregar()
   }
 
+  /**
+   * Exclui a etapa. O backend só permite quando nada aponta para ela — etapa
+   * com card ou com histórico de movimentação se inativa, não se exclui. Aqui
+   * a confirmação já antecipa isso, e o impedimento do backend é exibido como
+   * ele vem, com a contagem de dependências.
+   */
+  async function excluirEtapa(e: Etapa) {
+    const cards = e._count?.deals ?? 0
+    const ok = confirm(
+      `Excluir a etapa "${e.nome}"?\n\n` +
+      (cards > 0
+        ? `Ela tem ${cards} card(s) — a exclusão será recusada. Use Inativar, que move os cards para outra etapa.`
+        : 'A exclusão é definitiva e só é permitida se a etapa nunca tiver sido usada. Se houver histórico de movimentação, o sistema vai recusar e preservar o histórico.')
+    )
+    if (!ok) return
+
+    const res = await fetch(`/api/pipeline/etapas/${e.id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      alert(d.error ?? 'Não foi possível excluir a etapa.')
+      return
+    }
+    recarregar()
+  }
+
   // ----------------------------------------------------------- Permissões
 
   function addRegra(tipo: 'role' | 'user') {
@@ -247,6 +272,7 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
                   <Button size="sm" variant={e.ativo ? 'danger' : 'subtle'} onClick={() => alternarEtapa(e)}>
                     {e.ativo ? 'Inativar' : 'Reativar'}
                   </Button>
+                  <Button size="sm" variant="danger" onClick={() => excluirEtapa(e)}>Excluir</Button>
                 </div>
               </li>
             ))}

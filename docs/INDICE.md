@@ -4,6 +4,9 @@
 > Financeiro. Os capítulos 15 (Documentos), 18 (Automações) e 19 (Formulários)
 > descrevem ambientes que **não existem mais**, e os capítulos 5, 7, 8 e 11
 > mudaram de conteúdo. Ficam abaixo como registro histórico.
+>
+> A v16 também derivou o downtime de Incidentes, restringiu edição/exclusão de
+> Incidentes e de Volumetria a ADMIN e adicionou exclusão de etapa de funil.
 
 Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 
@@ -31,7 +34,7 @@ Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 | 20 | **Auditoria** | o que é auditado, os dois casos sensíveis, o que não é registrado |
 | 21 | **Segurança** | autenticação, 3 camadas de autorização, segredos, storage, criptografia |
 | 22 | **Design System** | filosofia, tipografia, tokens, Light/Dark, componentes |
-| 23 | **Testes** | estratégia, 118 testes por área (v16), o que a suíte não cobre |
+| 23 | **Testes** | estratégia, 142 testes por área (v16), o que a suíte não cobre |
 | 24 | **Deploy e infraestrutura** | ambientes, processo, migrations, conexões, armadilha do alias |
 | 25 | **Manutenção** | como alterar schema, permissão, API, automação, campo; invariantes |
 | 26 | **Limitações e débitos** | CRÍTICO / ALTO / MÉDIO / BAIXO |

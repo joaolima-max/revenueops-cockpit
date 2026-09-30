@@ -400,16 +400,25 @@ model Tarefa {
   responsavel   User     @relation("TarefaResponsavel", fields: [responsavelId], references: [id])
 }
 
+/// INCIDENTE OPERACIONAL.
+///
+/// NAO guarda downtime. O downtime e derivado de (fim - inicio) por
+/// `calcularDowntime` em lib/incidentes.ts, e por isso e o mesmo numero em
+/// todas as telas.
+///
+/// A coluna `downtimeMins` continua existindo no banco como legado: era
+/// preenchida a mao e podia discordar da janela do proprio incidente. Nao e
+/// mais lida nem escrita — sai do produto sem que o dado historico seja
+/// destruido (a coluna e nulavel, entao nao atrapalha nenhum INSERT).
 model Incidente {
-  id           String               @id @default(cuid())
-  titulo       String
-  descricao    String?
-  inicio       DateTime
-  fim          DateTime?
-  downtimeMins Int?
-  criticidade  IncidenteCriticidade @default(MEDIA)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id          String               @id @default(cuid())
+  titulo      String
+  descricao   String?
+  inicio      DateTime
+  fim         DateTime?
+  criticidade IncidenteCriticidade @default(MEDIA)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 }
 
 enum ContaReceberStatus {
@@ -420,10 +429,13 @@ enum ContaReceberStatus {
 }
 
 enum FollowUpTipo {
-  /// Pico transacional do cliente. Era PICO_OPERACIONAL; renomeado sem perda
-  /// de dado (ALTER TYPE ... RENAME VALUE) para casar com a nomenclatura de
-  /// produto, que nao usa mais "frequencia" como conceito principal.
+  /// Pico transacional do cliente — a nomenclatura de produto. O sistema nao
+  /// usa mais "frequencia" como conceito principal.
   PICO_TRANSACIONAL
+  /// Legado: o valor anterior, mantido porque continua existindo no tipo do
+  /// banco e pode haver linhas antigas com ele. O produto nao o oferece mais
+  /// na criacao; a interface rotula os dois como "Pico transacional".
+  PICO_OPERACIONAL
   REUNIAO
   MONITORAMENTO
   FOLLOW_UP

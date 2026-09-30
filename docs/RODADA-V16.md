@@ -7,20 +7,32 @@ este documento e `DOCUMENTACAO-COMPLETA.md` discordarem, vale este.
 
 ## 1. O que saiu do produto
 
-Seis ambientes foram removidos por inteiro — menu, páginas, rotas, APIs,
-componentes, permissões e, quando exclusivos deles, modelos de banco.
+Seis ambientes saíram do produto por inteiro — menu, páginas, rotas, APIs,
+componentes, permissões e rota pública.
 
-| Ambiente | Páginas | APIs | Modelos removidos |
-|---|---|---|---|
-| Relatórios | `/dashboard/relatorios` | `/api/relatorios` | — (era derivado) |
-| Documentos | `/dashboard/documentos` | `/api/documentos` | — (ver §2) |
-| Alertas | `/dashboard/alertas` | — | — (era derivado) |
-| Parâmetros | `/dashboard/parametros` | `/api/parametros`, `/api/float-config` | `Parametro` |
-| Formulários | `/dashboard/formularios`, `/f/[token]` | `/api/formularios` | `Formulario`, `FormularioVersao`, `FormularioLink`, `FormularioResposta`, `FormularioAnexo` |
-| Automações | `/dashboard/automacoes` | `/api/automacoes` | `Automacao`, `AutomacaoExecucao` |
+| Ambiente | Páginas | APIs |
+|---|---|---|
+| Relatórios | `/dashboard/relatorios` | `/api/relatorios` |
+| Documentos | `/dashboard/documentos` | `/api/documentos` |
+| Alertas | `/dashboard/alertas` | — (era derivado) |
+| Parâmetros | `/dashboard/parametros` | `/api/parametros`, `/api/float-config` |
+| Formulários | `/dashboard/formularios`, `/f/[token]` | `/api/formularios` |
+| Automações | `/dashboard/automacoes` | `/api/automacoes` |
 
-Enums removidos: `AutomacaoGatilho`, `AutomacaoAcao`, `AutomacaoExecucaoStatus`,
+Saíram também do `schema.prisma` — e portanto do alcance da aplicação — os
+modelos `Parametro`, `Formulario`, `FormularioVersao`, `FormularioLink`,
+`FormularioResposta`, `FormularioAnexo`, `Automacao`, `AutomacaoExecucao`, e os
+tipos `AutomacaoGatilho`, `AutomacaoAcao`, `AutomacaoExecucaoStatus`,
 `FormularioRespostaStatus`, `ScoreRisco`.
+
+> **As tabelas e tipos continuam existindo no banco**, como legado sem leitor.
+> Nada foi apagado. A razão está em §15: a migration é aplicada antes do deploy,
+> e derrubar objeto que o código antigo usa quebraria a janela de implantação.
+> O que saiu é a **exposição**, não o dado.
+
+O `proxy.ts` também deixou de listar `/f/` e `/api/formularios/publico/` como
+rotas públicas: manter os prefixos ali deixaria dois caminhos liberados sem
+autenticação apontando para código que não existe mais.
 
 Chaves de permissão removidas: `view_relatorios`, `view_documents`,
 `download_documents`, `manage_documents`, `view_forms`, `manage_forms`,
@@ -61,9 +73,10 @@ de curta duração: tudo preservado.
 **Campos do cadastro comercial:** Nome, CNPJ, Modelo operacional (API / BaaS /
 White Label), E-mail, Telefone, Segmento, Data de fechamento, Mensalidade de API.
 
-**Removidos:** `operacao` (e a caixa de marcação "Operações"), `scoreRisco`,
-`sustentacaoWhiteLabel`, `setup`, `tpvEsperado`, `qtdTransacoesEsperada`,
-`qtdMedEsperada`, `receitaPrevistaMensal`, `descontoPercent`, `overpricePercent`.
+**Fora do cadastro:** `operacao` (e a caixa de marcação "Operações"),
+`scoreRisco`, `sustentacaoWhiteLabel`, `setup`, `tpvEsperado`,
+`qtdTransacoesEsperada`, `qtdMedEsperada`, `receitaPrevistaMensal`,
+`descontoPercent`, `overpricePercent`, `volumeMinimo`.
 
 Nenhum campo financeiro alternativo foi criado no lugar. A razão é que nenhum
 deles era fonte de verdade de nada:
@@ -78,8 +91,9 @@ deles era fonte de verdade de nada:
 Saíram junto o LTV e o CAC da tela de detalhe: vinham do ambiente "Parâmetros"
 e **já eram props mortas** — a tela recebia os valores e não renderizava nenhum.
 
-Os valores das colunas removidas foram copiados para `ArquivoRemocaoV16` antes
-do `DROP COLUMN` (ver §11).
+As colunas saíram do `schema.prisma` e do código, mas **permanecem no banco**
+como legado (todas nuláveis, nenhuma atrapalha um INSERT). Nada de dado de
+cliente foi apagado. Ver §15.
 
 ---
 
@@ -322,7 +336,9 @@ auditoria passaram a usar. Nenhum campo entrou no lugar.
 Preservados: cliente, criticidade, prazo, motivo, observação, responsável,
 status e histórico (`PendenciaEvento`). Os cinco motivos continuam os mesmos.
 
-Os títulos existentes foram para `ArquivoRemocaoV16` antes do `DROP COLUMN`.
+A coluna `titulo` deixou de ser `NOT NULL` e continua no banco com o conteúdo
+já escrito — texto redigido por pessoas não é apagado para ganhar uma coluna a
+menos. Ela simplesmente não é mais lida nem escrita.
 
 ### Follow-ups — picos transacionais
 
@@ -335,23 +351,101 @@ Os títulos existentes foram para `ArquivoRemocaoV16` antes do `DROP COLUMN`.
 | Aba "Frequência de Follow-up" | Aba "Picos transacionais" |
 | "Regras de Frequência" | "Picos transacionais" |
 
-**É renomeação, não recriação.** A coluna foi renomeada (`RENAME COLUMN`) e o
-valor do enum também (`ALTER TYPE ... RENAME VALUE`): o dado de cadência
-existente é preservado e **não existe um segundo sistema de recorrência**.
+**É o mesmo mecanismo com o nome certo, não um sistema paralelo.** No banco a
+coluna é **nova com o dado copiado** e o valor de enum é **adicionado** — não
+renomeados, para não quebrar o código antigo na janela entre a migration e o
+deploy (§15). A coluna e o valor antigos ficam como legado, e o `schema.prisma`
+declara os dois valores para conseguir ler linhas antigas; a interface rotula os
+dois como "Pico transacional" e oferece só o novo na criação.
 
 ---
 
 ## 12. Volumetria Mínima
 
-CRUD completo: criar, editar, **excluir** e visualizar. A exclusão pede
-confirmação nomeando o que some — inclusive o efeito nos meses já apurados, que
-é o que diferencia excluir de inativar.
+CRUD completo: criar, editar, **excluir** e visualizar.
 
-`VolumetriaMinima` não tem filhos, então excluir não arrasta histórico de outro
-modelo. Contratos gerais legados (`clienteId` nulo) continuam somente leitura.
+**Alçada separada em duas:**
+
+| Operação | Quem pode | Por quê |
+|---|---|---|
+| Visualizar | conforme permissão `view_volumetria` | leitura |
+| Criar | todo perfil menos COMERCIAL | cadastrar o mínimo de um cliente novo é trabalho de turno |
+| **Editar** | **somente ADMIN** | muda o mínimo consolidado de meses que já podem ter sido reportados |
+| **Excluir** | **somente ADMIN** | muda o consolidado inclusive de meses fechados |
+
+As duas regras moram em `podeCriarVolumetria` e `podeAdministrarVolumetria`
+(`lib/volumetria.ts`). A UI esconde as ações e a API nega — as duas pontas leem
+a mesma função, e é por isso que ela não vive dentro da rota.
+
+A exclusão pede confirmação nomeando o que some, inclusive o efeito nos meses já
+apurados — é o que diferencia excluir de inativar. `VolumetriaMinima` não tem
+filhos, então excluir não arrasta histórico de outro modelo. Contratos gerais
+legados (`clienteId` nulo) continuam somente leitura. Conflitos de vigência
+continuam validados na criação e na reativação.
 
 A volumetria **não** virou TPV: segue sendo o mínimo contratual de transações
 associado ao cliente e à vigência.
+
+---
+
+## 12-A. Incidentes — downtime derivado
+
+**O campo de downtime informado à mão saiu.** Downtime é derivado:
+
+```
+downtime = fim − início
+```
+
+Existiam duas verdades sobre o mesmo fato, lado a lado, e nada impedia que
+discordassem: um incidente podia declarar 30 minutos de downtime com uma janela
+de 4 horas entre início e fim. Agora há uma fonte só.
+
+* **Em aberto** — duração em andamento, contando até agora. Não se exige
+  downtime para registrar um incidente que acabou de abrir.
+* **Encerrado** — cálculo automático, e o mesmo número em todas as telas.
+* **Não há como sobrescrever.** A API não aceita o campo, em nenhum verbo.
+
+A regra é `calcularDowntime()` em `lib/incidentes.ts`, função pura. As Métricas
+Operacionais passaram a usá-la também — e a contar só os incidentes
+**encerrados** no downtime acumulado e no MTTR, porque a duração de um incidente
+aberto ainda está crescendo e somá-la faria o acumulado mudar a cada refresh.
+
+| Operação | Quem pode |
+|---|---|
+| Registrar e fechar | todo perfil menos COMERCIAL (é trabalho de turno) |
+| **Editar** | **somente ADMIN** |
+| **Excluir** | **somente ADMIN** |
+
+`Incidente` não tem filhos no schema, então a exclusão física não arrasta
+histórico de nenhum outro modelo — e a trilha permanece em `Auditoria`, que
+registra o registro, o fechamento, a edição e a exclusão. A rota ainda checa
+dependências e devolve 409 explicativo em vez de estourar violação de FK, para o
+caso de algum modelo passar a referenciar Incidente no futuro.
+
+A coluna `Incidente.downtimeMins` continua no banco como legado, sem leitor.
+
+---
+
+## 12-B. Exclusão de etapa de funil
+
+Além de Editar e Ativar/Inativar, a administração de funis ganhou **Excluir**,
+com a mesma alçada das outras operações: quem administra **aquele** funil.
+
+Antes do DELETE, a rota conta as dependências e decide:
+
+| Situação | Resultado |
+|---|---|
+| Etapa criada e nunca usada | **exclui fisicamente** |
+| Etapa com cards | **bloqueia** — inative informando etapa de destino |
+| Etapa citada em `PipelineMovimentacao` | **bloqueia** — o histórico não é apagado |
+| Única etapa ativa do funil | **bloqueia** — o quadro ficaria sem coluna |
+
+O princípio, explícito: **`PipelineMovimentacao` nunca é apagada para viabilizar
+uma exclusão de cadastro.** Os dois tipos de vínculo pedem respostas diferentes
+— cards são o presente (realocáveis), movimentações são o passado (intocáveis).
+
+A decisão mora em `impedimentoExclusaoEtapa()` (`lib/pipeline.ts`) e devolve a
+mensagem que a interface mostra, com a contagem de cada dependência.
 
 ---
 
@@ -394,47 +488,89 @@ Coberto por `tests/formato-financeiro.test.ts`.
 
 ## 15. Banco de dados
 
-Migration única: **`supabase-migration-v16.sql`**. Idempotente, sem RESET,
-TRUNCATE ou DROP indiscriminado.
+Migration única: **`supabase-migration-v16.sql`**. Idempotente.
 
-### Tabela de arquivo morto
+### Estratégia: compatível, não destrutiva
 
-`ArquivoRemocaoV16` recebe, **antes** de qualquer remoção, tudo que sai:
+A migration é **aditiva**. As únicas operações que não criam nada são dois
+`DROP NOT NULL`, que afrouxam restrição e portanto não quebram nada.
 
-| Entidade | Campo |
-|---|---|
-| `Cliente` | as 10 colunas removidas, por cliente |
-| `PendenciaCompliance` | `titulo` |
-| `Lead` | `value` |
-| `FormularioResposta` | a resposta inteira, como JSON |
-| `FormularioVersao` | `definicao` |
-| `Automacao` | a regra inteira, como JSON |
-| `Parametro` | chave e valor |
+**Não há `DROP TABLE`, `DROP COLUMN`, `DROP TYPE`, `DELETE` de dado histórico,
+`TRUNCATE` ou `RESET`.**
 
-Não é modelo de domínio — é o recibo da migration, e por isso fica fora do
-`schema.prisma`.
+A razão é a ordem de implantação: a migration é aplicada **antes** do deploy, e
+enquanto o código novo não está em Production o código **antigo** continua
+rodando. Remover uma coluna que o código antigo lê derrubaria o produto durante
+a janela.
 
-### Resumo
+As tabelas e colunas dos ambientes removidos ficam no banco como **legado**: não
+são lidas nem escritas, e nenhuma atrapalha o funcionamento — todas as colunas
+abandonadas são nuláveis, verificado uma por uma antes de escrever a migration.
+O que sai é a **exposição**: menu, rota, API, permissão e referência no código.
 
-**Tabelas adicionadas (6):** `CategoriaFinanceira`, `Fornecedor`,
-`LancamentoFinanceiro`, `LancamentoAnexo`, `CondicaoComercial`,
-`CondicaoComercialHistorico` — mais `ArquivoRemocaoV16`.
+### O que foi adicionado
 
-**Tabelas removidas (8):** `Formulario`, `FormularioVersao`, `FormularioLink`,
+**Tabelas (6):** `CategoriaFinanceira`, `Fornecedor`, `LancamentoFinanceiro`,
+`LancamentoAnexo`, `CondicaoComercial`, `CondicaoComercialHistorico`.
+
+**Tipos (4):** `TipoLancamento`, `PeriodicidadeLancamento`, `StatusLancamento`,
+`TipoParceiro`.
+
+**Colunas:** `LancamentoDiario.clientesAtivos`, `FollowUp.picoIntervaloDias`
+(com o dado **copiado** de `frequenciaDias`).
+
+**Valores de enum:** `FollowUpTipo.PICO_TRANSACIONAL`,
+`DocumentoOrigem.LANCAMENTO_FINANCEIRO`.
+
+> `picoIntervaloDias` é coluna **nova com cópia**, não `RENAME`: um rename
+> quebraria o código antigo, que lê `frequenciaDias`, durante a janela entre a
+> migration e o deploy. O valor de enum é **adicionado**, não renomeado, pela
+> mesma razão — e o `schema.prisma` declara os dois, para conseguir ler linhas
+> antigas.
+
+### As duas restrições afrouxadas
+
+| Coluna | Antes | Depois | Por quê |
+|---|---|---|---|
+| `Documento.clienteId` | `NOT NULL` | nulável | anexo de lançamento financeiro não pertence a cliente |
+| `PendenciaCompliance.titulo` | `NOT NULL` | nulável | o código novo não escreve mais o campo; sem isso, todo INSERT falharia |
+
+### Legado que permanece, sem leitor
+
+**Tabelas (8):** `Formulario`, `FormularioVersao`, `FormularioLink`,
 `FormularioResposta`, `FormularioAnexo`, `Automacao`, `AutomacaoExecucao`,
 `Parametro`.
 
-**Colunas adicionadas:** `LancamentoDiario.clientesAtivos`.
+**Colunas:** as 11 de `Cliente` (`operacao`, `scoreRisco`,
+`sustentacaoWhiteLabel`, `setup`, `tpvEsperado`, `qtdTransacoesEsperada`,
+`qtdMedEsperada`, `receitaPrevistaMensal`, `descontoPercent`,
+`overpricePercent`, `volumeMinimo`), `Lead.value`, `Incidente.downtimeMins`,
+`FollowUp.frequenciaDias`, `PendenciaCompliance.titulo`.
 
-**Colunas renomeadas:** `FollowUp.frequenciaDias` → `picoIntervaloDias`.
+**Tipos:** `ScoreRisco`, `AutomacaoGatilho`, `AutomacaoAcao`,
+`AutomacaoExecucaoStatus`, `FormularioRespostaStatus`.
 
-**Colunas removidas:** 10 de `Cliente`, `PendenciaCompliance.titulo`,
-`Lead.value`.
+Podem ser retirados numa migration de limpeza futura, depois de o código novo
+estar estável. Não se apaga dado histórico para "limpar" o banco.
 
-**Preservados integralmente:** histórico financeiro, histórico de taxas,
-histórico de Pipeline (`PipelineMovimentacao`), histórico de Compliance
-(`PendenciaEvento`), `Auditoria`, `LancamentoDiario`, `FloatConfig`,
-`VolumetriaMinima`, `Certificado*`, `Notificacao`.
+### Usuários
+
+`Equipe Comercial` e `Equipe Operacional` foram **verificados no banco** antes
+de qualquer ação: são **usuários reais** (não grupos, labels ou estrutura
+organizacional — não existe tabela de grupo no schema) e tinham **zero
+registros em 19 caminhos de chave estrangeira**. Com zero dependência, o DELETE
+físico é seguro e foi aplicado.
+
+O bloco da migration conta as dependências em tempo de execução e só deleta se
+der zero; em qualquer outro cenário apenas desativa e avisa. Os **papéis**
+COMERCIAL e OPERACIONAL permanecem no enum `Role`.
+
+### Preservados integralmente
+
+Histórico financeiro, histórico de taxas, histórico de Pipeline
+(`PipelineMovimentacao`), histórico de Compliance (`PendenciaEvento`),
+`Auditoria`, `LancamentoDiario`, `FloatConfig`, `VolumetriaMinima`,
+`Certificado*`, `Notificacao`.
 
 ---
 
@@ -446,9 +582,10 @@ histórico de Pipeline (`PipelineMovimentacao`), histórico de Compliance
 | Enums Prisma | 30 | **29** |
 | Rotas de API | 67 | **62** |
 | Páginas | 34 | **31** |
-| Componentes React | 29 | **28** |
+| Componentes React | 29 | **26** |
 | Módulos em `lib/` | 26 | **24** |
+| Tabelas no banco de Production | 41 | **47** |
 | Chaves de permissão | 42 | **33** |
 | Migrations SQL | 14 (v1…v15) | **15** (v1…v16) |
-| Testes automatizados | 104 | **118** |
+| Testes automatizados | 104 | **142** |
 | Linhas em `app/`+`lib/`+`components/` | ~21.300 | **~19.200** |

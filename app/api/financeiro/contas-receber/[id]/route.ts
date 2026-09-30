@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { hasPermission } from '@/lib/permissions'
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)) {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  }
 
   const { id } = await params
   const body = await request.json()
@@ -31,6 +35,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)) {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  }
 
   const { id } = await params
   await prisma.contaReceber.delete({ where: { id } })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { hasPermission } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)) {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  }
 
   const body = await request.json()
   const { clienteId, descricao, tipo, valor, dataVenc, parcela, totalParcel, notas } = body

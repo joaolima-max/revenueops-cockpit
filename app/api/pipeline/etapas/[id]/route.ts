@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { validarInativacaoEtapa } from '@/lib/pipeline'
+import { validarInativacaoEtapa, impedimentoExclusaoEtapa } from '@/lib/pipeline'
 import { acessoAoFunil, auditarPipeline } from '@/lib/pipeline-db'
 
 const TIPOS = ['NORMAL', 'GANHO', 'PERDIDO'] as const
@@ -115,4 +115,61 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     `Etapa: ${atualizada.nome}`,
   )
   return NextResponse.json({ etapa: atualizada })
+}
+
+/**
+ * DELETE — exclui a etapa fisicamente, e SOMENTE quando nada aponta para ela.
+ *
+ * Respeita a mesma alçada das outras operações: quem administra AQUELE funil
+ * (verificado em `carregar`, via `acessoAoFunil`).
+ *
+ * A decisão de bloquear mora em `impedimentoExclusaoEtapa` (lib/pipeline.ts).
+ * O princípio: `PipelineMovimentacao` nunca é apagada para viabilizar uma
+ * exclusão de cadastro. Etapa com card ou com histórico se inativa; etapa
+ * criada e nunca usada se exclui.
+ */
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  const { id } = await params
+  const { etapa, erro } = await carregar(session, id)
+  if (erro) return erro
+
+  const movimentacoes = await prisma.pipelineMovimentacao.count({
+    where: { OR: [{ etapaOrigemId: id }, { etapaDestinoId: id }] },
+  })
+
+  const dependencias = { cards: etapa!._count.deals, movimentacoes }
+  const impedimento = impedimentoExclusaoEtapa(dependencias)
+  if (impedimento) {
+    return NextResponse.json({ error: impedimento, dependencias }, { status: 409 })
+  }
+
+  // Última etapa ativa do funil deixaria o quadro sem nenhuma coluna.
+  const ativasNoFunil = await prisma.pipelineEtapa.count({
+    where: { funilId: etapa!.funilId, ativo: true },
+  })
+  if (etapa!.ativo && ativasNoFunil <= 1) {
+    return NextResponse.json({
+      error: 'Esta é a única etapa ativa do funil. Crie outra antes de excluí-la.',
+    }, { status: 409 })
+  }
+
+  try {
+    await prisma.pipelineEtapa.delete({ where: { id } })
+  } catch {
+    // Rede de segurança: se um vínculo novo surgir no schema e não estiver na
+    // contagem acima, a FK barra e a resposta explica em vez de estourar 500.
+    return NextResponse.json({
+      error: 'Não foi possível excluir: há registros vinculados a esta etapa. Inative-a.',
+    }, { status: 409 })
+  }
+
+  await auditarPipeline(
+    session.userId, 'EXCLUIU_ETAPA', 'PipelineEtapa', id,
+    `Etapa ${etapa!.nome} excluída do funil (sem cards e sem histórico)`,
+  )
+
+  return NextResponse.json({ ok: true })
 }

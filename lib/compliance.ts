@@ -14,8 +14,10 @@ export type Motivo = (typeof MOTIVOS)[number]
 export const STATUS = ['ABERTA', 'EM_ANALISE', 'AGUARDANDO_CLIENTE', 'RESOLVIDA', 'CANCELADA'] as const
 export type Status = (typeof STATUS)[number]
 
-export const CRITICIDADES = ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'] as const
-export type Criticidade = (typeof CRITICIDADES)[number]
+// A escala e o enum `IncidenteCriticidade`, que nasceu em Incidentes e o
+// Compliance reusa. Reexportado daqui para quem ja importava deste modulo, mas
+// declarado em um lugar so.
+export { CRITICIDADES, type Criticidade } from '@/lib/incidentes'
 
 /** Status terminais nao voltam a andar sozinhos: exigem reabertura explicita. */
 const TRANSICOES: Record<Status, Status[]> = {

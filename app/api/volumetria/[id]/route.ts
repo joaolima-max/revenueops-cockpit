@@ -2,17 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
-import { conflitoDeVigencia, periodoValido } from '@/lib/volumetria'
+import { conflitoDeVigencia, periodoValido, podeAdministrarVolumetria } from '@/lib/volumetria'
 
-function podeGerenciar(role: string): boolean {
-  return role !== 'COMERCIAL'
-}
+const NEGADO = 'Apenas administradores podem editar ou excluir volumetria.'
 
 /** Edita quantidade, vigência e notas. O cliente do contrato é imutável. */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (!podeGerenciar(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!podeAdministrarVolumetria(session.role)) return NextResponse.json({ error: NEGADO }, { status: 403 })
 
   const { id } = await params
   const atual = await prisma.volumetriaMinima.findUnique({
@@ -79,7 +77,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (!podeGerenciar(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!podeAdministrarVolumetria(session.role)) return NextResponse.json({ error: NEGADO }, { status: 403 })
 
   const { id } = await params
   const { ativo } = await request.json()
@@ -132,7 +130,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (!podeGerenciar(session.role)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!podeAdministrarVolumetria(session.role)) return NextResponse.json({ error: NEGADO }, { status: 403 })
 
   const { id } = await params
   const atual = await prisma.volumetriaMinima.findUnique({
