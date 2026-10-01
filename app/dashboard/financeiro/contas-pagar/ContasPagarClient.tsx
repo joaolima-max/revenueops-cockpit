@@ -7,6 +7,7 @@ import Panel from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
 import Badge, { type BadgeTone } from '@/components/ui/Badge'
 import HairlineGrid from '@/components/ui/HairlineGrid'
+import EmptyState from '@/components/ui/EmptyState'
 import StatTile from '@/components/ui/StatTile'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import { figuraMoeda } from '@/lib/format-financeiro'
@@ -217,6 +218,20 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
         </div>
       </Panel>
 
+      {carregando ? (
+        <TableShell>
+          <div className="p-5 space-y-3">
+            {Array.from({ length: 4 }, (_, i) => <div key={i} className="bp-skeleton h-10" />)}
+          </div>
+        </TableShell>
+      ) : titulos.length === 0 && !descricao && !categoriaId && !fornecedorId && !situacao ? (
+        <Panel padded={false}>
+          <EmptyState
+            title="Nenhuma despesa neste período"
+            description="Despesas são lançadas em Lançamentos e aparecem aqui pela data de vencimento."
+          />
+        </Panel>
+      ) : (
       <TableShell>
         <Table>
           <THead>
@@ -232,9 +247,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
             </HeadRow>
           </THead>
           <tbody>
-            {carregando ? (
-              <EmptyRow colSpan={8}>Carregando…</EmptyRow>
-            ) : titulos.length === 0 ? (
+            {titulos.length === 0 ? (
               <EmptyRow colSpan={8}>
                 Nenhuma despesa com esses filtros. Despesas são lançadas em{' '}
                 <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft hover:underline">
@@ -285,6 +298,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
           </tbody>
         </Table>
       </TableShell>
+      )}
 
       <p className="t-label text-subtle">
         Esta tela lê os mesmos lançamentos de despesa da tela de Lançamentos — não existe uma

@@ -203,7 +203,7 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Condições Comerciais BaaS"
+        title="Condições BaaS"
         sub="Onde BaaS e White Labels são cadastrados. Alimenta o MRR e as contagens de ativos."
         actions={podeGerenciar ? <Button variant="primary" onClick={abrirNovo}>Novo cadastro</Button> : undefined}
       />

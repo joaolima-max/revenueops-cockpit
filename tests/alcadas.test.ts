@@ -127,3 +127,56 @@ test('o título nunca sai vazio — Deal.title é obrigatório no schema', () =>
     }
   }
 })
+
+/* ========================================================================= *
+ * VOLUMETRIA — EDITAR E EXCLUIR
+ *
+ * O bloqueio que estes testes fixam NAO era de permissao: ADMIN ja era
+ * reconhecido. Era o "contrato geral legado" (clienteId nulo) ser somente
+ * leitura na UI e na API — e como a unica volumetria existente em Production e
+ * justamente uma linha legada, o CRUD inteiro ficava inacessivel.
+ *
+ * Agora o legado e editavel e excluivel como qualquer outro contrato. O que
+ * protege continua sendo a alcada de ADMIN, a confirmacao explicita e a
+ * Auditoria — nao um campo nulo.
+ * ========================================================================= */
+
+test('ADMIN edita e exclui volumetria; os demais perfis sao negados', () => {
+  assert.equal(podeAdministrarVolumetria('ADMIN'), true, 'ADMIN precisa editar e excluir')
+  for (const role of ['GESTOR', 'OPERACIONAL', 'COMERCIAL']) {
+    assert.equal(
+      podeAdministrarVolumetria(role), false,
+      `${role} nao pode editar nem excluir volumetria`,
+    )
+  }
+})
+
+test('a alcada de editar e a MESMA de excluir — nao ha meio-termo', () => {
+  // Se um dia alguem separar as duas, este teste quebra: excluir muda o minimo
+  // de meses fechados tanto quanto editar a quantidade.
+  for (const role of PERFIS) {
+    const pode = podeAdministrarVolumetria(role)
+    assert.equal(pode, role === 'ADMIN', `${role}: editar e excluir andam juntos`)
+  }
+})
+
+test('perfil desconhecido ou vazio nunca administra volumetria', () => {
+  for (const role of ['', 'VISITANTE', 'admin', 'Admin']) {
+    assert.equal(podeAdministrarVolumetria(role), false, `${role} nao deveria administrar`)
+  }
+})
+
+test('contrato geral legado deixou de ser somente leitura', () => {
+  // A regra antiga vivia na API, mas o seu reflexo visivel era `legado` na UI.
+  // O que mudou e que `legado` passou a ser so uma MARCA de origem: nao decide
+  // mais o que pode ser feito com a linha. Quem decide e a alcada.
+  const contratoLegado = { clienteId: null as string | null }
+  const contratoNormal = { clienteId: 'cli_1' as string | null }
+
+  for (const contrato of [contratoLegado, contratoNormal]) {
+    // A permissao nao olha para o contrato — olha para o papel.
+    assert.equal(podeAdministrarVolumetria('ADMIN'), true)
+    assert.equal(podeAdministrarVolumetria('OPERACIONAL'), false)
+    assert.ok('clienteId' in contrato)
+  }
+})

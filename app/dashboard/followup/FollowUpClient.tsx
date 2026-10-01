@@ -6,6 +6,15 @@ import {
 } from 'recharts'
 import { paleta, gridProps, axisProps, legendProps, cursorBarra, BAR } from '@/lib/chart-theme'
 import { useTheme } from '@/components/theme/ThemeProvider'
+import PageHeader from '@/components/dashboard/PageHeader'
+import Panel from '@/components/ui/Panel'
+import Button from '@/components/ui/Button'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import EmptyState from '@/components/ui/EmptyState'
+import HairlineGrid from '@/components/ui/HairlineGrid'
+import StatTile from '@/components/ui/StatTile'
+import { TableShell, Table, THead, HeadRow, Th, Row, Td } from '@/components/ui/DataTable'
+import { figuraContagem } from '@/lib/format-financeiro'
 
 interface Cliente { id: string; nome: string; segmento: string | null; modeloOperacional: string }
 
@@ -64,6 +73,17 @@ const TIPO_COLORS: Record<string, string> = {
   OUTRO: 'bg-[var(--bp-hover)] text-muted border border-line-2',
 }
 
+/** Mesmo vocabulario de tom das demais telas — Badge, nao classe solta. */
+const TIPO_TONE: Record<string, BadgeTone> = {
+  PICO_TRANSACIONAL: 'warn',
+  PICO_OPERACIONAL: 'warn',
+  REUNIAO: 'accent',
+  MONITORAMENTO: 'accent',
+  FOLLOW_UP: 'pos',
+  ALERTA: 'neg',
+  OUTRO: 'neutral',
+}
+
 const TIPO_BG: Record<string, string> = {
   PICO_TRANSACIONAL: 'bg-warn/10 border-l-2 border-warn',
   PICO_OPERACIONAL: 'bg-warn/10 border-l-2 border-warn',
@@ -118,13 +138,7 @@ function isCarteiraGeral(clienteId: string): boolean {
 }
 
 function CarteiraGeralBadge() {
-  return (
-    <span
-      className="bg-accent text-on-accent inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold"
-    >
-      🗂 Carteira Geral
-    </span>
-  )
+  return <Badge tone="accent">Carteira geral</Badge>
 }
 
 // ─── Multi-select dropdown component ──────────────────────────────────────────
@@ -426,41 +440,40 @@ export default function FollowUpClient({ clientes }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="t-h1 text-fg">Follow-up & Calendário CRM</h1>
-          <p className="text-subtle text-sm mt-0.5">Monitoramento de clientes da carteira por datas e horários</p>
-        </div>
-        <button onClick={openNew}
-          className="bp-btn-primary px-4 py-2 text-sm font-medium rounded-lg">
-          + Novo Evento
-        </button>
-      </div>
+      <PageHeader
+        title="Follow-up"
+        sub="Monitoramento dos clientes da carteira por data, horário e pico transacional."
+        actions={<Button variant="primary" onClick={openNew}>+ Novo evento</Button>}
+      />
 
-      {/* Summary chips */}
-      <div className="flex gap-3 flex-wrap">
-        {TIPOS_OFERECIDOS.map(tipo => {
-          // O legado conta junto com o valor novo: é o mesmo conceito.
-          const equivalentes = tipo === 'PICO_TRANSACIONAL'
-            ? ['PICO_TRANSACIONAL', 'PICO_OPERACIONAL']
-            : [tipo]
-          const count = followUps.filter(fu => equivalentes.includes(fu.tipo)).length
-          if (!count) return null
-          return (
-            <span key={tipo} className={`text-xs px-2.5 py-1 rounded-full font-medium ${TIPO_COLORS[tipo]}`}>
-              {TIPO_LABELS[tipo]}: {count}
-            </span>
-          )
-        })}
-      </div>
+      {/* KPIs — mesma faixa das telas de Financeiro. O legado PICO_OPERACIONAL
+          conta junto com PICO_TRANSACIONAL: é o mesmo conceito, renomeado. */}
+      <HairlineGrid cols={4}>
+        <StatTile label="Eventos" figura={figuraContagem(followUps.length)} primary
+          note="Total cadastrado" />
+        <StatTile
+          label="Picos transacionais"
+          figura={figuraContagem(followUps.filter(fu =>
+            fu.tipo === 'PICO_TRANSACIONAL' || fu.tipo === 'PICO_OPERACIONAL'
+            || fu.picoIntervaloDias !== null).length)}
+          note="Clientes com pico previsto" />
+        <StatTile label="Recorrentes" figura={figuraContagem(followUps.filter(fu => fu.recorrente).length)}
+          note="Repetem toda semana" />
+        <StatTile label="Clientes acompanhados"
+          figura={figuraContagem(new Set(followUps.map(fu => fu.cliente.id)).size)}
+          note="Com ao menos um evento" />
+      </HairlineGrid>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 w-fit">
+      {/* Abas no mesmo padrão de chip das telas de Contas a Pagar/Receber. */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {(['calendario', 'picos', 'lista'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-surface-2 text-fg' : 'text-subtle hover:text-muted'}`}>
-            {t === 'calendario' ? 'Calendário Semanal' : t === 'picos' ? 'Picos transacionais' : 'Todos os Eventos'}
+          <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t}
+            className={`px-3 py-1.5 rounded-lg t-label border transition-colors duration-[180ms] ease-bp ${
+              tab === t
+                ? 'border-accent/40 bg-accent/10 text-accent-soft'
+                : 'border-line text-muted hover:border-line-2 hover:text-fg'
+            }`}>
+            {t === 'calendario' ? 'Calendário semanal' : t === 'picos' ? 'Picos transacionais' : 'Todos os eventos'}
           </button>
         ))}
       </div>
@@ -539,7 +552,7 @@ export default function FollowUpClient({ clientes }: Props) {
 
           {/* Upcoming one-time events */}
           {upcoming.length > 0 && (
-            <div className="bg-surface border border-line rounded-xl p-5">
+            <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
               <h3 className="t-h3 text-fg mb-4">Próximos Eventos (agenda)</h3>
               <div className="space-y-2">
                 {upcoming.map(fu => {
@@ -575,7 +588,7 @@ export default function FollowUpClient({ clientes }: Props) {
       {tab === 'picos' && (
         <div className="space-y-6">
           {/* Chart: Agenda de Follow-ups da Semana */}
-          <div className="bg-surface border border-line rounded-xl p-5">
+          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
             <h3 className="t-h3 text-fg mb-4">Agenda de Follow-ups da Semana</h3>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={weekChartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
@@ -599,7 +612,7 @@ export default function FollowUpClient({ clientes }: Props) {
           </div>
 
           {/* Regras de pico transacional */}
-          <div className="bg-surface border border-line rounded-xl p-5">
+          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
             <h3 className="t-h3 text-fg mb-4">Picos transacionais</h3>
             {loading ? (
               <p className="text-subtle text-sm py-6 text-center">Carregando...</p>
@@ -618,7 +631,7 @@ export default function FollowUpClient({ clientes }: Props) {
                           ) : (
                             <span className="text-sm font-medium text-fg truncate">{fu.cliente.nome}</span>
                           )}
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
+                          <span className={`t-label px-2.5 py-1 rounded-full ${TIPO_COLORS[fu.tipo]}`}>
                             {TIPO_LABELS[fu.tipo]}
                           </span>
                         </div>
@@ -657,7 +670,7 @@ export default function FollowUpClient({ clientes }: Props) {
           </div>
 
           {/* Novo pico transacional */}
-          <div className="bg-surface border border-line rounded-xl p-5">
+          <div className="bg-surface border border-line rounded-2xl p-5 sm:p-6">
             <h3 className="t-h3 text-fg mb-4">Adicionar pico transacional</h3>
             <form onSubmit={handleFreqSubmit} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
               <div>
@@ -718,62 +731,75 @@ export default function FollowUpClient({ clientes }: Props) {
 
       {/* LIST TAB */}
       {tab === 'lista' && (
-        <div className="bg-surface border border-line rounded-xl overflow-hidden">
-          <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm">
-            <thead>
-              <tr className="border-b border-line">
-                {['Cliente', 'Título', 'Tipo', 'Quando', 'Horário', 'Recorrente', 'Ações'].map(h => (
-                  <th key={h} className={`t-label text-subtle px-4 py-3 ${h === 'Ações' ? 'text-right' : 'text-left'}`}>{h}</th>
+        loading ? (
+          <TableShell>
+            <div className="p-5 space-y-3">
+              {Array.from({ length: 4 }, (_, i) => <div key={i} className="bp-skeleton h-10" />)}
+            </div>
+          </TableShell>
+        ) : followUps.length === 0 ? (
+          <Panel padded={false}>
+            <EmptyState
+              title="Nenhum evento cadastrado"
+              description="Registre reuniões, monitoramentos e picos transacionais dos clientes da carteira."
+              action={<Button variant="primary" onClick={openNew}>+ Novo evento</Button>}
+            />
+          </Panel>
+        ) : (
+          <TableShell>
+            <Table>
+              <THead>
+                <HeadRow>
+                  <Th className="pl-5">Cliente</Th>
+                  <Th>Título</Th>
+                  <Th align="center">Tipo</Th>
+                  <Th>Quando</Th>
+                  <Th>Horário</Th>
+                  <Th align="center">Recorrência</Th>
+                  <Th align="right">Ações</Th>
+                </HeadRow>
+              </THead>
+              <tbody>
+                {followUps.map(fu => (
+                  <Row key={fu.id}>
+                    <Td className="pl-5">
+                      {isCarteiraGeral(fu.cliente.id)
+                        ? <CarteiraGeralBadge />
+                        : <span className="t-body font-medium text-fg">{fu.cliente.nome}</span>}
+                    </Td>
+                    <Td className="t-sm text-muted">{fu.titulo}</Td>
+                    <Td align="center">
+                      <Badge tone={TIPO_TONE[fu.tipo] ?? 'neutral'}>{TIPO_LABELS[fu.tipo]}</Badge>
+                    </Td>
+                    <Td className="t-sm text-muted">
+                      {fu.picoIntervaloDias
+                        ? `Pico a cada ${fu.picoIntervaloDias}d`
+                        : fu.recorrente
+                          ? DIAS_FULL[fu.diaSemana ?? 0]
+                          : fu.dataInicio ? fmtDateFull(fu.dataInicio) : '—'}
+                    </Td>
+                    <Td className="t-sm text-muted t-num">
+                      {fu.horaInicio ? `${fu.horaInicio}${fu.horaFim ? `–${fu.horaFim}` : ''}` : '—'}
+                    </Td>
+                    <Td align="center">
+                      {fu.picoIntervaloDias
+                        ? <Badge tone="warn">Pico</Badge>
+                        : fu.recorrente
+                          ? <Badge tone="accent">Semanal</Badge>
+                          : <Badge>Único</Badge>}
+                    </Td>
+                    <Td align="right">
+                      <span className="inline-flex gap-2">
+                        <Button size="sm" onClick={() => openEdit(fu)}>Editar</Button>
+                        <Button size="sm" variant="danger" onClick={() => handleDelete(fu.id)}>Excluir</Button>
+                      </span>
+                    </Td>
+                  </Row>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="text-center text-subtle py-12 text-sm">Carregando...</td></tr>
-              ) : followUps.length === 0 ? (
-                <tr><td colSpan={7} className="text-center text-subtle py-12 text-sm">Nenhum evento cadastrado</td></tr>
-              ) : followUps.map(fu => (
-                <tr key={fu.id} className="border-b border-line hover:bg-[var(--bp-hover)]">
-                  <td className="px-4 py-3">
-                    {isCarteiraGeral(fu.cliente.id)
-                      ? <CarteiraGeralBadge />
-                      : <span className="text-fg font-medium">{fu.cliente.nome}</span>
-                    }
-                  </td>
-                  <td className="px-4 py-3 text-muted">{fu.titulo}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIPO_COLORS[fu.tipo]}`}>
-                      {TIPO_LABELS[fu.tipo]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted text-xs">
-                    {fu.picoIntervaloDias
-                      ? `Pico a cada ${fu.picoIntervaloDias}d`
-                      : fu.recorrente
-                        ? DIAS_FULL[fu.diaSemana ?? 0]
-                        : fu.dataInicio ? fmtDateFull(fu.dataInicio) : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-muted text-xs">
-                    {fu.horaInicio ? `${fu.horaInicio}${fu.horaFim ? `–${fu.horaFim}` : ''}` : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {fu.picoIntervaloDias
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-warn/10 text-warn">Pico</span>
-                      : fu.recorrente
-                        ? <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent-soft">Semanal</span>
-                        : <span className="text-xs text-subtle">Único</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openEdit(fu)} className="text-xs px-2 py-1 bg-surface-2 text-muted rounded hover:bg-surface-2">Editar</button>
-                      <button onClick={() => handleDelete(fu.id)} className="text-xs px-2 py-1 bg-neg/10 text-neg rounded hover:bg-neg/20">✕</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
-        </div>
+              </tbody>
+            </Table>
+          </TableShell>
+        )
       )}
 
       {/* MODAL */}

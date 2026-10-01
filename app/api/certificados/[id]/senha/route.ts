@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { hasPermission } from '@/lib/permissions'
 import { decifrar, chaveConfigurada } from '@/lib/crypto-certificado'
-import { rotuloIntervalo } from '@/lib/certificados'
+import { rotuloIntervalo, nomeDestinatario } from '@/lib/certificados'
 
 /**
  * ÚNICO ponto do sistema que devolve uma senha de certificado em claro.
@@ -40,7 +40,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
     where: { id },
     include: {
       versao: { select: { identificacao: true } },
-      envio: { select: { cliente: { select: { nome: true } } } },
+      envio: { select: { cliente: { select: { nome: true } }, clienteNomeHistorico: true } },
     },
   })
   if (!certificado) return NextResponse.json({ error: 'Certificado não encontrado' }, { status: 404 })
@@ -61,7 +61,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
       entidade: 'Certificado',
       entidadeId: id,
       detalhes: `${rotuloIntervalo(certificado.versao.identificacao, certificado.numero, certificado.numero)}`
-        + (certificado.envio ? ` · cliente ${certificado.envio.cliente.nome}` : ' · em estoque'),
+        + (certificado.envio ? ` · cliente ${nomeDestinatario(certificado.envio)}` : ' · em estoque'),
       userId: session.userId,
     },
   })

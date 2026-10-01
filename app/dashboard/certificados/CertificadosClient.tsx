@@ -32,7 +32,12 @@ interface Envio {
   observacao: string | null
   enviadoEm: string
   referencia: string
-  cliente: { id: string; nome: string }
+  /** Nulo quando o envio foi para empresa que nao esta mais na base. */
+  cliente: { id: string; nome: string } | null
+  clienteNomeHistorico: string | null
+  /** Nome pronto para exibir, venha do cadastro ou do historico. */
+  destinatario: string
+  clienteAntigo: boolean
   versao: { id: string; identificacao: string }
   enviadoPor: { name: string }
 }
@@ -42,7 +47,7 @@ interface Certificado {
   numero: number
   status: string
   envioId: string | null
-  envio: { id: string; cliente: { nome: string } } | null
+  envio: { id: string; cliente: { nome: string } | null; clienteNomeHistorico: string | null } | null
 }
 
 interface ClienteOpcao { id: string; nome: string }
@@ -70,7 +75,13 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
   const [modalVersao, setModalVersao] = useState(false)
   const [detalhe, setDetalhe] = useState<{ versao: Versao; certificados: Certificado[] } | null>(null)
 
-  const [formEnvio, setFormEnvio] = useState({ clienteId: '', versaoId: '', tipo: 'UNICO' as EnvioTipo, intervalo: '', observacao: '' })
+  const [formEnvio, setFormEnvio] = useState({
+    clienteId: '', versaoId: '', tipo: 'UNICO' as EnvioTipo, intervalo: '', observacao: '',
+    /* Cliente que saiu da base. Marcado, o envio nao exige Cliente cadastrado
+       e passa a exigir o nome digitado — ver §28: nao se recria cliente nem se
+       mexe na carteira para registrar um envio historico. */
+    clienteAntigo: false, clienteNomeHistorico: '',
+  })
   const [formVersao, setFormVersao] = useState({ identificacao: '', descricao: '' })
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
@@ -127,12 +138,15 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
       setErro(d.error ?? 'Não foi possível registrar o envio.'); setSalvando(false); return
     }
     setModalEnvio(false)
-    setFormEnvio({ clienteId: '', versaoId: '', tipo: 'UNICO', intervalo: '', observacao: '' })
+    setFormEnvio({
+      clienteId: '', versaoId: '', tipo: 'UNICO', intervalo: '', observacao: '',
+      clienteAntigo: false, clienteNomeHistorico: '',
+    })
     setSalvando(false); setVersaoDados((v) => v + 1)
   }
 
   async function cancelarEnvio(env: Envio) {
-    if (!confirm(`Cancelar o envio de ${env.referencia} para ${env.cliente.nome}?\n\nOs certificados voltam ao estoque. O envio fica registrado como cancelado.`)) return
+    if (!confirm(`Cancelar o envio de ${env.referencia} para ${env.destinatario}?\n\nOs certificados voltam ao estoque. O envio fica registrado como cancelado.`)) return
     const res = await fetch(`/api/certificados/envios/${env.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'CANCELADO' }),
@@ -234,7 +248,12 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
               <tbody>
                 {envios.map((e) => (
                   <Row key={e.id} className={e.status === 'CANCELADO' ? 'opacity-60' : undefined}>
-                    <Td className="text-fg font-medium">{e.cliente.nome}</Td>
+                    <Td className="text-fg font-medium">
+                      {e.destinatario}
+                      {e.clienteAntigo && (
+                        <Badge className="ml-2">fora da base</Badge>
+                      )}
+                    </Td>
                     <Td>
                       {e.referencia}
                       {e.observacao && <p className="t-sm text-subtle mt-0.5">{e.observacao}</p>}
@@ -346,13 +365,45 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
             <form onSubmit={registrarEnvio} className="p-5 space-y-4">
               {erro && <div className="bg-neg/10 border border-neg/25 text-neg px-3 py-2 rounded-lg t-sm">{erro}</div>}
 
-              <div>
-                <label className={lbl} htmlFor="e-cliente">Cliente *</label>
-                <select id="e-cliente" required value={formEnvio.clienteId} className={inp}
-                  onChange={(e) => setFormEnvio((p) => ({ ...p, clienteId: e.target.value }))}>
-                  <option value="">Selecione o cliente</option>
-                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
+              {/* Destinatario: cliente da base OU empresa que saiu dela.
+                  Marcar a caixa nao cria cliente nenhum e nao toca na carteira
+                  — so troca o campo exigido. */}
+              <div className="space-y-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={formEnvio.clienteAntigo} className="mt-0.5"
+                    onChange={(e) => setFormEnvio((p) => ({
+                      ...p, clienteAntigo: e.target.checked,
+                      clienteId: '', clienteNomeHistorico: '',
+                    }))} />
+                  <span className="min-w-0">
+                    <span className="block t-sm text-fg">Cliente não está mais ativo na base</span>
+                    <span className="block t-label text-subtle mt-0.5">
+                      Registra o envio sem recriar a empresa na Carteira.
+                    </span>
+                  </span>
+                </label>
+
+                {formEnvio.clienteAntigo ? (
+                  <div>
+                    <label className={lbl} htmlFor="e-cliente-hist">Nome do cliente *</label>
+                    <input id="e-cliente-hist" required maxLength={200}
+                      value={formEnvio.clienteNomeHistorico} className={inp}
+                      placeholder="Razão social ou nome fantasia"
+                      onChange={(e) => setFormEnvio((p) => ({ ...p, clienteNomeHistorico: e.target.value }))} />
+                    <p className="t-label text-subtle mt-1.5">
+                      O envio fica registrado com este nome. Nenhum cliente é criado.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className={lbl} htmlFor="e-cliente">Cliente *</label>
+                    <select id="e-cliente" required value={formEnvio.clienteId} className={inp}
+                      onChange={(e) => setFormEnvio((p) => ({ ...p, clienteId: e.target.value }))}>
+                      <option value="">Selecione o cliente</option>
+                      {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -425,7 +476,7 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
                     <div className="min-w-0">
                       <p className="t-sm font-medium text-fg tabular-nums">Nº {c.numero}</p>
                       <p className="t-label text-subtle truncate">
-                        {c.envio ? c.envio.cliente.nome : 'em estoque'}
+                        {c.envio ? (c.envio.cliente?.nome ?? c.envio.clienteNomeHistorico ?? '—') : 'em estoque'}
                       </p>
                     </div>
                     {podeRevelar && (

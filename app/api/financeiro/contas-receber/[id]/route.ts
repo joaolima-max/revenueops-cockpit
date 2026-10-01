@@ -12,15 +12,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params
   const body = await request.json()
-  const { status, dataPago, dataFatura, descricao, valor, dataVenc, notas } = body
+  const {
+    status, dataPago, dataFatura, descricao, tipo, valor, dataVenc,
+    parcela, totalParcel, clienteId, notas,
+  } = body
+
+  const atual = await prisma.contaReceber.findUnique({ where: { id } })
+  if (!atual) return NextResponse.json({ error: 'Título não encontrado.' }, { status: 404 })
+
+  if (clienteId && clienteId !== atual.clienteId) {
+    const existe = await prisma.cliente.count({ where: { id: String(clienteId) } })
+    if (!existe) return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 })
+  }
 
   const updateData: Record<string, unknown> = {}
   if (status) updateData.status = status
   if (status === 'PAGO') updateData.dataPago = dataPago ? new Date(dataPago) : new Date()
   if (status === 'FATURADO') updateData.dataFatura = dataFatura ? new Date(dataFatura) : new Date()
+  // Reabrir limpa a baixa: manter a data de pagamento num título que voltou a
+  // ficar em aberto faria o relatório de recebidos contar algo que não entrou.
+  if (status === 'PENDENTE' || status === 'INADIMPLENTE') updateData.dataPago = null
+
   if (descricao) updateData.descricao = descricao
+  if (tipo) updateData.tipo = tipo
+  if (clienteId) updateData.clienteId = String(clienteId)
   if (valor !== undefined) updateData.valor = parseFloat(valor)
   if (dataVenc) updateData.dataVenc = new Date(dataVenc)
+  if (parcela !== undefined) updateData.parcela = parcela ? parseInt(String(parcela), 10) : null
+  if (totalParcel !== undefined) updateData.totalParcel = totalParcel ? parseInt(String(totalParcel), 10) : null
   if (notas !== undefined) updateData.notas = notas || null
 
   const conta = await prisma.contaReceber.update({

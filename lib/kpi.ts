@@ -194,9 +194,9 @@ export interface IndicadoresEstrutura {
    * e no Conselho. null quando o mês não teve nenhum dia informando.
    */
   clientesAtivos: number | null
-  /** BaaS ativos — Condições Comerciais BaaS, tipo BAAS. */
+  /** BaaS ativos — Condições BaaS, tipo BAAS. */
   baasAtivos: number
-  /** White Labels ativos — Condições Comerciais BaaS, tipo WHITE_LABEL. */
+  /** White Labels ativos — Condições BaaS, tipo WHITE_LABEL. */
   whiteLabelsAtivos: number
   /** MRR aberto nas quatro parcelas. Mesma função que o Financeiro usa. */
   mrr: Mrr

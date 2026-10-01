@@ -522,6 +522,142 @@ export async function contasAPagar(
 }
 
 /* ========================================================================= *
+ * CONTAS A RECEBER
+ *
+ * Mesma GRAMÁTICA de Contas a Pagar — total, vencidas, a vencer, pagas — sobre
+ * a base que é dela: `ContaReceber`, o faturamento do cliente. As duas telas
+ * respondem à mesma pergunta em direções opostas, e por isso compartilham o
+ * vocabulário de situação em vez de cada uma inventar o seu.
+ *
+ * O que NÃO é compartilhado é a origem: recebível é título do cliente, despesa
+ * é lançamento de caixa. Unificar as duas tabelas criaria a segunda base que o
+ * produto evita desde a v16.
+ * ========================================================================= */
+
+export type SituacaoReceber = 'PAGA' | 'VENCIDA' | 'A_VENCER'
+
+export type StatusContaReceber = 'PENDENTE' | 'FATURADO' | 'PAGO' | 'INADIMPLENTE'
+
+export interface TituloReceber {
+  id: string
+  descricao: string
+  tipo: string
+  valor: number
+  dataVenc: string
+  dataFatura: string | null
+  dataPago: string | null
+  status: StatusContaReceber
+  situacao: SituacaoReceber
+  /** Dias até o vencimento; negativo quando já venceu. Null quando paga. */
+  diasParaVencer: number | null
+  notas: string | null
+  parcela: number | null
+  totalParcel: number | null
+  cliente: { id: string; nome: string; modeloOperacional: string }
+}
+
+export interface ResumoReceber {
+  total: number
+  pagas: number
+  aReceber: number
+  vencidas: number
+  aVencer: number
+  titulos: number
+}
+
+/**
+ * Situação de um recebível. Função pura, espelho de `situacaoDoTitulo`.
+ *
+ * PAGO ganha de tudo: um título pago depois do vencimento é pago, não vencido.
+ * INADIMPLENTE é vencido POR DECLARAÇÃO — alguém marcou assim —, e continua
+ * vencido mesmo que a data ainda não tenha passado; é a única situação em que
+ * o estado informado vale mais que o calendário.
+ */
+export function situacaoDoRecebivel(
+  status: StatusContaReceber,
+  vencimento: Date,
+  hoje: Date = new Date(),
+): { situacao: SituacaoReceber; diasParaVencer: number | null } {
+  if (status === 'PAGO') return { situacao: 'PAGA', diasParaVencer: null }
+
+  const dias = Math.round((diaUtc(vencimento) - diaUtc(hoje)) / DIA_MS)
+  if (status === 'INADIMPLENTE') return { situacao: 'VENCIDA', diasParaVencer: dias }
+  return { situacao: dias < 0 ? 'VENCIDA' : 'A_VENCER', diasParaVencer: dias }
+}
+
+export interface FiltroReceber {
+  periodo?: string
+  situacao?: SituacaoReceber
+  status?: StatusContaReceber
+  clienteId?: string
+  descricao?: string
+}
+
+/** Contas a Receber — títulos de `ContaReceber`, pela data de vencimento. */
+export async function contasAReceber(
+  filtro: FiltroReceber, hoje: Date = new Date(),
+): Promise<{ titulos: TituloReceber[]; resumo: ResumoReceber }> {
+  const janela = filtro.periodo && /^\d{4}-\d{2}$/.test(filtro.periodo)
+    ? intervaloMes(filtro.periodo)
+    : null
+
+  const linhas = await prisma.contaReceber.findMany({
+    where: {
+      ...(janela ? { dataVenc: { gte: janela.inicio, lt: janela.fim } } : {}),
+      ...(filtro.status ? { status: filtro.status } : {}),
+      ...(filtro.clienteId ? { clienteId: filtro.clienteId } : {}),
+      ...(filtro.descricao
+        ? { descricao: { contains: filtro.descricao, mode: 'insensitive' as const } }
+        : {}),
+    },
+    include: { cliente: { select: { id: true, nome: true, modeloOperacional: true } } },
+    orderBy: [{ dataVenc: 'asc' }],
+    take: 500,
+  })
+
+  const titulos: TituloReceber[] = linhas.map((l) => {
+    const { situacao, diasParaVencer } = situacaoDoRecebivel(l.status, l.dataVenc, hoje)
+    return {
+      id: l.id,
+      descricao: l.descricao,
+      tipo: l.tipo,
+      valor: l.valor,
+      dataVenc: l.dataVenc.toISOString().slice(0, 10),
+      dataFatura: l.dataFatura ? l.dataFatura.toISOString().slice(0, 10) : null,
+      dataPago: l.dataPago ? l.dataPago.toISOString().slice(0, 10) : null,
+      status: l.status,
+      situacao,
+      diasParaVencer,
+      notas: l.notas,
+      parcela: l.parcela,
+      totalParcel: l.totalParcel,
+      cliente: l.cliente,
+    }
+  })
+
+  const filtrados = filtro.situacao
+    ? titulos.filter((t) => t.situacao === filtro.situacao)
+    : titulos
+
+  // O resumo descreve o CONJUNTO ANTES do filtro de situação: filtrar por
+  // "vencidas" não pode fazer o total do mês mudar.
+  const soma = (p: (t: TituloReceber) => boolean) =>
+    titulos.filter(p).reduce((s, t) => s + t.valor, 0)
+
+  return {
+    titulos: filtrados,
+    resumo: {
+      total: soma(() => true),
+      pagas: soma((t) => t.situacao === 'PAGA'),
+      aReceber: soma((t) => t.situacao !== 'PAGA'),
+      vencidas: soma((t) => t.situacao === 'VENCIDA'),
+      aVencer: soma((t) => t.situacao === 'A_VENCER'),
+      titulos: filtrados.length,
+    },
+  }
+}
+
+/* ========================================================================= *
  * INADIMPLÊNCIA
  * ========================================================================= */
 

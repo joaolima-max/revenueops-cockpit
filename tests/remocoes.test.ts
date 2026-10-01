@@ -142,7 +142,7 @@ test('o Financeiro tem exatamente os sete menus da especificação, nessa ordem'
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
       'Visão Geral', 'Lançamentos', 'Contas a Receber', 'Contas a Pagar',
-      'Categorias', 'Fornecedores', 'Condições Comerciais BaaS',
+      'Categorias', 'Fornecedores', 'Condições BaaS',
     ],
   )
 })
@@ -228,4 +228,12 @@ test('quem perdeu a permissão de documentos não a recupera por padrão', () =>
 
 test('ADMIN recebe o catálogo inteiro, sem sobra nem falta', () => {
   assert.deepEqual(DEFAULT_PERMISSIONS.ADMIN, ALL_PERMISSIONS.map((p) => p.key))
+})
+
+test('o menu chama-se "Condições BaaS", nao "Condições Comerciais BaaS"', () => {
+  // O rotulo oficial encurtou. Este teste existe porque o nome antigo estava
+  // espalhado por seis arquivos e volta facil num copiar-e-colar.
+  const rotulos = activeFeatures().map((f) => f.label)
+  assert.ok(rotulos.includes('Condições BaaS'))
+  assert.ok(!rotulos.some((r) => r.includes('Condições Comerciais')))
 })

@@ -31,7 +31,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     // senhaCifrada fora do select, deliberadamente.
     select: {
       id: true, numero: true, status: true, envioId: true,
-      envio: { select: { id: true, cliente: { select: { nome: true } } } },
+      envio: { select: { id: true, cliente: { select: { nome: true } }, clienteNomeHistorico: true } },
     },
     orderBy: { numero: 'asc' },
   })

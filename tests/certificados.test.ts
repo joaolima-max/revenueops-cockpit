@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import {
   CERTIFICADOS_POR_VERSAO, numerosDaVersao, quantidadeDoTipo, parseIntervalo,
   validarEnvio, proximoIntervalo, rotuloIntervalo,
+  validarDestinatario, nomeDestinatario,
 } from '../lib/certificados'
 import { cifrar, decifrar, gerarSenha } from '../lib/crypto-certificado'
 
@@ -104,4 +105,72 @@ test('gerarSenha evita caracteres que se confundem', () => {
   const senha = gerarSenha(200)
   assert.equal(senha.length, 200)
   assert.ok(!/[0O1lI]/.test(senha))
+})
+
+/* ========================================================================= *
+ * DESTINATARIO — cliente atual ou cliente que saiu da base
+ *
+ * Ha envios historicos para empresas que nao estao mais aqui. Recriar a
+ * empresa como Cliente so para registrar o envio sujaria a Carteira com uma
+ * linha que nao e cliente — contaminando contagens, MRR e filtros.
+ * ========================================================================= */
+
+test('cliente da base: exige o id e ignora o nome historico', () => {
+  const r = validarDestinatario(false, 'cli_1', 'Nome Qualquer')
+  assert.ok('destinatario' in r)
+  assert.equal(r.destinatario.clienteId, 'cli_1')
+  assert.equal(r.destinatario.clienteNomeHistorico, null, 'com cliente real o nome digitado nao e guardado')
+})
+
+test('cliente da base sem id selecionado e recusado', () => {
+  const r = validarDestinatario(false, '', null)
+  assert.ok('erro' in r)
+  assert.match(r.erro, /Selecione o cliente/)
+})
+
+test('cliente antigo: exige o nome e NAO grava clienteId', () => {
+  const r = validarDestinatario(true, null, '  Empresa Antiga Ltda  ')
+  assert.ok('destinatario' in r)
+  assert.equal(r.destinatario.clienteId, null, 'nenhum cliente e criado nem referenciado')
+  assert.equal(r.destinatario.clienteNomeHistorico, 'Empresa Antiga Ltda', 'o nome e aparado')
+})
+
+test('cliente antigo sem nome e recusado', () => {
+  const r = validarDestinatario(true, null, '   ')
+  assert.ok('erro' in r)
+  assert.match(r.erro, /nome do cliente/i)
+})
+
+test('marcar cliente antigo descarta o clienteId que tenha vindo junto', () => {
+  // A marcacao da tela e quem decide, nao a presenca do campo no corpo —
+  // senao o estado ficaria ambiguo quando viessem os dois.
+  const r = validarDestinatario(true, 'cli_1', 'Empresa Antiga')
+  assert.ok('destinatario' in r)
+  assert.equal(r.destinatario.clienteId, null)
+  assert.equal(r.destinatario.clienteNomeHistorico, 'Empresa Antiga')
+})
+
+test('exatamente UM dos dois campos fica preenchido', () => {
+  for (const [antigo, id, nome] of [
+    [false, 'cli_1', null], [true, null, 'Antiga'],
+  ] as const) {
+    const r = validarDestinatario(antigo, id, nome)
+    assert.ok('destinatario' in r)
+    const d = r.destinatario
+    const preenchidos = [d.clienteId, d.clienteNomeHistorico].filter((x) => x !== null).length
+    assert.equal(preenchidos, 1, 'nunca os dois, nunca nenhum')
+  }
+})
+
+test('nome a exibir vem do cadastro, do historico, ou e explicito', () => {
+  assert.equal(nomeDestinatario({ cliente: { nome: 'Cliente Atual' } }), 'Cliente Atual')
+  assert.equal(nomeDestinatario({ cliente: null, clienteNomeHistorico: 'Antiga' }), 'Antiga')
+  assert.equal(nomeDestinatario({ cliente: null, clienteNomeHistorico: null }), 'Cliente nao identificado')
+})
+
+test('cadastro tem precedencia sobre o historico', () => {
+  assert.equal(
+    nomeDestinatario({ cliente: { nome: 'Atual' }, clienteNomeHistorico: 'Antiga' }),
+    'Atual',
+  )
 })

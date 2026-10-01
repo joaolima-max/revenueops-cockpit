@@ -195,7 +195,7 @@ função serve Financeiro, Cockpit e Conselho.
 | Contas a Receber | `/dashboard/financeiro/contas-receber` | `/api/financeiro/contas-receber` |
 | Categorias | `/dashboard/financeiro/categorias` | `/api/financeiro/categorias` |
 | Fornecedores | `/dashboard/financeiro/fornecedores` | `/api/financeiro/fornecedores` |
-| Condições Comerciais BaaS | `/dashboard/financeiro/condicoes-baas` | `/api/financeiro/condicoes-baas` |
+| Condições BaaS | `/dashboard/financeiro/condicoes-baas` | `/api/financeiro/condicoes-baas` |
 
 A Visão Geral usa `exact: true` no registro de módulos porque mora na raiz do
 ambiente: sem isso, casaria por prefixo com todos os menus abaixo dela.

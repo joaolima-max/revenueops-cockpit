@@ -206,13 +206,19 @@ export async function minimoContratadoDoPeriodo(periodo: string): Promise<Minimo
  * Uma nova vigencia ativa nao pode se sobrepor a outra do mesmo cliente: duas
  * exigencias validas no mesmo mes tornariam a soma consolidada uma cobranca
  * dupla do mesmo contrato.
+ *
+ * `clienteId` nulo (contrato geral legado) nao tem conflito a verificar: a
+ * sobreposicao e definida POR CLIENTE, e sem cliente nao ha com o que
+ * sobrepor. O consolidado ja trata o geral como excludente do por-cliente
+ * (ver `consolidarMinimo`).
  */
 export async function conflitoDeVigencia(
-  clienteId: string,
+  clienteId: string | null,
   vigencia: Vigencia,
   ignorarId?: string,
 ): Promise<ContratoVolumetria | null> {
   if (!vigencia.ativo) return null
+  if (clienteId === null) return null
 
   const linhas = await prisma.volumetriaMinima.findMany({
     where: { clienteId, ativo: true, ...(ignorarId ? { id: { not: ignorarId } } : {}) },

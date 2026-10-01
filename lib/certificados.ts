@@ -107,3 +107,51 @@ export function proximoIntervalo(
   }
   return null
 }
+
+/* ========================================================================= *
+ * DESTINATARIO DO ENVIO — cliente atual ou cliente antigo
+ *
+ * Ha envios historicos para empresas que nao estao mais na base. Recriar a
+ * empresa como Cliente so para registrar o envio sujaria a Carteira com uma
+ * linha que nao e cliente — contaminando contagens, MRR e filtros. Por isso o
+ * envio aceita DUAS formas de destinatario, e exatamente uma delas.
+ * ========================================================================= */
+
+export interface Destinatario {
+  /** Cliente da base. Nulo quando a empresa nao esta mais ativa. */
+  clienteId: string | null
+  /** Nome digitado. Obrigatorio quando nao ha cliente; ignorado quando ha. */
+  clienteNomeHistorico: string | null
+}
+
+/**
+ * Valida o destinatario. Devolve a mensagem de erro, ou null.
+ *
+ * `clienteAntigo` e a marcacao da tela ("Cliente nao esta mais ativo na base").
+ * E ela que decide qual dos dois campos e exigido — nao a presenca de um ou de
+ * outro no corpo, que deixaria o estado ambiguo quando viessem os dois.
+ */
+export function validarDestinatario(
+  clienteAntigo: boolean,
+  clienteId: unknown,
+  nomeHistorico: unknown,
+): { erro: string } | { destinatario: Destinatario } {
+  if (clienteAntigo) {
+    const nome = String(nomeHistorico ?? '').trim()
+    if (!nome) {
+      return { erro: 'Informe o nome do cliente. Mesmo fora da base, o envio precisa dizer para quem foi.' }
+    }
+    return { destinatario: { clienteId: null, clienteNomeHistorico: nome.slice(0, 200) } }
+  }
+
+  const id = String(clienteId ?? '').trim()
+  if (!id) return { erro: 'Selecione o cliente.' }
+  return { destinatario: { clienteId: id, clienteNomeHistorico: null } }
+}
+
+/** Nome a exibir, venha de onde vier. Nunca devolve vazio. */
+export function nomeDestinatario(
+  envio: { cliente?: { nome: string } | null; clienteNomeHistorico?: string | null },
+): string {
+  return envio.cliente?.nome ?? envio.clienteNomeHistorico ?? 'Cliente nao identificado'
+}

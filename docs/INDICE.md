@@ -1,6 +1,12 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V17.md`](./RODADA-V17.md)** — a rodada mais recente.
+> **Comece por [`RODADA-V18.md`](./RODADA-V18.md)** — a rodada mais recente:
+> RLS fechada no banco (a leitura pública de dados privados estava aberta),
+> **Acompanhamento de metas** no Cockpit (projetado × realizado, pacing),
+> o menu passa a ser **Condições BaaS**, certificado para **cliente que saiu
+> da base**, e Contas a Receber / Tarefas / Follow-ups padronizadas.
+>
+> Antes dela, [`RODADA-V17.md`](./RODADA-V17.md).
 > Nela: Ganho e Perdido deixam de ser etapas do Pipeline e viram **resultado**
 > do card (que perdeu o valor financeiro); Metas ganham **direção** e
 > **unidade** (meta de MED em 2%); Lançamentos ganham data de vencimento,
@@ -58,7 +64,8 @@ Arquivo principal: **`DOCUMENTACAO-COMPLETA.md`** (29 capítulos)
 
 | Arquivo | Conteúdo |
 |---|---|
-| `docs/RODADA-V17.md` | **a rodada mais recente** — pipeline, metas, financeiro, marca |
+| `docs/RODADA-V18.md` | **a rodada mais recente** — RLS, metas analytics, Condições BaaS, certificados |
+| `docs/RODADA-V17.md` | pipeline por resultado, metas com direção, financeiro, marca |
 | `docs/RODADA-V16.md` | rodada anterior — remoção de ambientes, incidentes, financeiro |
 | `docs/DOCUMENTACAO-COMPLETA.md` | documento integral, editável |
 | `docs/RESUMO-EXECUTIVO.md` | 2 páginas para diretoria e conselho |

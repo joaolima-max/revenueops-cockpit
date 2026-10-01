@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/permissions'
 import { notificar } from '@/lib/notificacoes'
 import {
   validarEnvio, quantidadeDoTipo, parseIntervalo, rotuloIntervalo,
+  validarDestinatario, nomeDestinatario,
   CERTIFICADOS_POR_VERSAO, type EnvioTipo,
 } from '@/lib/certificados'
 
@@ -37,6 +38,9 @@ export async function GET(request: NextRequest) {
     envios: envios.map((e) => ({
       ...e,
       referencia: rotuloIntervalo(e.versao.identificacao, e.numeroInicial, e.numeroFinal),
+      // Nome unico para a tela, venha do cadastro ou do historico.
+      destinatario: nomeDestinatario(e),
+      clienteAntigo: e.clienteId === null,
     })),
   })
 }
@@ -54,9 +58,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
-  const { clienteId, versaoId, tipo, intervalo, observacao } = await request.json()
+  const {
+    clienteId, versaoId, tipo, intervalo, observacao,
+    clienteAntigo, clienteNomeHistorico,
+  } = await request.json()
 
-  if (!clienteId) return NextResponse.json({ error: 'Selecione o cliente.' }, { status: 400 })
+  // Cliente atual OU cliente antigo — exatamente um dos dois.
+  const alvo = validarDestinatario(clienteAntigo === true, clienteId, clienteNomeHistorico)
+  if ('erro' in alvo) return NextResponse.json({ error: alvo.erro }, { status: 400 })
+  const destinatario = alvo.destinatario
+
   if (!versaoId) return NextResponse.json({ error: 'Selecione a versão.' }, { status: 400 })
   if (!TIPOS.includes(tipo)) return NextResponse.json({ error: 'Tipo de envio inválido.' }, { status: 400 })
 
@@ -68,10 +79,19 @@ export async function POST(request: NextRequest) {
   }
 
   const [cliente, versao] = await Promise.all([
-    prisma.cliente.findUnique({ where: { id: clienteId }, select: { id: true, nome: true, ownerId: true, gestorId: true } }),
+    destinatario.clienteId
+      ? prisma.cliente.findUnique({
+          where: { id: destinatario.clienteId },
+          select: { id: true, nome: true, ownerId: true, gestorId: true },
+        })
+      : Promise.resolve(null),
     prisma.certificadoVersao.findUnique({ where: { id: versaoId }, select: { id: true, identificacao: true, status: true } }),
   ])
-  if (!cliente) return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 })
+  // So exige existencia quando o envio aponta para um cliente da base. O
+  // cliente antigo nao e procurado nem criado: ele nao esta mais aqui.
+  if (destinatario.clienteId && !cliente) {
+    return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 })
+  }
   if (!versao) return NextResponse.json({ error: 'Versão não encontrada.' }, { status: 404 })
   if (versao.status === 'CANCELADA') {
     return NextResponse.json({ error: 'Esta versão está cancelada.' }, { status: 409 })
@@ -96,7 +116,8 @@ export async function POST(request: NextRequest) {
   const envio = await prisma.$transaction(async (tx) => {
     const e = await tx.certificadoEnvio.create({
       data: {
-        clienteId,
+        clienteId: destinatario.clienteId,
+        clienteNomeHistorico: destinatario.clienteNomeHistorico,
         versaoId,
         tipo,
         quantidade: quantidadeDoTipo(tipo),
@@ -122,24 +143,28 @@ export async function POST(request: NextRequest) {
 
   const referencia = rotuloIntervalo(versao.identificacao, faixa.inicial, faixa.final)
 
+  const nomeAlvo = cliente?.nome ?? destinatario.clienteNomeHistorico ?? '—'
   await logAudit(
     session.userId, 'ENVIOU_CERTIFICADOS', 'CertificadoEnvio', envio.id,
-    `${cliente.nome} · ${referencia}`,
+    `${nomeAlvo}${destinatario.clienteId ? '' : ' (cliente fora da base)'} · ${referencia}`,
   )
 
   // Quem cuida da carteira precisa saber que o cliente recebeu certificados.
-  const avisar = [...new Set([cliente.gestorId, cliente.ownerId].filter((u): u is string => !!u))]
-    .filter((u) => u !== session.userId)
+  // Cliente fora da base nao tem gestor nem dono — nao ha quem avisar.
+  if (cliente) {
+    const avisar = [...new Set([cliente.gestorId, cliente.ownerId].filter((u): u is string => !!u))]
+      .filter((u) => u !== session.userId)
 
-  await notificar(avisar.map((destinatarioId) => ({
-    destinatarioId,
-    titulo: 'Certificados enviados',
-    mensagem: `${cliente.nome} recebeu ${quantidadeDoTipo(tipo)} certificado(s). ${referencia}.`,
-    origem: 'CERTIFICADO' as const,
-    entidade: 'CertificadoEnvio',
-    entidadeId: envio.id,
-    href: '/dashboard/certificados',
-  })))
+    await notificar(avisar.map((destinatarioId) => ({
+      destinatarioId,
+      titulo: 'Certificados enviados',
+      mensagem: `${cliente.nome} recebeu ${quantidadeDoTipo(tipo)} certificado(s). ${referencia}.`,
+      origem: 'CERTIFICADO' as const,
+      entidade: 'CertificadoEnvio',
+      entidadeId: envio.id,
+      href: '/dashboard/certificados',
+    })))
+  }
 
   return NextResponse.json({ envio, referencia, restantes: CERTIFICADOS_POR_VERSAO }, { status: 201 })
 }

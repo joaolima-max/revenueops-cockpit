@@ -91,7 +91,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-8 pt-6 border-t border-line t-label text-subtle text-center">
-            Acesso restrito · Bass Pago RevOps
+            Acesso restrito
           </p>
         </div>
       </div>

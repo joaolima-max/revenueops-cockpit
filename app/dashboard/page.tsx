@@ -6,29 +6,20 @@ import {
   kpisDoPeriodo, metasDoPeriodo, indicadoresEstrutura,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
-import { formatMesRef, META_TIPO_LABELS } from '@/lib/utils'
+import { formatMesRef } from '@/lib/utils'
 import {
   figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem, variacao,
 } from '@/lib/format-financeiro'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
+import MetaAnalytics from '@/components/dashboard/MetaAnalytics'
+import { avaliarCompleto } from '@/lib/metas'
 import PageHeader from '@/components/dashboard/PageHeader'
-import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
-import StatTile, { MetaBar } from '@/components/ui/StatTile'
+import HairlineGrid from '@/components/ui/HairlineGrid'
+import StatTile from '@/components/ui/StatTile'
 import Panel from '@/components/ui/Panel'
 import { PanelHeader } from '@/components/ui/Panel'
 import Badge from '@/components/ui/Badge'
-import EmptyState, { NoData } from '@/components/ui/EmptyState'
-import Figure from '@/components/ui/Figure'
-
-/**
- * A meta é formatada pela sua UNIDADE, não pelo tipo: é o que permite uma meta
- * percentual (MED = 2%) conviver com uma monetária (TPV) na mesma faixa.
- */
-function formatarMeta(unidade: 'VALOR' | 'QUANTIDADE' | 'PERCENTUAL', valor: number) {
-  if (unidade === 'PERCENTUAL') return figuraPercentual(valor, 2)
-  if (unidade === 'QUANTIDADE') return figuraQuantidade(valor)
-  return figuraMoeda(valor)
-}
+import EmptyState from '@/components/ui/EmptyState'
 
 export default async function DashboardPage() {
   const session = await getSession()
@@ -92,9 +83,9 @@ export default async function DashboardPage() {
     { label: 'Clientes ativos', fig: estrutura.clientesAtivos === null ? null : figuraContagem(estrutura.clientesAtivos),
       note: 'Lançamento diário · fotografia do último dia informado' },
     { label: 'BaaS ativos', fig: figuraContagem(estrutura.baasAtivos),
-      note: 'Condições Comerciais BaaS' },
+      note: 'Condições BaaS' },
     { label: 'White Labels ativos', fig: figuraContagem(estrutura.whiteLabelsAtivos),
-      note: 'Condições Comerciais BaaS' },
+      note: 'Condições BaaS' },
   ]
 
   // Só séries com FONTE REAL. O Float saiu do Cockpit, e "previsto" não existe
@@ -109,6 +100,20 @@ export default async function DashboardPage() {
       takeRate: k.takeRate ?? 0,
     }
   })
+
+  /**
+   * Avaliação completa de cada meta — comparação, gap, cumprimento, direção e
+   * ritmo. Uma única função produz tudo (lib/metas.ts), e é a MESMA que a tela
+   * de Metas usa: os dois lugares não têm como discordar.
+   */
+  const avaliacoes = metas.map((m) => avaliarCompleto({
+    tipo: m.tipo,
+    periodo,
+    meta: m.meta,
+    realizado: m.realizado,
+    direcao: m.direcao,
+    unidade: m.unidade,
+  }))
 
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -166,42 +171,10 @@ export default async function DashboardPage() {
         </HairlineGrid>
       </section>
 
-      {metas.length > 0 && (
-        <section className="space-y-4">
-          {/* A meta é o esperado; o realizado vem do lançamento diário. Nenhum
-              dos dois é digitado nesta tela. */}
-          <PanelHeader title="Meta × Realizado" sub={`${formatMesRef(periodo)} · realizado apurado do lançamento diário`} />
-          <HairlineGrid cols={5}>
-            {metas.map((m) => {
-              const rotulo = META_TIPO_LABELS[m.tipo] ?? m.tipo
-              return (
-                <HairlineCell key={m.tipo} className="gap-2.5">
-                  <p className="t-label text-subtle bp-truncate" title={rotulo}>{rotulo}</p>
-                  {m.realizado === null
-                    ? <NoData />
-                    : <Figure figura={formatarMeta(m.unidade, m.realizado)} size="sm" />}
-                  <p className="t-sm text-subtle">
-                    meta {formatarMeta(m.unidade, m.meta).completo}
-                    {m.direcao === 'MENOR_MELHOR' && <span className="text-subtle/70"> · menor é melhor</span>}
-                  </p>
-                  <div className="mt-auto pt-2 space-y-2">
-                    {/* A barra mostra CUMPRIMENTO, que já respeita a direção da
-                        meta: 100% é "no alvo" tanto para TPV quanto para MED. */}
-                    <MetaBar pct={m.atingimento} />
-                    <p className={
-                      m.situacao === 'SEM_REALIZADO' ? 't-mono text-subtle'
-                        : m.positivo ? 't-mono text-pos'
-                        : (m.atingimento ?? 0) >= 70 ? 't-mono text-warn' : 't-mono text-neg'
-                    }>
-                      {m.atingimento === null ? '—' : `${m.atingimento.toFixed(0)}% de cumprimento`}
-                    </p>
-                  </div>
-                </HairlineCell>
-              )
-            })}
-          </HairlineGrid>
-        </section>
-      )}
+      {/* ACOMPANHAMENTO DE METAS — projetado × realizado, progresso, pacing e
+          atingimento por KPI, numa composição só. Toda a matemática vem de
+          `avaliarCompleto`; esta tela não calcula nada por conta própria. */}
+      <MetaAnalytics avaliacoes={avaliacoes} periodoLabel={formatMesRef(periodo)} />
 
       <DashboardCharts
         chartData={chartData}

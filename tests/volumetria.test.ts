@@ -112,3 +112,23 @@ test('contrato de cliente tem precedencia sobre o legado do mesmo mes', () => {
 test('ausencia de contrato e null, nunca zero', () => {
   assert.equal(consolidarMinimo([], REF), null)
 })
+
+/* ── Conflito de vigencia sem cliente ────────────────────────────────────── */
+
+test('contrato sem cliente nao tem conflito de vigencia a verificar', async () => {
+  // `conflitoDeVigencia` consulta o banco quando ha cliente. Sem cliente ela
+  // decide antes de consultar: sobreposicao e definida POR CLIENTE, e sem
+  // cliente nao ha com o que sobrepor. Era isso que impedia editar o contrato
+  // geral legado sem explodir numa consulta por `clienteId: null`.
+  const { conflitoDeVigencia } = await import('../lib/volumetria')
+  const r = await conflitoDeVigencia(null, { periodo: '2026-01', vigenciaFim: null, ativo: true })
+  assert.equal(r, null)
+})
+
+test('vigencia inativa nunca conflita, com ou sem cliente', async () => {
+  const { conflitoDeVigencia } = await import('../lib/volumetria')
+  assert.equal(
+    await conflitoDeVigencia(null, { periodo: '2026-01', vigenciaFim: null, ativo: false }),
+    null,
+  )
+})

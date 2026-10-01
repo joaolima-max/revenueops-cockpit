@@ -159,7 +159,7 @@ export default function VolumetriaClient(
 
   async function alternarAtivo(c: Contrato) {
     const acao = c.ativo ? 'Inativar' : 'Reativar'
-    if (!confirm(`${acao} a volumetria de ${c.clienteNome} com vigência a partir de ${formatMesRef(c.vigenciaInicio)}?\n\nO histórico é preservado.`)) return
+    if (!confirm(`${acao} a volumetria de ${c.clienteNome ?? 'contrato geral'} com vigência a partir de ${formatMesRef(c.vigenciaInicio)}?\n\nO histórico é preservado.`)) return
     const res = await fetch(`/api/volumetria/${c.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -179,7 +179,7 @@ export default function VolumetriaClient(
    */
   async function excluir(c: Contrato) {
     const ok = confirm(
-      `Excluir definitivamente a volumetria de ${c.clienteNome}?\n\n` +
+      `Excluir definitivamente a volumetria de ${c.clienteNome ?? 'contrato geral'}?\n\n` +
       `Mínimo de ${c.qtdMinima.toLocaleString('pt-BR')} transações, vigência a partir de ` +
       `${formatMesRef(c.vigenciaInicio)}${c.vigenciaFim ? ` até ${formatMesRef(c.vigenciaFim)}` : ' por prazo indeterminado'}.\n\n` +
       `O contrato deixa de compor o mínimo consolidado dos meses que ele cobria, inclusive os já fechados. ` +
@@ -195,8 +195,8 @@ export default function VolumetriaClient(
     carregar()
   }
 
-  const inp = 'w-full bg-bg border border-line rounded-lg px-3 py-2 t-body text-fg focus:outline-none focus:border-accent'
-  const lbl = 'block t-label text-subtle mb-1.5'
+  const inp = 'bp-field'
+  const lbl = 'bp-field-label'
 
   const cons = consolidado ? TOM_CONSOLIDADO[consolidado.status] : null
 
@@ -210,7 +210,7 @@ export default function VolumetriaClient(
             <input
               type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)}
               aria-label="Período de referência"
-              className="bg-surface border border-line rounded-lg px-3 py-2 t-sm text-muted focus:outline-none focus:border-accent"
+              className="bp-field w-auto"
             />
             {podeCriar && <Button variant="primary" onClick={abrirNovo}>+ Nova configuração</Button>}
           </>
@@ -236,30 +236,29 @@ export default function VolumetriaClient(
         {cons && <Badge tone={cons.tone}>{cons.label}</Badge>}
       </Panel>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar cliente..." aria-label="Buscar cliente"
-          className="flex-1 min-w-[14rem] bg-surface border border-line rounded-lg px-3 py-2 t-sm text-fg focus:outline-none focus:border-accent"
-        />
-        <select
-          value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} aria-label="Filtrar por cliente"
-          className="bg-surface border border-line rounded-lg px-3 py-2 t-sm text-muted focus:outline-none focus:border-accent"
-        >
-          <option value="">Todos os clientes</option>
-          {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-        </select>
-        <select
-          value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} aria-label="Filtrar por status"
-          className="bg-surface border border-line rounded-lg px-3 py-2 t-sm text-muted focus:outline-none focus:border-accent"
-        >
-          <option value="">Todos os status</option>
-          {Object.entries(VOLUMETRIA_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-      </div>
+      <Panel padded={false}>
+        <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <input
+            type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar cliente…" aria-label="Buscar cliente" className="bp-field"
+          />
+          <select value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)}
+            aria-label="Filtrar por cliente" className="bp-field">
+            <option value="">Todos os clientes</option>
+            {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
+            aria-label="Filtrar por status" className="bp-field">
+            <option value="">Todos os status</option>
+            {Object.entries(VOLUMETRIA_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </Panel>
 
       {carregando ? (
-        <p className="t-sm text-subtle">Carregando...</p>
+        <TableShell><div className="p-5 space-y-3">
+          {Array.from({ length: 4 }, (_, i) => <div key={i} className="bp-skeleton h-10" />)}
+        </div></TableShell>
       ) : visiveis.length === 0 && !busca && !filtroCliente && !filtroStatus ? (
         <Panel padded={false}>
           <EmptyState
@@ -297,17 +296,17 @@ export default function VolumetriaClient(
                   </Td>
                   {podeAdministrar && (
                     <Td align="right">
-                      {c.legado ? (
-                        <span className="t-sm text-subtle">somente leitura</span>
-                      ) : (
-                        <div className="inline-flex gap-2">
-                          <Button size="sm" onClick={() => abrirEdicao(c)}>Editar</Button>
-                          <Button size="sm" variant={c.ativo ? 'danger' : 'subtle'} onClick={() => alternarAtivo(c)}>
-                            {c.ativo ? 'Inativar' : 'Reativar'}
-                          </Button>
-                          <Button size="sm" variant="danger" onClick={() => excluir(c)}>Excluir</Button>
-                        </div>
-                      )}
+                      {/* O contrato geral legado TAMBEM e editavel e excluivel.
+                          Ele era somente leitura, e como a unica volumetria
+                          existente e justamente uma linha legada, o CRUD
+                          inteiro ficava inacessivel. */}
+                      <div className="inline-flex gap-2">
+                        <Button size="sm" onClick={() => abrirEdicao(c)}>Editar</Button>
+                        <Button size="sm" variant={c.ativo ? 'danger' : 'subtle'} onClick={() => alternarAtivo(c)}>
+                          {c.ativo ? 'Inativar' : 'Reativar'}
+                        </Button>
+                        <Button size="sm" variant="danger" onClick={() => excluir(c)}>Excluir</Button>
+                      </div>
                     </Td>
                   )}
                 </Row>
@@ -325,7 +324,7 @@ export default function VolumetriaClient(
           <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-line">
               <h2 className="t-h2 text-fg">
-                {modal === 'novo' ? 'Nova volumetria mínima' : `Editar — ${modal.clienteNome}`}
+                {modal === 'novo' ? 'Nova volumetria mínima' : `Editar — ${modal.clienteNome ?? 'contrato geral'}`}
               </h2>
               <button onClick={() => setModal(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
             </div>
@@ -336,18 +335,37 @@ export default function VolumetriaClient(
               )}
 
               <div>
-                <label className={lbl} htmlFor="vol-cliente">Cliente *</label>
+                <label className={lbl} htmlFor="vol-cliente">
+                  Cliente {modal === 'novo' ? '*' : ''}
+                </label>
                 <select
-                  id="vol-cliente" required disabled={modal !== 'novo'} value={form.clienteId}
+                  id="vol-cliente" value={form.clienteId}
+                  /* Obrigatório só na criação. No legado, ficar sem cliente é
+                     um estado válido que já existe — forçar a adoção
+                     impediria uma simples correção de quantidade. */
+                  required={modal === 'novo'}
+                  disabled={modal !== 'novo' && !modal.legado}
                   onChange={(e) => setForm((p) => ({ ...p, clienteId: e.target.value }))}
                   className={`${inp} disabled:opacity-50`}
                 >
-                  <option value="">Selecione um cliente</option>
+                  <option value="">
+                    {modal !== 'novo' && modal.legado
+                      ? 'Manter sem cliente (contrato geral)'
+                      : 'Selecione um cliente'}
+                  </option>
                   {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
-                {modal !== 'novo' && (
-                  <p className="t-sm text-subtle mt-1">
-                    O cliente não muda depois de criado — isso reescreveria o histórico.
+                {modal !== 'novo' && modal.legado && (
+                  <p className="t-label text-subtle mt-1.5">
+                    Este é um contrato geral antigo, sem cliente. Escolher um cliente aqui o
+                    adota no modelo atual — é o que destrava a vigência aberta e o cálculo por
+                    cliente. Se preferir apenas tirá-lo de uso, use Inativar ou Excluir na lista.
+                  </p>
+                )}
+                {modal !== 'novo' && !modal.legado && (
+                  <p className="t-label text-subtle mt-1.5">
+                    O cliente não muda depois de vinculado — isso moveria a exigência contratual
+                    de uma empresa para outra.
                   </p>
                 )}
               </div>

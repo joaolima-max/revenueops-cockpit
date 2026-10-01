@@ -305,7 +305,7 @@ categoria, e agora pode ser vinculado a uma despesa.
 
 ---
 
-## 5. Condições Comerciais BaaS e MRR
+## 5. Condições BaaS e MRR
 
 O cadastro ganhou dois campos:
 

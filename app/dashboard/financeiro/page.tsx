@@ -161,7 +161,7 @@ export default async function FinanceiroVisaoGeralPage({
             {receitaPorBaas.length === 0 ? (
               <div className="min-h-[13rem] flex items-center justify-center">
                 <EmptyState compact title="Nenhum BaaS ativo"
-                  description="Cadastre em Condições Comerciais BaaS." />
+                  description="Cadastre em Condições BaaS." />
               </div>
             ) : (
               <Donut rotuloTotal="Receita BaaS" fatias={paraFatia(receitaPorBaas)} />
@@ -179,7 +179,7 @@ export default async function FinanceiroVisaoGeralPage({
             {receitaPorWhiteLabel.length === 0 ? (
               <div className="min-h-[13rem] flex items-center justify-center">
                 <EmptyState compact title="Nenhum White Label ativo"
-                  description="Cadastre em Condições Comerciais BaaS." />
+                  description="Cadastre em Condições BaaS." />
               </div>
             ) : (
               <Donut rotuloTotal="Receita WL" fatias={paraFatia(receitaPorWhiteLabel)} />
@@ -238,7 +238,7 @@ export default async function FinanceiroVisaoGeralPage({
             {' '}— receita, despesa, resultado, Float, Setup, Sustentação e o vínculo com BaaS/White Label.
           </li>
           <li>
-            <Link href="/dashboard/financeiro/condicoes-baas" className="text-accent-soft hover:underline">Condições Comerciais BaaS</Link>
+            <Link href="/dashboard/financeiro/condicoes-baas" className="text-accent-soft hover:underline">Condições BaaS</Link>
             {' '}— sustentação, API mensal, mensalidade de conta ativa e data de início da sustentação.
           </li>
           <li>

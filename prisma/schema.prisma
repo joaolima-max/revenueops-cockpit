@@ -908,22 +908,35 @@ model Certificado {
 }
 
 /// Distribuicao ao cliente: UNICO = 1 certificado, LOTE = 10.
+///
+/// CLIENTE ANTIGO: ha envios historicos para empresas que nao estao mais na
+/// base. `clienteId` e nulavel por causa deles — a alternativa seria recriar
+/// um Cliente so para registrar o envio, e isso sujaria a Carteira com uma
+/// empresa que nao e cliente. Quando `clienteId` e nulo, `clienteNomeHistorico`
+/// guarda o nome digitado, e e ele que a tela mostra.
+///
+/// Exatamente UM dos dois esta preenchido. A regra e aplicada na API
+/// (`validarDestinatario` em lib/certificados.ts), nao por constraint: o
+/// Postgres nao expressa "ou um ou outro" sem CHECK, e um CHECK aqui
+/// impediria a correcao de uma linha historica importada errada.
 model CertificadoEnvio {
-  id            String                 @id @default(cuid())
-  clienteId     String
-  cliente       Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  versaoId      String
-  versao        CertificadoVersao      @relation(fields: [versaoId], references: [id])
-  tipo          CertificadoEnvioTipo
-  quantidade    Int
-  numeroInicial Int
-  numeroFinal   Int
-  status        CertificadoEnvioStatus @default(ENVIADO)
-  observacao    String?
-  enviadoPorId  String
-  enviadoPor    User                   @relation(fields: [enviadoPorId], references: [id])
-  enviadoEm     DateTime               @default(now())
-  canceladoEm   DateTime?
+  id                   String                 @id @default(cuid())
+  clienteId            String?
+  cliente              Cliente?               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// Nome da empresa quando ela nao esta mais na base. Nulo em envio normal.
+  clienteNomeHistorico String?
+  versaoId             String
+  versao               CertificadoVersao      @relation(fields: [versaoId], references: [id])
+  tipo                 CertificadoEnvioTipo
+  quantidade           Int
+  numeroInicial        Int
+  numeroFinal          Int
+  status               CertificadoEnvioStatus @default(ENVIADO)
+  observacao           String?
+  enviadoPorId         String
+  enviadoPor           User                   @relation(fields: [enviadoPorId], references: [id])
+  enviadoEm            DateTime               @default(now())
+  canceladoEm          DateTime?
 
   certificados Certificado[]
 

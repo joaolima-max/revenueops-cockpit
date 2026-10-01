@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { hasPermission } from '@/lib/permissions'
-import { rotuloIntervalo } from '@/lib/certificados'
+import { rotuloIntervalo, nomeDestinatario } from '@/lib/certificados'
 
 /**
  * Cancela um envio e devolve os certificados ao estoque. Nada é apagado: o
@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   await logAudit(
     session.userId, 'CANCELOU_ENVIO_CERTIFICADOS', 'CertificadoEnvio', id,
-    `${envio.cliente.nome} · ${rotuloIntervalo(envio.versao.identificacao, envio.numeroInicial, envio.numeroFinal)}`,
+    `${nomeDestinatario(envio)} · ${rotuloIntervalo(envio.versao.identificacao, envio.numeroInicial, envio.numeroFinal)}`,
   )
 
   return NextResponse.json({ ok: true })
