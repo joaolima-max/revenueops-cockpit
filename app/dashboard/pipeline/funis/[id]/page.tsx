@@ -12,7 +12,7 @@ export default async function FunilDetailPage({ params }: { params: Promise<{ id
 
   const { id } = await params
   const acesso = await acessoAoFunil(session, id)
-  if (!acesso) redirect('/dashboard/funis')
+  if (!acesso) redirect('/dashboard/pipeline/funis')
   if (!acesso.administrar) redirect('/dashboard/pipeline')
 
   return <FunilDetailClient funilId={id} />

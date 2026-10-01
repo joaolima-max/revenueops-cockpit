@@ -34,6 +34,16 @@ export interface Feature {
    * Financeiro (`/dashboard/financeiro`) — para que não engulam os menus que
    * ficam abaixo delas. */
   exact?: boolean
+  /**
+   * Função REGISTRADA mas fora da sidebar.
+   *
+   * Existe para a administração de funis: ela deixou de ser um menu e virou
+   * uma área interna do Pipeline, mas continua precisando do registro — é ele
+   * que aplica a restrição de ADMIN à rota e às APIs (`checkAccess`). Apagar a
+   * entrada em vez de ocultá-la liberaria `/api/pipeline/funis` para qualquer
+   * usuário autenticado, porque caminho não registrado é caminho permitido.
+   */
+  oculto?: boolean
 }
 
 export interface Module {
@@ -88,9 +98,11 @@ export const MODULES: Module[] = [
     label: 'OPERAÇÕES',
     enabled: true,
     features: [
+      // As métricas operacionais deixaram de ser um menu: elas são derivadas
+      // dos incidentes, e separá-las obrigava a abrir duas telas para ler o
+      // mesmo fato. Agora moram no topo de Incidentes, acima do registro.
       { key: 'operacoes.incidentes', label: 'Incidentes', route: '/dashboard/incidentes', api: ['/api/incidentes'], enabled: true },
       { key: 'operacoes.tarefas', label: 'Tarefas', route: '/dashboard/tarefas', api: ['/api/tarefas'], enabled: true },
-      { key: 'operacoes.metricas', label: 'Métricas Op.', route: '/dashboard/metricas-op', enabled: true },
       { key: 'operacoes.compliance', label: 'Compliance', route: '/dashboard/compliance', api: ['/api/compliance'], enabled: true },
     ],
   },
@@ -99,18 +111,21 @@ export const MODULES: Module[] = [
     label: 'COMERCIAL',
     enabled: true,
     features: [
-      // Pipeline e Funis sao ambientes DISTINTOS e moram em rotas IRMAS.
-      //
-      // Enquanto Funis vivia em /dashboard/pipeline/funis, o casamento por
-      // prefixo fazia a rota de Funis responder tambem como Pipeline: na
-      // sidebar os dois itens acendiam juntos, abrir Funis marcava Pipeline
-      // como ambiente corrente, e o proxy nao conseguia aplicar a restricao de
-      // ADMIN so ao segundo. Rotas irmas resolvem os tres de uma vez.
+      // A analítica do Pipeline abre o ambiente: a pergunta "como está o
+      // comercial" vem antes de "o que fazer com este card".
+      { key: 'comercial.crm', label: 'Visão geral', route: '/dashboard/crm', api: ['/api/crm'], enabled: true },
       { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline/board', '/api/pipeline/cards'], enabled: true },
-      { key: 'comercial.funis', label: 'Funis', route: '/dashboard/funis', api: ['/api/pipeline/funis', '/api/pipeline/etapas'], enabled: true, roles: ['ADMIN'] },
+      // FUNIS NÃO É MENU. A administração de funis virou área interna do
+      // Pipeline, em `/dashboard/pipeline/funis`. O registro permanece —
+      // `oculto` tira da sidebar sem tirar do controle de acesso, e é ele que
+      // mantém a rota e as APIs restritas a ADMIN.
+      {
+        key: 'comercial.funis', label: 'Funis', route: '/dashboard/pipeline/funis',
+        api: ['/api/pipeline/funis', '/api/pipeline/etapas'],
+        enabled: true, roles: ['ADMIN'], oculto: true,
+      },
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.followup', label: 'Follow-up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
-      { key: 'comercial.crm', label: 'CRM', route: '/dashboard/crm', api: ['/api/crm'], enabled: true },
     ],
   },
   {
@@ -187,7 +202,7 @@ export function navigationFor(role: string): Array<{ key: string; label: string;
     .map((m) => ({
       key: m.key,
       label: m.label,
-      items: activeFeatures().filter((f) => f.moduleKey === m.key && roleAllowed(f, role)),
+      items: activeFeatures().filter((f) => f.moduleKey === m.key && !f.oculto && roleAllowed(f, role)),
     }))
     .filter((section) => section.items.length > 0)
 }
@@ -198,7 +213,9 @@ export function navigationFor(role: string): Array<{ key: string; label: string;
  * desligado, caso em que redirecionar para `/dashboard` criaria um loop.
  */
 export function firstAvailableRoute(role?: string): string | null {
-  const feature = activeFeatures().find((f) => roleAllowed(f, role))
+  // Destino de fallback precisa ser uma tela de menu — mandar o usuário para
+  // uma área interna seria levá-lo a um lugar sem caminho de volta.
+  const feature = activeFeatures().find((f) => !f.oculto && roleAllowed(f, role))
   return feature?.route ?? null
 }
 
@@ -230,5 +247,11 @@ export function checkAccess(pathname: string, role?: string): AccessVerdict {
   const active = activeFeatures().filter(matches)
   if (active.length === 0) return 'disabled'
 
-  return active.some((f) => roleAllowed(f, role)) ? 'allow' : 'forbidden'
+  /**
+   * `/dashboard/pipeline/funis` casa com DUAS funções: Pipeline (por prefixo) e
+   * Funis (exata). Quem decide é a MAIS ESPECÍFICA — senão a permissão aberta
+   * do Pipeline anularia a restrição de ADMIN da administração de funis.
+   */
+  const maisEspecifica = active.reduce((a, b) => (b.route.length > a.route.length ? b : a))
+  return roleAllowed(maisEspecifica, role) ? 'allow' : 'forbidden'
 }

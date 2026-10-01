@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { formatDate, INCIDENTE_CRITICIDADE_LABELS, INCIDENTE_CRITICIDADE_COLORS } from '@/lib/utils'
 import { CRITICIDADES, calcularDowntime } from '@/lib/incidentes'
 import Button from '@/components/ui/Button'
+import { PanelHeader } from '@/components/ui/Panel'
 
 interface Incidente {
   id: string
@@ -128,22 +129,15 @@ export default function IncidentesClient({ initial, podeRegistrar, podeAdministr
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="t-h1 text-fg">Incidentes Operacionais</h1>
-          <p className="text-subtle text-sm mt-0.5">
-            Registro de ocorrências. O downtime é calculado do início ao encerramento.
-          </p>
-        </div>
-        {podeRegistrar && (
-          <button
-            onClick={abrirNovo}
-            className="bp-btn-primary flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            + Novo Incidente
-          </button>
-        )}
-      </div>
+      {/* A metade de baixo da tela: o REGISTRO. As métricas ficam acima,
+          derivadas desta mesma lista. */}
+      <PanelHeader
+        title="Registro de incidentes"
+        sub="O downtime é calculado do início ao encerramento — nunca informado à mão."
+        actions={podeRegistrar
+          ? <Button variant="primary" onClick={abrirNovo}>+ Novo incidente</Button>
+          : undefined}
+      />
 
       {abertos > 0 && (
         <div className="bg-neg/10 border border-neg/20 rounded-xl p-4 flex items-center gap-3">

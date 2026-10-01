@@ -20,6 +20,7 @@ type Natureza = 'FLOAT' | 'SETUP' | 'SUSTENTACAO' | null
 interface Categoria { id: string; nome: string; tipo: Tipo; natureza: Natureza; ativo: boolean }
 interface Fornecedor { id: string; razaoSocial: string; ativo: boolean }
 interface Parceiro { id: string; nomeFantasia: string; tipo: 'BAAS' | 'WHITE_LABEL'; ativo: boolean }
+interface Cliente { id: string; nome: string }
 
 interface Anexo {
   id: string
@@ -75,6 +76,9 @@ const FORM_VAZIO = {
   duracao: 'INDEFINIDA' as 'INDEFINIDA' | 'ATE_DATA',
   recorrenciaFim: '',
   fornecedorId: '', condicaoId: '',
+  /* RECEITA: cliente e geracao do titulo a receber. Contas a Receber nao
+     cadastra — o recebivel nasce aqui. */
+  clienteId: '', gerarRecebivel: false,
 }
 
 const FILTRO_VAZIO = { descricao: '', categoriaId: '', de: '', ate: '', valorMin: '', valorMax: '' }
@@ -98,6 +102,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [parceiros, setParceiros] = useState<Parceiro[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [filtro, setFiltro] = useState(FILTRO_VAZIO)
   const [carregando, setCarregando] = useState(true)
 
@@ -151,12 +156,14 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       fetch('/api/financeiro/categorias').then((r) => (r.ok ? r.json() : { categorias: [] })),
       fetch('/api/financeiro/fornecedores').then((r) => (r.ok ? r.json() : { fornecedores: [] })),
       fetch('/api/financeiro/condicoes-baas').then((r) => (r.ok ? r.json() : { condicoes: [] })),
+      fetch('/api/clientes').then((r) => (r.ok ? r.json() : { clientes: [] })),
     ])
-      .then(([cat, forn, cond]) => {
+      .then(([cat, forn, cond, cli]) => {
         if (!vivo) return
         setCategorias(cat.categorias ?? [])
         setFornecedores(forn.fornecedores ?? [])
         setParceiros(cond.condicoes ?? [])
+        setClientes(cli.clientes ?? [])
       })
       .catch(() => {})
     return () => { vivo = false }
@@ -186,6 +193,10 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       recorrenciaFim: l.recorrenciaFim?.slice(0, 10) ?? '',
       fornecedorId: l.fornecedor?.id ?? '',
       condicaoId: l.condicao?.id ?? '',
+      // O recebível só é gerado na CRIAÇÃO: editar o lançamento não cria nem
+      // reescreve título nenhum, senão uma correção de valor viraria cobrança
+      // duplicada.
+      clienteId: '', gerarRecebivel: false,
     })
     setErro(''); setTipoNovo(l.tipo); setEditando(l)
   }
@@ -218,6 +229,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       dataVencimento: tipoNovo === 'DESPESA' ? (form.dataVencimento || form.data) : null,
       fornecedorId: tipoNovo === 'DESPESA' ? (form.fornecedorId || null) : null,
       condicaoId: tipoNovo === 'RECEITA' ? (form.condicaoId || null) : null,
+      clienteId: tipoNovo === 'RECEITA' ? (form.clienteId || null) : null,
+      gerarRecebivel: tipoNovo === 'RECEITA' && !editando && !!form.clienteId && form.gerarRecebivel,
     }
 
     const res = await fetch(
@@ -525,6 +538,38 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                       <p className="t-label text-subtle mt-1">Opcional.</p>
                     </div>
                   </>
+                )}
+
+                {/* CLIENTE — opcional, só em receita. É o que permite gerar o
+                    título em Contas a Receber, que não cadastra por conta
+                    própria. */}
+                {tipoNovo === 'RECEITA' && !editando && (
+                  <div className="sm:col-span-2 space-y-3">
+                    <div>
+                      <label className={lbl} htmlFor="l-cliente">Cliente</label>
+                      <select id="l-cliente" value={form.clienteId} className={inp}
+                        onChange={(e) => setForm((p) => ({
+                          ...p, clienteId: e.target.value,
+                          gerarRecebivel: e.target.value ? p.gerarRecebivel : false,
+                        }))}>
+                        <option value="">Sem cliente</option>
+                        {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                      </select>
+                    </div>
+
+                    <label className={`flex items-start gap-2.5 ${form.clienteId ? 'cursor-pointer' : 'opacity-50'}`}>
+                      <input type="checkbox" className="mt-0.5" disabled={!form.clienteId}
+                        checked={form.gerarRecebivel}
+                        onChange={(e) => setForm((p) => ({ ...p, gerarRecebivel: e.target.checked }))} />
+                      <span className="min-w-0">
+                        <span className="block t-sm text-fg">Gerar título em Contas a Receber</span>
+                        <span className="block t-label text-subtle mt-0.5">
+                          Cria um título por parcela, com o vencimento de cada uma. Contas a Receber
+                          não cadastra — é aqui que o recebível nasce.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
                 )}
 
                 {/* VÍNCULO DE BaaS / White Label — opcional, só em receita.

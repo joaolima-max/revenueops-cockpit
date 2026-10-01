@@ -2,23 +2,83 @@ export const dynamic = 'force-dynamic'
 
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { podeAdministrarIncidente, podeRegistrarIncidente } from '@/lib/incidentes'
+import {
+  CRITICIDADES, calcularDowntime,
+  podeAdministrarIncidente, podeRegistrarIncidente,
+} from '@/lib/incidentes'
+import MetricasOperacionais, { type MetricasDTO } from '@/components/incidentes/MetricasOperacionais'
 import IncidentesClient from './IncidentesClient'
+
+/**
+ * INCIDENTES — métricas em cima, registro embaixo.
+ *
+ * "Métricas Operacionais" deixou de ser um menu. Os indicadores são DERIVADOS
+ * dos incidentes, e tê-los numa tela separada obrigava a abrir duas telas para
+ * ler o mesmo fato — e a comparar de memória o número do painel com a linha do
+ * registro. Agora a leitura e a operação estão na mesma página, nessa ordem.
+ *
+ * O cálculo acontece AQUI, no servidor, a partir dos mesmos incidentes que a
+ * lista mostra. Não há segunda consulta nem segunda regra: o downtime sai de
+ * `calcularDowntime`, exatamente como na lista.
+ */
+function calcularMetricas(
+  incidentes: Array<{ inicio: Date; fim: Date | null; criticidade: string }>,
+  hoje: Date,
+): MetricasDTO {
+  const abertos = incidentes.filter((i) => !i.fim)
+  const encerrados = incidentes.filter((i) => i.fim)
+
+  // Só os ENCERRADOS entram: a duração de um incidente aberto ainda está
+  // crescendo, e somá-la faria o acumulado mudar a cada refresh.
+  const downtimeTotal = encerrados.reduce((s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0)
+
+  const meses = Array.from({ length: 6 }, (_, k) => {
+    const inicio = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - (5 - k), 1))
+    const fim = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth() + 1, 1))
+    const doMes = incidentes.filter((i) => i.inicio >= inicio && i.inicio < fim)
+    return {
+      rotulo: inicio.toLocaleDateString('pt-BR', { month: 'short', timeZone: 'UTC' }),
+      total: doMes.length,
+      downtime: doMes
+        .filter((i) => i.fim)
+        .reduce((s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0),
+    }
+  })
+
+  return {
+    total: incidentes.length,
+    abertos: abertos.length,
+    encerrados: encerrados.length,
+    downtimeTotal,
+    // MTTR É O DOWNTIME: a média dos mesmos números, sem segundo cálculo.
+    mttr: encerrados.length > 0 ? downtimeTotal / encerrados.length : null,
+    porCriticidade: CRITICIDADES.map((c) => ({
+      criticidade: c,
+      total: incidentes.filter((i) => i.criticidade === c).length,
+    })),
+    meses,
+  }
+}
 
 export default async function IncidentesPage() {
   const session = await getSession()
   const role = session?.role ?? ''
 
-  const incidentes = await prisma.incidente.findMany({
-    orderBy: { inicio: 'desc' },
-    take: 50,
-  })
+  // UMA consulta serve as duas áreas da tela. As métricas são derivadas desta
+  // mesma lista — por isso não podem divergir dela.
+  const todos = await prisma.incidente.findMany({ orderBy: { inicio: 'desc' } })
+
+  const metricas = calcularMetricas(todos, new Date())
 
   return (
-    <IncidentesClient
-      initial={JSON.parse(JSON.stringify(incidentes))}
-      podeRegistrar={podeRegistrarIncidente(role)}
-      podeAdministrar={podeAdministrarIncidente(role)}
-    />
+    <div className="space-y-10">
+      <MetricasOperacionais m={metricas} />
+
+      <IncidentesClient
+        initial={JSON.parse(JSON.stringify(todos.slice(0, 50)))}
+        podeRegistrar={podeRegistrarIncidente(role)}
+        podeAdministrar={podeAdministrarIncidente(role)}
+      />
+    </div>
   )
 }

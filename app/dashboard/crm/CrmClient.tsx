@@ -68,7 +68,12 @@ function pct(n: number | null, casas = 1): string {
 }
 
 /**
- * CRM — ANALÍTICA DO PIPELINE.
+ * VISÃO GERAL DO COMERCIAL — a analítica do Pipeline.
+ *
+ * A rota continua `/dashboard/crm` e a API continua `/api/crm`: renomear
+ * quebraria links salvos e permissões gravadas (`view_crm`) sem ganho nenhum.
+ * O que mudou é o NOME na navegação e no título — é por ele que a tela é
+ * procurada.
  *
  * Não existe entidade de CRM: todos os números derivam de `Deal` e
  * `PipelineMovimentacao`. Ganho e perda vêm do RESULTADO do card, não da etapa
@@ -108,7 +113,7 @@ export default function CrmClient() {
   if (!dados || dados.vazio || !dados.funil) {
     return (
       <div className="space-y-8">
-        <PageHeader title="CRM" />
+        <PageHeader title="Visão geral" />
         <Panel padded={false}>
           <EmptyState title="Nenhum funil disponível"
             description="A analítica lê o Pipeline. Sem acesso a um funil ativo não há o que medir." />
@@ -138,8 +143,8 @@ export default function CrmClient() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="CRM"
-        sub="Analítica do Pipeline. Todos os números derivam das movimentações já registradas — não existe base paralela."
+        title="Visão geral"
+        sub="Analítica do Comercial. Todos os números derivam do Pipeline e das movimentações já registradas — não existe base paralela."
       />
 
       <div className="flex flex-wrap items-center gap-2">

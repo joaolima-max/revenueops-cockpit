@@ -8,18 +8,26 @@ const TIPOS = ['RECEITA', 'DESPESA'] as const
 type Tipo = (typeof TIPOS)[number]
 
 /**
- * Papel economico da categoria. So faz sentido em RECEITA: sao as tres linhas
- * que os graficos financeiros reconhecem por si — Float, Setup e Sustentacao.
+ * Papel economico da categoria — Float, Setup, Sustentacao.
  *
- * E um CAMPO, e nao o nome digitado: renomear a categoria nao quebra o
- * grafico, e duas categorias podem compartilhar a mesma natureza.
+ * NAO e um campo de formulario: saiu da tela de Categorias, que ficou com nome
+ * e tipo apenas. A taxonomia e PLANA, sem subcategoria; o que a natureza faz e
+ * permitir que os graficos financeiros reconhecam essas tres linhas de receita
+ * sem depender do nome exato digitado em cada tela.
+ *
+ * Por isso ela e DEDUZIDA do nome no servidor, na criacao. Uma categoria de
+ * receita chamada "Float" ou "Float / rendimento" vira FLOAT sozinha; qualquer
+ * outro nome fica sem natureza, e nada muda para quem cadastrou.
  */
-const NATUREZAS = ['FLOAT', 'SETUP', 'SUSTENTACAO'] as const
-type Natureza = (typeof NATUREZAS)[number]
+type Natureza = 'FLOAT' | 'SETUP' | 'SUSTENTACAO'
 
-function natureza(v: unknown, tipo: Tipo): Natureza | null {
+function naturezaPeloNome(nome: string, tipo: Tipo): Natureza | null {
   if (tipo !== 'RECEITA') return null
-  return NATUREZAS.includes(v as Natureza) ? (v as Natureza) : null
+  const n = nome.trim().toLowerCase()
+  if (n.startsWith('float')) return 'FLOAT'
+  if (n.startsWith('setup')) return 'SETUP'
+  if (n.startsWith('sustenta')) return 'SUSTENTACAO'
+  return null
 }
 
 function podeGerenciar(session: TokenPayload): boolean {
@@ -47,7 +55,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { nome, tipo, natureza: naturezaInformada } = await request.json()
+  const { nome, tipo } = await request.json()
   const n = String(nome ?? '').trim()
   if (!n) return NextResponse.json({ error: 'Informe o nome da categoria.' }, { status: 400 })
   if (!TIPOS.includes(tipo)) {
@@ -65,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   const categoria = await prisma.categoriaFinanceira.create({
-    data: { nome: n, tipo, natureza: natureza(naturezaInformada, tipo) },
+    data: { nome: n, tipo, natureza: naturezaPeloNome(n, tipo) },
   })
   await logAudit(session.userId, 'CRIOU_CATEGORIA_FINANCEIRA', 'CategoriaFinanceira', categoria.id, `${n} (${tipo})`)
 

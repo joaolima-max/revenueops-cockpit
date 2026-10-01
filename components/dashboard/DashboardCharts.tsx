@@ -2,17 +2,19 @@
 
 import { useState, useRef, useMemo, useSyncExternalStore } from 'react'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, ComposedChart, Line, Legend,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { formatMesRef, cn } from '@/lib/utils'
 import {
-  paleta, gridProps, axisProps, cursorBarra, cursorLinha,
+  paleta, gridProps, axisProps, legendProps, cursorBarra, cursorLinha,
   BAR, LINE, hasSeries, isFlat,
 } from '@/lib/chart-theme'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { makeTooltip } from '@/components/ui/ChartTooltip'
-import { eixoMoeda as fmtEixoMoeda, moedaCheia, percentual, variacao } from '@/lib/format-financeiro'
+import {
+  eixoMoeda as fmtEixoMoeda, moedaCheia, quantidadeCompacta, percentual, variacao,
+} from '@/lib/format-financeiro'
 import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 import { Delta } from '@/components/ui/Figure'
@@ -22,9 +24,17 @@ interface ChartPoint {
   receitaTarifaria: number
   tpv: number
   takeRate: number
+  qtdTransacoes: number
+  saldoMedio: number
+  qtdMed: number
+  percentMed: number
+  clientesAtivos: number
 }
 
 interface MRRPoint { mes: string; mrr: number }
+
+/** Contagens de parceiros. Não há histórico: são o estado de hoje. */
+interface Parceiros { baasAtivos: number; whiteLabelsAtivos: number }
 
 /**
  * Cada gráfico daqui tem FONTE REAL. Saíram nesta rodada:
@@ -38,16 +48,22 @@ interface MRRPoint { mes: string; mrr: number }
  * receita no Conselho, mas não é mais exibido no Cockpit.
  */
 const CHART_DEFS = [
-  { id: 'receita', title: 'Receita Mensal', sub: 'Receita tarifária do lançamento diário' },
+  { id: 'tpv', title: 'Evolução do TPV', sub: 'Volume total de pagamentos, por mês' },
+  { id: 'receita', title: 'Evolução da Receita', sub: 'Receita tarifária do lançamento diário' },
+  { id: 'transacoes', title: 'Evolução das Transações', sub: 'Quantidade de transações por mês' },
+  { id: 'saldo', title: 'Evolução do Saldo', sub: 'Saldo médio em conta no período' },
+  { id: 'med', title: 'Evolução dos MEDs', sub: 'Quantidade e proporção sobre as transações' },
+  { id: 'clientes', title: 'Clientes Ativos', sub: 'Fotografia do último dia informado de cada mês' },
+  { id: 'parceiros', title: 'BaaS e White Labels Ativos', sub: 'Parceiros ativos nas condições vigentes' },
+  { id: 'takerate', title: 'Receita ÷ TPV', sub: 'Take rate — quanto da movimentação vira receita' },
+  { id: 'atividade', title: 'Atividade Operacional', sub: 'Transações, MEDs e clientes ativos lado a lado' },
   { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal' },
-  { id: 'tpv', title: 'TPV Mensal', sub: 'Volume total de pagamentos' },
-  { id: 'takerate', title: 'Take Rate', sub: 'Receita tarifária ÷ TPV' },
 ]
 
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
 // Chave versionada: a lista de graficos mudou nesta rodada, e uma ordem
 // salva com os ids antigos nao deve sobreviver silenciosamente.
-const LS_KEY = 'dashboard_chart_order_v2'
+const LS_KEY = 'dashboard_chart_order_v3'
 
 const PADRAO_SERIALIZADO = JSON.stringify(DEFAULT_ORDER)
 const EVENTO_ORDEM = 'bp-chart-order'
@@ -139,7 +155,11 @@ function NoSeries({ what }: { what: string }) {
   )
 }
 
-export default function DashboardCharts({ chartData, mrrEvolution }: { chartData: ChartPoint[]; mrrEvolution: MRRPoint[] }) {
+export default function DashboardCharts({ chartData, mrrEvolution, parceiros }: {
+  chartData: ChartPoint[]
+  mrrEvolution: MRRPoint[]
+  parceiros: Parceiros
+}) {
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
 
@@ -173,9 +193,10 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
 
   // Eixo sem centavos; tooltip e cards seguem com o valor cheio.
   const eixoMoeda = (v: number) => fmtEixoMoeda(v)
+  const eixoQtd = (v: number) => quantidadeCompacta(v)
   const eixoPct = (v: number) => `${v.toFixed(v < 1 ? 2 : 1)}%`
 
-  const grid = gridProps(p), eixo = axisProps(p), linha = LINE(p)
+  const grid = gridProps(p), eixo = axisProps(p), leg = legendProps(p), linha = LINE(p)
 
   const charts: Record<string, React.ReactNode> = {
     receita: hasSeries(data, 'receitaTarifaria') ? (
@@ -259,12 +280,130 @@ export default function DashboardCharts({ chartData, mrrEvolution }: { chartData
       </ResponsiveContainer>
     ) : <NoSeries what="Take rate depende de TPV e receita lançados." />,
 
+
+    transacoes: hasSeries(data, 'qtdTransacoes') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis {...eixo} tickFormatter={eixoQtd} width={88} allowDecimals={false} />
+          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes',
+            [{ key: 'qtdTransacoes', nome: 'Transações', cor: p.s1 }], quantidadeCompacta)} />
+          <Bar dataKey="qtdTransacoes" name="Transações" fill={p.s1} {...BAR} />
+        </BarChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhuma transação lançada nos últimos 12 meses." />,
+
+    saldo: hasSeries(data, 'saldoMedio') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <defs>
+            <linearGradient id="saldoG" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={p.s2} stopOpacity={0.20} />
+              <stop offset="100%" stopColor={p.s2} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis {...eixo} tickFormatter={eixoMoeda} width={104} />
+          <Tooltip cursor={cursorLinha(p)} content={makeTooltip(data, 'mes',
+            [{ key: 'saldoMedio', nome: 'Saldo médio', cor: p.s2 }], moedaCheia)} />
+          <Area type="monotone" dataKey="saldoMedio" stroke={p.s2} fill="url(#saldoG)" {...linha} />
+        </AreaChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhum saldo em conta lançado no período." />,
+
+    /* MED em DUAS leituras no mesmo gráfico: a barra é a quantidade, a linha é
+       a proporção sobre as transações. São o mesmo fato em unidades
+       diferentes, e separá-los em dois gráficos obrigaria a alternar entre
+       eles para responder "foram muitos?" e "foram muitos para o volume?". */
+    med: hasSeries(data, 'qtdMed', 'percentMed') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis yAxisId="qtd" {...eixo} tickFormatter={eixoQtd} width={76} allowDecimals={false} />
+          <YAxis yAxisId="pct" orientation="right" {...eixo} tickFormatter={eixoPct} width={56} />
+          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes', [
+            { key: 'qtdMed', nome: 'MEDs', cor: p.s3 },
+            { key: 'percentMed', nome: '% das transações', cor: p.s1 },
+          ], (n) => (n < 100 && !Number.isInteger(n) ? percentual(n, 2) : quantidadeCompacta(n)))} />
+          <Legend {...leg} />
+          <Bar yAxisId="qtd" dataKey="qtdMed" name="MEDs" fill={p.s3} {...BAR} />
+          <Line yAxisId="pct" type="monotone" dataKey="percentMed" name="% das transações"
+            stroke={p.s1} {...linha} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhum MED lançado no período." />,
+
+    clientes: hasSeries(data, 'clientesAtivos') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <defs>
+            <linearGradient id="cliG" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={p.s1} stopOpacity={0.20} />
+              <stop offset="100%" stopColor={p.s1} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis {...eixo} tickFormatter={eixoQtd} width={64} allowDecimals={false} />
+          <Tooltip cursor={cursorLinha(p)} content={makeTooltip(data, 'mes',
+            [{ key: 'clientesAtivos', nome: 'Clientes ativos', cor: p.s1 }], quantidadeCompacta)} />
+          <Area type="monotone" dataKey="clientesAtivos" stroke={p.s1} fill="url(#cliG)" {...linha} />
+        </AreaChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhum dia do período informou clientes ativos no lançamento diário." />,
+
+    /* BaaS e White Labels ativos vêm das condições comerciais VIGENTES: o
+       sistema guarda o estado de hoje, não uma série mês a mês. Desenhar uma
+       linha reta de 12 pontos iguais fingiria uma tendência que não existe —
+       então mostramos o número corrente, que é o que de fato se sabe. */
+    parceiros: (
+      <div className="h-[200px] grid sm:grid-cols-2 gap-px bg-line rounded-xl overflow-hidden">
+        {[
+          { label: 'BaaS ativos', valor: parceiros.baasAtivos },
+          { label: 'White Labels ativos', valor: parceiros.whiteLabelsAtivos },
+        ].map((x) => (
+          <div key={x.label} className="bg-surface flex flex-col items-center justify-center gap-2 p-5">
+            <span className="t-label text-subtle">{x.label}</span>
+            <span className="t-figure text-fg tabular-nums">{quantidadeCompacta(x.valor)}</span>
+            <span className="t-label text-subtle/70 text-center">Condições BaaS · estado atual</span>
+          </div>
+        ))}
+      </div>
+    ),
+
+    atividade: hasSeries(data, 'qtdTransacoes', 'qtdMed', 'clientesAtivos') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis yAxisId="tx" {...eixo} tickFormatter={eixoQtd} width={88} allowDecimals={false} />
+          <YAxis yAxisId="cli" orientation="right" {...eixo} tickFormatter={eixoQtd} width={56} allowDecimals={false} />
+          <Tooltip cursor={cursorBarra(p)} content={makeTooltip(data, 'mes', [
+            { key: 'qtdTransacoes', nome: 'Transações', cor: p.s1 },
+            { key: 'qtdMed', nome: 'MEDs', cor: p.s3 },
+            { key: 'clientesAtivos', nome: 'Clientes ativos', cor: p.s2 },
+          ], quantidadeCompacta)} />
+          <Legend {...leg} />
+          <Bar yAxisId="tx" dataKey="qtdTransacoes" name="Transações" fill={p.s1} {...BAR} />
+          <Bar yAxisId="tx" dataKey="qtdMed" name="MEDs" fill={p.s3} {...BAR} />
+          <Line yAxisId="cli" type="monotone" dataKey="clientesAtivos" name="Clientes ativos"
+            stroke={p.s2} {...linha} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Sem transações, MEDs e clientes ativos suficientes para compor a leitura." />,
   }
 
   const deltas: Record<string, React.ReactNode> = {
     receita: deltaDe('receitaTarifaria'),
     tpv: deltaDe('tpv'),
     takerate: deltaDe('takeRate'),
+    transacoes: deltaDe('qtdTransacoes'),
+    saldo: deltaDe('saldoMedio'),
+    med: deltaDe('qtdMed'),
+    clientes: deltaDe('clientesAtivos'),
   }
 
   const pares = order.reduce<string[][]>((rows, id, i) => {

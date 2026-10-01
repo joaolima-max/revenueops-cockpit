@@ -88,9 +88,17 @@ export default async function DashboardPage() {
       note: 'Condições BaaS' },
   ]
 
-  // Só séries com FONTE REAL. O Float saiu do Cockpit, e "previsto" não existe
-  // em lugar nenhum do sistema — um gráfico de previsto × realizado seria uma
-  // barra zerada ao lado da série verdadeira.
+  /**
+   * Só séries com FONTE REAL, todas do mesmo lançamento diário. O Float saiu
+   * do Cockpit, e "previsto" não existe em lugar nenhum do sistema — um
+   * gráfico de previsto × realizado seria uma barra zerada ao lado da série
+   * verdadeira.
+   *
+   * `clientesAtivos` é FOTOGRAFIA: o valor do último dia do mês que informou o
+   * número, nunca a soma dos dias (ver `clientesAtivosDoMes`). Meses sem
+   * informação entram como zero no gráfico porque a série precisa de um ponto;
+   * `hasSeries` garante que um período inteiro sem dado não desenhe nada.
+   */
   const chartData = periodos.map((p, i) => {
     const k: KpisPeriodo = serie[i]
     return {
@@ -98,6 +106,11 @@ export default async function DashboardPage() {
       receitaTarifaria: k.receitaTarifaria ?? 0,
       tpv: k.tpv ?? 0,
       takeRate: k.takeRate ?? 0,
+      qtdTransacoes: k.qtdTransacoes ?? 0,
+      saldoMedio: k.saldoMedio ?? 0,
+      qtdMed: k.qtdMed ?? 0,
+      percentMed: k.percentMed ?? 0,
+      clientesAtivos: k.clientesAtivos ?? 0,
     }
   })
 
@@ -171,15 +184,21 @@ export default async function DashboardPage() {
         </HairlineGrid>
       </section>
 
-      {/* ACOMPANHAMENTO DE METAS — projetado × realizado, progresso, pacing e
-          atingimento por KPI, numa composição só. Toda a matemática vem de
-          `avaliarCompleto`; esta tela não calcula nada por conta própria. */}
-      <MetaAnalytics avaliacoes={avaliacoes} periodoLabel={formatMesRef(periodo)} />
-
       <DashboardCharts
         chartData={chartData}
         mrrEvolution={periodos.map((p) => ({ mes: p, mrr: estrutura.mrr.total }))}
+        parceiros={{
+          baasAtivos: estrutura.baasAtivos,
+          whiteLabelsAtivos: estrutura.whiteLabelsAtivos,
+        }}
       />
+
+      {/* ACOMPANHAMENTO DE METAS — depois dos gráficos, de propósito.
+          A leitura do Cockpit é: o que aconteceu (KPIs), como evoluiu
+          (gráficos) e só então o quanto disso estava no plano. Metas no topo
+          invertiam a ordem: julgavam o número antes de o executivo tê-lo lido.
+          Toda a matemática vem de `avaliarCompleto`. */}
+      <MetaAnalytics avaliacoes={avaliacoes} periodoLabel={formatMesRef(periodo)} />
     </div>
   )
 }

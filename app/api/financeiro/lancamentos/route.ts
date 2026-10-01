@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
   const {
     tipo, descricao, categoriaId, valor, data, status, observacao, periodicidade,
     dataVencimento, fornecedorId, condicaoId,
+    clienteId, gerarRecebivel,
   } = body
 
   if (!TIPOS.includes(tipo)) {
@@ -189,6 +190,26 @@ export async function POST(request: NextRequest) {
     condicao = String(condicaoId)
   }
 
+  /**
+   * RECEBÍVEL. Contas a Receber nao cadastra: o titulo nasce aqui, ao lancar
+   * uma receita com cliente. Uma origem por informacao — duas portas de
+   * criacao para o mesmo recebivel produziriam dois cadastros do mesmo
+   * dinheiro, cada um com a sua versao da verdade.
+   *
+   * NAO E DUPLA CONTAGEM: Receita soma LANCAMENTOS (competencia), e
+   * ContaReceber responde pelo estado de COBRANCA — e so por ele (ver
+   * `inadimplenciaDoPeriodo`). Sao dois fatos sobre o mesmo dinheiro, nao duas
+   * somas dele.
+   */
+  let cliente: { id: string; nome: string } | null = null
+  if (tipo === 'RECEITA' && clienteId) {
+    cliente = await prisma.cliente.findUnique({
+      where: { id: String(clienteId) }, select: { id: true, nome: true },
+    })
+    if (!cliente) return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 })
+  }
+  const criaRecebivel = gerarRecebivel === true && !!cliente
+
   const linhas = expandirLancamento(per, dt, n, { totalParcelas, recorrenciaFim })
   const grupoId = linhas.length > 1 ? randomUUID() : null
 
@@ -222,6 +243,23 @@ export async function POST(request: NextRequest) {
     })),
   })
 
+  // Um titulo por linha gerada: a 3a parcela vira o 3o recebivel, com o
+  // vencimento da propria parcela.
+  if (criaRecebivel) {
+    await prisma.contaReceber.createMany({
+      data: linhas.map((l) => ({
+        clienteId: cliente!.id,
+        descricao: desc,
+        tipo: categoria.nome,
+        valor: l.valor,
+        dataVenc: l.data,
+        parcela: l.parcela,
+        totalParcel: l.totalParcelas,
+        notas: observacao ? String(observacao).slice(0, 1000) : null,
+      })),
+    })
+  }
+
   // Devolve a primeira linha para a tela poder anexar arquivos já em seguida.
   const primeiro = await prisma.lancamentoFinanceiro.findFirst({
     where: grupoId ? { grupoId } : { criadoPorId: session.userId, descricao: desc, data: dt },
@@ -231,8 +269,13 @@ export async function POST(request: NextRequest) {
 
   await logAudit(
     session.userId, 'CRIOU_LANCAMENTO_FINANCEIRO', 'LancamentoFinanceiro', primeiro?.id,
-    `${tipo === 'RECEITA' ? 'Receita' : 'Despesa'} · ${desc} · ${linhas.length} linha${linhas.length === 1 ? '' : 's'}`,
+    `${tipo === 'RECEITA' ? 'Receita' : 'Despesa'} · ${desc} · ${linhas.length} linha${linhas.length === 1 ? '' : 's'}`
+      + (criaRecebivel ? ` · ${linhas.length} título(s) a receber para ${cliente!.nome}` : ''),
   )
 
-  return NextResponse.json({ lancamento: primeiro, linhas: linhas.length }, { status: 201 })
+  return NextResponse.json({
+    lancamento: primeiro,
+    linhas: linhas.length,
+    recebiveis: criaRecebivel ? linhas.length : 0,
+  }, { status: 201 })
 }

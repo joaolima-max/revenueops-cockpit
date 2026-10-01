@@ -13,7 +13,7 @@ import { test } from 'node:test'
 import {
   avaliarMeta, validarValorMeta, PADRAO_POR_TIPO, META_TIPOS,
   META_DIRECOES, META_UNIDADES,
-  calcularPacing, avaliarCompleto, ACUMULA_NO_MES,
+  calcularPacing, avaliarCompleto, acumulaNoMes,
 } from '../lib/metas'
 
 /* ── Maior é melhor ──────────────────────────────────────────────────────── */
@@ -99,10 +99,45 @@ test('meta monetária pode ser qualquer valor não negativo', () => {
 
 /* ── Padrões por tipo ────────────────────────────────────────────────────── */
 
-test('MED percentual nasce como percentual e menor-é-melhor', () => {
-  assert.deepEqual(PADRAO_POR_TIPO.MED_PERCENTUAL, {
-    unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR',
-  })
+test('MED é UM indicador só — a unidade é que muda', () => {
+  // Nao existe "MED" e "MED %" como tipos diferentes: havia dois, e isso
+  // produzia duas metas concorrentes sobre o mesmo fato.
+  assert.ok(META_TIPOS.includes('MEDS'))
+  assert.ok(!(META_TIPOS as readonly string[]).includes('MED_PERCENTUAL'))
+  assert.deepEqual(PADRAO_POR_TIPO.MEDS, { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' })
+})
+
+test('MED aceita as duas unidades, e e a unidade que decide o comportamento', () => {
+  // Percentual nao acumula; quantidade acumula.
+  assert.equal(acumulaNoMes('MEDS', 'PERCENTUAL'), false)
+  assert.equal(acumulaNoMes('MEDS', 'QUANTIDADE'), true)
+})
+
+test('MED em QUANTIDADE segue a direcao configurada', () => {
+  // Meta 100, realizado 80, menor e melhor -> positivo.
+  const a = avaliarCompleto({
+    tipo: 'MEDS', periodo: '2026-09', meta: 100, realizado: 80,
+    direcao: 'MENOR_MELHOR', unidade: 'QUANTIDADE',
+  }, DIA('2026-10-10'))
+  assert.equal(a.positivo, true)
+  assert.equal(a.gap, 0)
+
+  // A mesma dupla com maior-e-melhor inverte o julgamento.
+  const b = avaliarCompleto({
+    tipo: 'MEDS', periodo: '2026-09', meta: 100, realizado: 80,
+    direcao: 'MAIOR_MELHOR', unidade: 'QUANTIDADE',
+  }, DIA('2026-10-10'))
+  assert.equal(b.positivo, false)
+  assert.equal(b.gap, 20)
+})
+
+test('MED em PERCENTUAL: o caso de 2% contra 1,5%', () => {
+  const a = avaliarCompleto({
+    tipo: 'MEDS', periodo: '2026-09', meta: 2, realizado: 1.5,
+    direcao: 'MENOR_MELHOR', unidade: 'PERCENTUAL',
+  }, DIA('2026-10-10'))
+  assert.equal(a.positivo, true)
+  assert.equal(a.unidade, 'PERCENTUAL')
 })
 
 test('TPV e receita nascem como maior-é-melhor', () => {
@@ -188,13 +223,11 @@ test('sem realizado nao ha ritmo', () => {
 })
 
 test('indicadores de fluxo acumulam; estoque e proporcao nao', () => {
-  assert.equal(ACUMULA_NO_MES.TPV, true)
-  assert.equal(ACUMULA_NO_MES.RECEITA_TARIFARIA, true)
-  assert.equal(ACUMULA_NO_MES.TRANSACOES, true)
-  assert.equal(ACUMULA_NO_MES.MEDS, true)
-  assert.equal(ACUMULA_NO_MES.SALDO_EM_CONTA, false, 'saldo medio e estoque')
-  assert.equal(ACUMULA_NO_MES.MED_PERCENTUAL, false, 'proporcao nao acumula')
-  assert.equal(ACUMULA_NO_MES.TAKE_RATE, false, 'proporcao nao acumula')
+  assert.equal(acumulaNoMes('TPV', 'VALOR'), true)
+  assert.equal(acumulaNoMes('RECEITA_TARIFARIA', 'VALOR'), true)
+  assert.equal(acumulaNoMes('TRANSACOES', 'QUANTIDADE'), true)
+  assert.equal(acumulaNoMes('SALDO_EM_CONTA', 'VALOR'), false, 'saldo medio e estoque')
+  assert.equal(acumulaNoMes('TAKE_RATE', 'PERCENTUAL'), false, 'proporcao nao acumula')
 })
 
 /* ========================================================================= *
@@ -261,4 +294,29 @@ test('tipo desconhecido assume que acumula — o caso mais comum', () => {
     direcao: 'MAIOR_MELHOR', unidade: 'VALOR',
   }, DIA('2026-10-10'))
   assert.ok(a.pacing.projecao !== null && Math.abs(a.pacing.projecao - 310) < 1e-6)
+})
+
+/* ── MED: um indicador, duas unidades ────────────────────────────────────── */
+
+test('o indicador separado "MED percentual" saiu da criacao', () => {
+  // Continua legivel no banco (metas antigas), mas nao e mais oferecido: dois
+  // tipos para o mesmo conceito produziam duas metas concorrentes.
+  for (const t of META_TIPOS) {
+    assert.notEqual(t, 'MED_PERCENTUAL' as string)
+  }
+})
+
+test('a unidade determina formatacao, comparacao e projecao do MED', () => {
+  const pct = avaliarCompleto({
+    tipo: 'MEDS', periodo: '2026-10', meta: 2, realizado: 1.5,
+    direcao: 'MENOR_MELHOR', unidade: 'PERCENTUAL',
+  }, DIA('2026-10-10'))
+  const qtd = avaliarCompleto({
+    tipo: 'MEDS', periodo: '2026-10', meta: 310, realizado: 100,
+    direcao: 'MENOR_MELHOR', unidade: 'QUANTIDADE',
+  }, DIA('2026-10-10'))
+
+  // Percentual nao projeta pelo tempo; quantidade projeta.
+  assert.equal(pct.pacing.projecao, 1.5)
+  assert.ok(qtd.pacing.projecao !== null && Math.abs(qtd.pacing.projecao - 310) < 1e-6)
 })

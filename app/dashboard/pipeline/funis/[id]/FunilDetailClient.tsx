@@ -246,7 +246,7 @@ export default function FunilDetailClient({ funilId }: { funilId: string }) {
       <PageHeader
         title={funil.nome}
         sub={funil.descricao ?? funil.area ?? undefined}
-        actions={<Link href="/dashboard/funis"><Button>Voltar aos funis</Button></Link>}
+        actions={<Link href="/dashboard/pipeline/funis"><Button>Voltar aos funis</Button></Link>}
       />
 
       {/* ------------------------------------------------------------ Etapas */}

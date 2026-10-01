@@ -1,6 +1,14 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V18.md`](./RODADA-V18.md)** — a rodada mais recente:
+> **Comece por [`RODADA-V20.md`](./RODADA-V20.md)** — a rodada mais recente:
+> Incidentes absorve **Métricas Operacionais**; CRM vira **Visão geral** e abre
+> o Comercial; **Funis** sai do menu e vira área interna do Pipeline; **MED
+> passa a ser um indicador só**, governado pela unidade; Contas a Receber deixa
+> de criar título (todo título nasce em Lançamentos); **Natureza** sai da tela
+> de Categorias; e o Cockpit ganha dez gráficos, com Acompanhamento de metas
+> abaixo deles.
+>
+> Antes dela, [`RODADA-V18.md`](./RODADA-V18.md):
 > RLS fechada no banco (a leitura pública de dados privados estava aberta),
 > **Acompanhamento de metas** no Cockpit (projetado × realizado, pacing),
 > o menu passa a ser **Condições BaaS**, certificado para **cliente que saiu

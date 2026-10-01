@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   MODULES, activeFeatures, navigationFor, checkAccess, isFeatureEnabled,
+  firstAvailableRoute,
 } from '../lib/modules'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, hasPermission } from '../lib/permissions'
 
@@ -102,36 +103,75 @@ test('os ambientes que ficam continuam registrados', () => {
   }
 })
 
-/* ── Funil ≠ Pipeline ────────────────────────────────────────────────────── */
+/* ── Navegação: Funis dentro do Pipeline ─────────────────────────────────── */
 
-test('Funil e Pipeline são funções distintas, em rotas irmãs', () => {
-  const todas = activeFeatures()
-  const pipeline = todas.find((f) => f.key === 'comercial.pipeline')!
-  const funis = todas.find((f) => f.key === 'comercial.funis')!
-
-  assert.equal(pipeline.route, '/dashboard/pipeline')
-  assert.equal(funis.route, '/dashboard/funis')
-
-  // O bug: a rota de Funis era subcaminho da de Pipeline, então casava com as
-  // duas por prefixo. Agora nenhuma é prefixo da outra.
-  assert.ok(!funis.route.startsWith(pipeline.route + '/'))
-  assert.ok(!pipeline.route.startsWith(funis.route + '/'))
+test('Funis NÃO é um item de menu — virou área interna do Pipeline', () => {
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil).flatMap((s) => s.items.map((i) => i.label))
+    assert.ok(!itens.includes('Funis'), `Funis apareceu na sidebar de ${perfil}`)
+  }
 })
 
-test('abrir Funis não resolve como Pipeline, e vice-versa', () => {
-  const daRota = (rota: string) =>
-    activeFeatures().filter((f) =>
-      f.exact ? rota === f.route : rota === f.route || rota.startsWith(f.route + '/'),
-    ).map((f) => f.key)
-
-  assert.deepEqual(daRota('/dashboard/funis'), ['comercial.funis'])
-  assert.deepEqual(daRota('/dashboard/pipeline'), ['comercial.pipeline'])
+test('Funis continua REGISTRADO — é o registro que mantém a restrição', () => {
+  // Apagar a entrada em vez de ocultá-la liberaria /api/pipeline/funis para
+  // qualquer autenticado: caminho não registrado é caminho permitido.
+  const funis = activeFeatures().find((f) => f.key === 'comercial.funis')!
+  assert.ok(funis, 'a função some do registro e leva a restrição junto')
+  assert.equal(funis.oculto, true)
+  assert.equal(funis.route, '/dashboard/pipeline/funis')
+  assert.deepEqual(funis.roles, ['ADMIN'])
 })
 
-test('Funis é só de ADMIN; Pipeline não é', () => {
-  assert.equal(checkAccess('/dashboard/funis', 'ADMIN'), 'allow')
-  assert.equal(checkAccess('/dashboard/funis', 'COMERCIAL'), 'forbidden')
+test('a administração de funis continua só de ADMIN, mesmo sob o Pipeline', () => {
+  // A rota casa com DUAS funções (Pipeline por prefixo, Funis exata). Se a
+  // permissão aberta do Pipeline vencesse, qualquer comercial administraria
+  // funil.
+  assert.equal(checkAccess('/dashboard/pipeline/funis', 'ADMIN'), 'allow')
+  assert.equal(checkAccess('/dashboard/pipeline/funis', 'COMERCIAL'), 'forbidden')
+  assert.equal(checkAccess('/api/pipeline/funis', 'COMERCIAL'), 'forbidden')
+  assert.equal(checkAccess('/api/pipeline/etapas', 'GESTOR'), 'forbidden')
+})
+
+test('o quadro do Pipeline continua aberto a quem não é ADMIN', () => {
   assert.equal(checkAccess('/dashboard/pipeline', 'COMERCIAL'), 'allow')
+  assert.equal(checkAccess('/api/pipeline/board', 'COMERCIAL'), 'allow')
+})
+
+test('o fallback nunca manda o usuário para uma área interna', () => {
+  for (const perfil of PERFIS) {
+    const destino = firstAvailableRoute(perfil)
+    assert.notEqual(destino, '/dashboard/pipeline/funis', `${perfil} cairia numa tela sem menu`)
+  }
+})
+
+/* ── Navegação: Comercial e Operações ────────────────────────────────────── */
+
+test('"Visão geral" abre o Comercial, antes do Pipeline', () => {
+  const comercial = navigationFor('ADMIN').find((s) => s.key === 'comercial')!
+  const rotulos = comercial.items.map((i) => i.label)
+  assert.equal(rotulos[0], 'Visão geral')
+  assert.ok(rotulos.indexOf('Visão geral') < rotulos.indexOf('Pipeline'))
+})
+
+test('"CRM" não aparece em navegação nenhuma', () => {
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil).flatMap((s) => s.items.map((i) => i.label))
+    assert.ok(!itens.includes('CRM'), `CRM apareceu na sidebar de ${perfil}`)
+  }
+})
+
+test('"Métricas Op." não é mais um menu — foi para dentro de Incidentes', () => {
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil).flatMap((s) => s.items.map((i) => i.label))
+    assert.ok(!itens.some((r) => r.startsWith('Métricas')), `Métricas apareceu em ${perfil}`)
+  }
+  assert.ok(!isFeatureEnabled('operacoes.metricas'))
+  assert.ok(isFeatureEnabled('operacoes.incidentes'), 'Incidentes continua')
+})
+
+test('a rota antiga de métricas operacionais não é mais oferecida', () => {
+  const rotas = activeFeatures().map((f) => f.route)
+  assert.ok(!rotas.includes('/dashboard/metricas-op'))
 })
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
@@ -236,4 +276,48 @@ test('o menu chama-se "Condições BaaS", nao "Condições Comerciais BaaS"', ()
   const rotulos = activeFeatures().map((f) => f.label)
   assert.ok(rotulos.includes('Condições BaaS'))
   assert.ok(!rotulos.some((r) => r.includes('Condições Comerciais')))
+})
+
+/* ── Contas a Receber e Categorias ───────────────────────────────────────── */
+
+test('Contas a Receber e Contas a Pagar continuam menus distintos', () => {
+  const rotulos = navigationFor('ADMIN')
+    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
+  assert.ok(rotulos.includes('Contas a Receber'))
+  assert.ok(rotulos.includes('Contas a Pagar'))
+})
+
+test('o Financeiro mantém exatamente sete menus depois da reorganização', () => {
+  const rotulos = navigationFor('ADMIN')
+    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
+  assert.equal(rotulos.length, 7)
+})
+
+/* ── Permissões: nenhuma chave aponta para o vazio ───────────────────────── */
+
+test('todo perfil padrão só concede chaves que existem no catálogo', () => {
+  // A regressão real: ao remover uma tela, a chave some de ALL_PERMISSIONS mas
+  // continua nos perfis padrão. O usuário nasce com uma permissão que o
+  // administrador não consegue ver nem revogar na tela de Usuários.
+  const catalogo = new Set(ALL_PERMISSIONS.map((p) => p.key))
+  for (const [perfil, chaves] of Object.entries(DEFAULT_PERMISSIONS)) {
+    for (const k of chaves) {
+      assert.ok(catalogo.has(k), `${perfil} concede "${k}", que não está no catálogo`)
+    }
+  }
+})
+
+test('a permissão da tela de Métricas Operacionais saiu junto com a tela', () => {
+  assert.ok(!ALL_PERMISSIONS.some((p) => p.key === 'view_metricas_op'))
+  for (const chaves of Object.values(DEFAULT_PERMISSIONS)) {
+    assert.ok(!chaves.includes('view_metricas_op'))
+  }
+})
+
+test('a chave view_crm sobreviveu à renomeação da tela', () => {
+  // Só o rótulo mudou. Trocar a chave invalidaria a permissão já gravada em
+  // cada usuário, e todo mundo perderia o acesso de uma vez.
+  const crm = ALL_PERMISSIONS.find((p) => p.key === 'view_crm')
+  assert.ok(crm, 'a chave gravada nos usuários não pode sumir')
+  assert.ok(!crm!.label.includes('CRM'), `rótulo ainda diz CRM: "${crm!.label}"`)
 })

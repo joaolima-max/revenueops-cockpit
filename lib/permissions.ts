@@ -9,6 +9,14 @@
  * Anexar arquivo continua existindo — em Lançamentos —, mas é autorizado por
  * `view_financeiro` / `manage_financeiro`: o anexo pertence ao lançamento, e
  * quem pode o lançamento pode o comprovante dele.
+ *
+ * `view_metricas_op` saiu junto com a tela: as métricas operacionais passaram a
+ * ser o topo de Incidentes, e quem vê o incidente vê o indicador derivado dele.
+ * Oferecer a permissão de uma tela inexistente faria o administrador conceder
+ * um acesso que não abre nada.
+ *
+ * A CHAVE `view_crm` FICOU. Só o rótulo mudou, porque a tela virou "Visão
+ * geral": renomear a chave invalidaria a permissão já gravada em cada usuário.
  */
 export const ALL_PERMISSIONS = [
   // Cockpit
@@ -32,7 +40,6 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_incidentes',label: 'Gerenciar Incidentes',     group: 'Operacional' },
   { key: 'view_tarefas',     label: 'Ver Tarefas',              group: 'Operacional' },
   { key: 'manage_tarefas',   label: 'Gerenciar Tarefas',        group: 'Operacional' },
-  { key: 'view_metricas_op', label: 'Ver Métricas Operacionais',group: 'Operacional' },
   { key: 'view_volumetria',  label: 'Ver Volumetria',           group: 'Operacional' },
   // CRM
   { key: 'view_leads',       label: 'Ver Leads',                group: 'CRM' },
@@ -42,7 +49,7 @@ export const ALL_PERMISSIONS = [
   { key: 'admin_funis',      label: 'Administrar Funis',        group: 'CRM' },
   { key: 'view_followup',    label: 'Ver Follow-up',            group: 'CRM' },
   { key: 'manage_followup',  label: 'Gerenciar Follow-up',      group: 'CRM' },
-  { key: 'view_crm',         label: 'Ver CRM',                  group: 'CRM' },
+  { key: 'view_crm',         label: 'Ver Visão Geral',          group: 'CRM' },
   // Certificados
   { key: 'view_certificates',   label: 'Ver Certificados',      group: 'Certificados' },
   { key: 'manage_certificates', label: 'Gerenciar Certificados', group: 'Certificados' },
@@ -58,7 +65,7 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
     'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
-    'view_metricas_op', 'view_volumetria',
+    'view_volumetria',
     'view_followup',
     // Compliance é operação: quem trata a pendência é o time operacional.
     'view_compliance', 'manage_compliance',

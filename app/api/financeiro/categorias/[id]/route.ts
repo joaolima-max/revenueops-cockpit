@@ -8,9 +8,21 @@ function podeGerenciar(session: TokenPayload): boolean {
   return hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
 }
 
-/** Ver a rota de criacao: natureza so existe em categoria de RECEITA. */
-const NATUREZAS = ['FLOAT', 'SETUP', 'SUSTENTACAO'] as const
-type Natureza = (typeof NATUREZAS)[number]
+/**
+ * Natureza nao e mais editavel: saiu da tela de Categorias. Ela permanece no
+ * banco (os graficos financeiros dependem dela) e e deduzida do NOME — por
+ * isso renomear uma categoria de receita reavalia a natureza, e so isso.
+ */
+type Natureza = 'FLOAT' | 'SETUP' | 'SUSTENTACAO'
+
+function naturezaPeloNome(nome: string, tipo: 'RECEITA' | 'DESPESA'): Natureza | null {
+  if (tipo !== 'RECEITA') return null
+  const n = nome.trim().toLowerCase()
+  if (n.startsWith('float')) return 'FLOAT'
+  if (n.startsWith('setup')) return 'SETUP'
+  if (n.startsWith('sustenta')) return 'SUSTENTACAO'
+  return null
+}
 
 /** Renomeia ou ativa/inativa. O tipo é imutável: mudá-lo reclassificaria
  *  lançamentos já feitos de receita para despesa. */
@@ -20,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { id } = await params
-  const { nome, ativo, natureza } = await request.json()
+  const { nome, ativo } = await request.json()
 
   const atual = await prisma.categoriaFinanceira.findUnique({ where: { id } })
   if (!atual) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 })
@@ -39,10 +51,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     data: {
       ...(n ? { nome: n } : {}),
       ...(typeof ativo === 'boolean' ? { ativo } : {}),
-      // Vazio limpa a natureza; valor invalido e ignorado, nao apaga o que ha.
-      ...(natureza !== undefined && atual.tipo === 'RECEITA'
-        ? { natureza: NATUREZAS.includes(natureza as Natureza) ? (natureza as Natureza) : null }
-        : {}),
+      // Renomear reavalia a natureza pelo nome novo.
+      ...(n ? { natureza: naturezaPeloNome(n, atual.tipo) } : {}),
     },
   })
 

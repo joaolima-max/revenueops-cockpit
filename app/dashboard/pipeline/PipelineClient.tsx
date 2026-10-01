@@ -129,7 +129,7 @@ export default function PipelineClient({ leads, podeAdministrar }: {
           <EmptyState
             title="Nenhum funil disponível"
             description="Você não tem acesso a nenhum funil ativo. Um administrador precisa liberar o acesso ou criar um funil."
-            action={podeAdministrar ? <Link href="/dashboard/funis"><Button variant="primary">Gerenciar funis</Button></Link> : undefined}
+            action={podeAdministrar ? <Link href="/dashboard/pipeline/funis"><Button variant="primary">Gerenciar funis</Button></Link> : undefined}
           />
         </Panel>
       </div>
@@ -143,7 +143,7 @@ export default function PipelineClient({ leads, podeAdministrar }: {
         sub={`${cards.length} ${cards.length === 1 ? 'negócio' : 'negócios'} · `
           + `${porResultado.EM_ANDAMENTO} em andamento · ${porResultado.GANHO} ganhos · ${porResultado.PERDIDO} perdidos`}
         actions={podeAdministrar
-          ? <Link href="/dashboard/funis"><Button>Gerenciar funis</Button></Link>
+          ? <Link href="/dashboard/pipeline/funis"><Button>Gerenciar funis</Button></Link>
           : undefined}
       />
 

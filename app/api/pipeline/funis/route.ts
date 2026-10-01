@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   // Verificado aqui, no backend. Desde que Funis ganhou rota propria
-  // (/dashboard/funis) o proxy tambem consegue separar os dois ambientes, mas
+  // (/dashboard/pipeline/funis) o proxy tambem consegue separar os dois ambientes, mas
   // a checagem permanece: autorizacao de escrita nao depende de rota.
   if (!podeAdministrarPipeline(session)) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })

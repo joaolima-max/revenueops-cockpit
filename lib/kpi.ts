@@ -247,13 +247,21 @@ export interface MetaVsRealizado extends Avaliacao {
  * Exportada porque a API de metas precisa saber quais tipos têm realizado
  * apurável, e ter uma segunda cópia da lista lá é como as duas divergem.
  */
-export function realizadoPorTipo(kpis: KpisPeriodo): Record<string, number | null> {
+export function realizadoPorTipo(
+  kpis: KpisPeriodo, unidade: MetaUnidade = 'VALOR',
+): Record<string, number | null> {
   return {
     RECEITA_TARIFARIA: kpis.receitaTarifaria,
     TPV: kpis.tpv,
     SALDO_EM_CONTA: kpis.saldoMedio,
     TRANSACOES: kpis.qtdTransacoes,
-    MEDS: kpis.qtdMed,
+    /**
+     * MED É UM INDICADOR SÓ: a UNIDADE da meta é que decide se o realizado é a
+     * quantidade de MEDs ou a proporção delas sobre as transações. Sem isso,
+     * uma meta de "MED 2%" seria comparada contra 31.664 MEDs.
+     */
+    MEDS: unidade === 'PERCENTUAL' ? kpis.percentMed : kpis.qtdMed,
+    /** Legado: metas antigas gravadas antes de MED virar um indicador só. */
     MED_PERCENTUAL: kpis.percentMed,
     TAKE_RATE: kpis.takeRate,
   }
@@ -270,10 +278,9 @@ export async function metasDoPeriodo(periodo: string): Promise<MetaVsRealizado[]
     kpisDoPeriodo(periodo),
   ])
 
-  const realizadoDe = realizadoPorTipo(kpis)
-
   return metas.map((m) => {
-    const realizado = realizadoDe[m.tipo] ?? null
+    // O realizado depende da unidade da meta — ver `realizadoPorTipo`.
+    const realizado = realizadoPorTipo(kpis, m.unidade)[m.tipo] ?? null
     const avaliacao = avaliarMeta(m.valor, realizado, m.direcao)
     return {
       tipo: m.tipo,

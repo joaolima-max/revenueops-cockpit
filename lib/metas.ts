@@ -29,10 +29,21 @@ export const UNIDADE_LABEL: Record<MetaUnidade, string> = {
   PERCENTUAL: 'Percentual (%)',
 }
 
-/** Tipos de meta oferecidos na criação. O legado continua sendo lido. */
+/**
+ * Tipos de meta oferecidos na criação.
+ *
+ * MED É UM INDICADOR SÓ. Não existe "MED" e "MED %" como coisas diferentes: o
+ * que muda entre uma meta de 2% e uma de 100 MEDs é a UNIDADE, não o
+ * indicador. Dois tipos para o mesmo conceito obrigavam a escolher, no
+ * cadastro, entre duas linhas com o mesmo nome — e produziam duas metas
+ * concorrentes sobre o mesmo fato.
+ *
+ * `MED_PERCENTUAL` continua existindo no enum do banco, como legado: há como
+ * ler metas antigas gravadas com ele, e elas são tratadas como MED com unidade
+ * percentual. Não é mais oferecido na criação.
+ */
 export const META_TIPOS = [
-  'RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS',
-  'MED_PERCENTUAL', 'TAKE_RATE',
+  'RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS', 'TAKE_RATE',
 ] as const
 export type MetaTipo = (typeof META_TIPOS)[number]
 
@@ -46,8 +57,9 @@ export const PADRAO_POR_TIPO: Record<MetaTipo, { unidade: MetaUnidade; direcao: 
   TPV: { unidade: 'VALOR', direcao: 'MAIOR_MELHOR' },
   SALDO_EM_CONTA: { unidade: 'VALOR', direcao: 'MAIOR_MELHOR' },
   TRANSACOES: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
-  MEDS: { unidade: 'QUANTIDADE', direcao: 'MENOR_MELHOR' },
-  MED_PERCENTUAL: { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' },
+  // MED aceita as duas unidades. O padrão é percentual porque é como a
+  // operação fala do indicador — e quem decide, no fim, é quem cadastra.
+  MEDS: { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' },
   TAKE_RATE: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
 }
 
@@ -186,15 +198,20 @@ export function calcularPacing(
   }
 }
 
-/** Indicadores que ACUMULAM ao longo do mês. Os demais são estoque ou razão. */
-export const ACUMULA_NO_MES: Record<MetaTipo, boolean> = {
-  RECEITA_TARIFARIA: true,
-  TPV: true,
-  TRANSACOES: true,
-  MEDS: true,
-  SALDO_EM_CONTA: false,   // média do período
-  MED_PERCENTUAL: false,   // proporção
-  TAKE_RATE: false,        // proporção
+/**
+ * O indicador ACUMULA ao longo do mês?
+ *
+ * Depende do tipo E da unidade: MED em QUANTIDADE acumula (80 MEDs hoje, 160
+ * no fim do mês); MED em PERCENTUAL não (1,5% hoje tende a 1,5% no fim). É o
+ * mesmo indicador lido de duas formas, e por isso a decisão não cabe numa
+ * tabela só por tipo.
+ */
+export function acumulaNoMes(tipo: string, unidade: MetaUnidade): boolean {
+  // Proporção nunca acumula, qualquer que seja o indicador.
+  if (unidade === 'PERCENTUAL') return false
+  // Saldo em conta é estoque: a média parcial já estima o fechamento.
+  if (tipo === 'SALDO_EM_CONTA') return false
+  return true
 }
 
 /* ========================================================================= *
@@ -243,7 +260,7 @@ export function avaliarCompleto(
       ? 0
       : Math.abs(entrada.realizado - entrada.meta)
 
-  const acumula = ACUMULA_NO_MES[entrada.tipo as MetaTipo] ?? true
+  const acumula = acumulaNoMes(entrada.tipo, entrada.unidade)
 
   return {
     ...base,

@@ -13,11 +13,17 @@ import Figure, { Delta } from './Figure'
  * oito cores de valor diferentes lêem como aleatório, não como hierarquia.
  */
 export default function StatTile({
-  label, figura, delta, note, primary = false, spark, size = 'md', className,
+  label, figura, valorTexto, delta, note, primary = false, spark, size = 'md', className,
 }: {
   label: string
   /** null = ausência de dado. Nunca substituir por zero. */
   figura: Figura | null
+  /**
+   * Valor que não é número formatável — duração ("2h 15min"), por exemplo.
+   * Quando presente, substitui a `figura`. Existe porque forçar uma duração
+   * dentro de `Figura` exigiria inventar uma unidade que ela não tem.
+   */
+  valorTexto?: string
   delta?: Variacao | null
   note?: string
   primary?: boolean
@@ -35,7 +41,15 @@ export default function StatTile({
     )}>
       <p className="t-label text-subtle">{label}</p>
 
-      <Figure figura={figura} size={size === 'sm' ? 'sm' : 'md'} tone={primary ? 'accent' : 'default'} />
+      {valorTexto !== undefined ? (
+        <span className={cn(
+          size === 'sm' ? 't-figure-sm' : 't-figure',
+          'tabular-nums bp-truncate',
+          primary ? 'text-accent-soft' : 'text-fg',
+        )}>{valorTexto}</span>
+      ) : (
+        <Figure figura={figura} size={size === 'sm' ? 'sm' : 'md'} tone={primary ? 'accent' : 'default'} />
+      )}
 
       {(delta || note) && (
         <div className="flex items-baseline gap-2 flex-wrap min-h-[1.125rem]">

@@ -146,7 +146,7 @@ export default function FunisClient() {
                   </Td>
                   <Td align="right">
                     <div className="inline-flex gap-2">
-                      <Link href={`/dashboard/funis/${f.id}`}><Button size="sm">Etapas e permissões</Button></Link>
+                      <Link href={`/dashboard/pipeline/funis/${f.id}`}><Button size="sm">Etapas e permissões</Button></Link>
                       <Button size="sm" onClick={() => abrirEdicao(f)}>Editar</Button>
                       <Button size="sm" variant={f.ativo ? 'danger' : 'subtle'} onClick={() => alternarAtivo(f)}>
                         {f.ativo ? 'Inativar' : 'Reativar'}

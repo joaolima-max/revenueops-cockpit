@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
@@ -60,13 +61,6 @@ const FILTROS: Array<{ valor: '' | SituacaoReceber; label: string }> = [
   { valor: 'PAGA', label: 'Recebidas' },
 ]
 
-const TIPOS = ['Mensalidade API', 'Sustentação White Label', 'Setup', 'Setup Parcelado', 'Pedido Extra', 'Outro']
-
-const FORM_VAZIO = {
-  clienteId: '', descricao: '', tipo: TIPOS[0], valor: '',
-  dataVenc: '', parcela: '', totalParcel: '', notas: '',
-}
-
 function hojeMes(): string {
   return new Date().toISOString().slice(0, 7)
 }
@@ -88,8 +82,14 @@ function prazo(dias: number | null): string {
  * (`ContaReceber`, e não lançamento de despesa), mas a leitura é a mesma — e é
  * isso que faz as duas telas parecerem o mesmo produto.
  *
- * Diferente de Contas a Pagar, esta tela CADASTRA: o título de faturamento
- * nasce aqui, não em Lançamentos.
+ * NÃO CADASTRA, exatamente como Contas a Pagar. O título nasce em Lançamentos,
+ * ao registrar uma receita com cliente. Duas portas de criação para o mesmo
+ * recebível produziriam dois cadastros do mesmo dinheiro, cada um com a sua
+ * versão da verdade — que é o problema que o ambiente financeiro resolveu
+ * mantendo uma origem por informação.
+ *
+ * O que a tela faz é GERIR: filtrar, acompanhar vencimento, dar baixa,
+ * corrigir e excluir.
  */
 export default function ContasReceberClient({ clientes, podeGerenciar }: {
   clientes: Cliente[]
@@ -108,10 +108,6 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
   })
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
-
-  const [modal, setModal] = useState<'novo' | Titulo | null>(null)
-  const [form, setForm] = useState(FORM_VAZIO)
-  const [salvando, setSalvando] = useState(false)
 
   // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
   // `.then`, e `vivo` evita escrever em componente já desmontado.
@@ -143,57 +139,6 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
     return () => { vivo = false }
   }, [buscar, aplicar])
 
-  function abrirNovo() {
-    setForm({ ...FORM_VAZIO, dataVenc: new Date().toISOString().slice(0, 10) })
-    setErro(''); setModal('novo')
-  }
-
-  function abrirEdicao(t: Titulo) {
-    setForm({
-      clienteId: t.cliente.id,
-      descricao: t.descricao,
-      tipo: t.tipo,
-      valor: String(t.valor),
-      dataVenc: t.dataVenc.slice(0, 10),
-      parcela: t.parcela ? String(t.parcela) : '',
-      totalParcel: t.totalParcel ? String(t.totalParcel) : '',
-      notas: t.notas ?? '',
-    })
-    setErro(''); setModal(t)
-  }
-
-  async function salvar(e: React.FormEvent) {
-    e.preventDefault()
-    setSalvando(true); setErro('')
-
-    const editando = modal !== 'novo' && modal !== null
-    const res = await fetch(
-      editando ? `/api/financeiro/contas-receber/${modal.id}` : '/api/financeiro/contas-receber',
-      {
-        method: editando ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clienteId: form.clienteId,
-          descricao: form.descricao,
-          tipo: form.tipo,
-          valor: form.valor,
-          dataVenc: form.dataVenc,
-          parcela: form.parcela || null,
-          totalParcel: form.totalParcel || null,
-          notas: form.notas || null,
-        }),
-      },
-    )
-
-    if (res.ok) {
-      setModal(null); carregar()
-    } else {
-      const d = await res.json().catch(() => ({}))
-      setErro(d.error ?? 'Não foi possível salvar o título.')
-    }
-    setSalvando(false)
-  }
-
   /** Baixa: muda o status do título. Mesma mecânica de Contas a Pagar. */
   async function mudarStatus(t: Titulo, novo: StatusContaReceber) {
     setErro('')
@@ -216,7 +161,6 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
   }
 
   const inp = 'bp-field'
-  const lbl = 'bp-field-label'
 
   return (
     <div className="space-y-8">
@@ -231,7 +175,7 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
             <Button variant={todos ? 'primary' : 'ghost'} onClick={() => setTodos((v) => !v)}>
               {todos ? 'Todos os períodos' : 'Ver todos'}
             </Button>
-            {podeGerenciar && <Button variant="primary" onClick={abrirNovo}>+ Novo título</Button>}
+
           </div>
         }
       />
@@ -296,8 +240,12 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
         <Panel padded={false}>
           <EmptyState
             title="Nenhum título neste período"
-            description="Cadastre o faturamento do cliente — mensalidade de API, sustentação, setup ou pedido extra."
-            action={podeGerenciar ? <Button variant="primary" onClick={abrirNovo}>+ Novo título</Button> : undefined}
+            description="Os recebíveis nascem em Lançamentos, ao registrar uma receita com cliente."
+            action={
+              <Link href="/dashboard/financeiro/lancamentos">
+                <Button variant="primary">Ir para Lançamentos</Button>
+              </Link>
+            }
           />
         </Panel>
       ) : (
@@ -353,7 +301,6 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
                               onClick={() => mudarStatus(t, t.status === 'PAGO' ? 'PENDENTE' : 'PAGO')}>
                               {t.status === 'PAGO' ? 'Reabrir' : 'Dar baixa'}
                             </Button>
-                            <Button size="sm" onClick={() => abrirEdicao(t)}>Editar</Button>
                             <Button size="sm" variant="danger" onClick={() => excluir(t)}>Excluir</Button>
                           </>
                         )}
@@ -368,88 +315,14 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
       )}
 
       <p className="t-label text-subtle">
-        Contas a Receber lê os títulos de faturamento do cliente. Despesas vivem em Lançamentos e
-        aparecem em Contas a Pagar — são bases distintas, e nenhum valor é contado nas duas.
+        Esta tela acompanha os recebíveis; ela não os cria. Um título nasce em{' '}
+        <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft hover:underline">
+          Lançamentos
+        </Link>
+        , ao registrar uma receita com cliente — a mesma relação que Contas a Pagar tem com as
+        despesas. Nenhum valor é contado nas duas telas.
       </p>
 
-      {modal && (
-        <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={(e) => e.target === e.currentTarget && setModal(null)}>
-          <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-line">
-              <h2 className="t-h2 text-fg">
-                {modal === 'novo' ? 'Novo título' : `Editar — ${modal.descricao}`}
-              </h2>
-              <button onClick={() => setModal(null)} className="text-subtle hover:text-fg" aria-label="Fechar">✕</button>
-            </div>
-
-            <form onSubmit={salvar} className="p-5 space-y-4">
-              {erro && (
-                <div className="bg-neg/10 border border-neg/25 text-neg px-3 py-2 rounded-lg t-sm">{erro}</div>
-              )}
-
-              <div>
-                <label className={lbl} htmlFor="cr-desc">Descrição *</label>
-                <input id="cr-desc" required value={form.descricao} className={inp}
-                  onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={lbl} htmlFor="cr-cliente">Cliente *</label>
-                  <select id="cr-cliente" required value={form.clienteId} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, clienteId: e.target.value }))}>
-                    <option value="">Selecione…</option>
-                    {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="cr-tipo">Tipo *</label>
-                  <select id="cr-tipo" value={form.tipo} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value }))}>
-                    {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="cr-valor">Valor (R$) *</label>
-                  <input id="cr-valor" required type="number" step="0.01" min="0.01" value={form.valor}
-                    className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="cr-venc">Vencimento *</label>
-                  <input id="cr-venc" required type="date" value={form.dataVenc} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, dataVenc: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="cr-parcela">Parcela</label>
-                  <input id="cr-parcela" type="number" min="1" value={form.parcela} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, parcela: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="cr-total">Total de parcelas</label>
-                  <input id="cr-total" type="number" min="1" value={form.totalParcel} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, totalParcel: e.target.value }))} />
-                </div>
-              </div>
-
-              <div>
-                <label className={lbl} htmlFor="cr-notas">Observação</label>
-                <textarea id="cr-notas" rows={2} maxLength={1000} value={form.notas}
-                  className={inp + ' resize-none'}
-                  onChange={(e) => setForm((p) => ({ ...p, notas: e.target.value }))} />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-1">
-                <Button type="button" onClick={() => setModal(null)}>Cancelar</Button>
-                <Button type="submit" variant="primary" disabled={salvando}>
-                  {salvando ? 'Salvando…' : 'Salvar'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
