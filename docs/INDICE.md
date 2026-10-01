@@ -1,6 +1,16 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V22.md`](./RODADA-V22.md)** — a rodada mais recente:
+> **Comece por [`RODADA-V23.md`](./RODADA-V23.md)** — a rodada mais recente:
+> o **Conselho foi corrigido** — o proxy barrava o sócio porque lia `isPartner`
+> de um token de 7 dias que não tinha o campo, e a autoridade passou para a
+> página, que lê do banco; **Usuários** ganham alçadas próprias
+> (`view_usuarios` e `manage_usuarios`, separadas), com o controle de **sócio**
+> na tela; a Sidebar fecha com **RECEITA** em dois itens e **Lançamentos BaaS
+> em FINANCEIRO**; as **metas de pipeline** caem para duas (Geração de Leads e
+> **Conversão de Fechamento**); e as **tarifas de Condições BaaS viraram
+> produtos** com unidade, acabando com as duas fontes de preço.
+>
+> Antes dela, [`RODADA-V22.md`](./RODADA-V22.md):
 > **RECEITA** volta a ser seção própria (Metas, Lançamento Diário e o novo
 > **Lançamento BaaS**), separada de FINANCEIRO; nasce o **Lançamento BaaS**,
 > que tarifa o volume do parceiro e gera lançamento, título a receber e título

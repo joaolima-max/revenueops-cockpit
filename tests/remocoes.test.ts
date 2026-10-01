@@ -178,26 +178,35 @@ test('a rota antiga de métricas operacionais não é mais oferecida', () => {
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
 
-test('RECEITA tem Metas, Lançamento Diário e Lançamento BaaS, nessa ordem', () => {
-  // RECEITA é o que a operação PRODUZ — o objetivo, o insumo diário e o
-  // faturamento dos parceiros. FINANCEIRO é o que se faz com isso. Misturar
-  // as duas fazia a meta aparecer no meio das contas a pagar.
+test('RECEITA tem Metas e Lançamento Diário — e só', () => {
+  // RECEITA é o OBJETIVO e o INSUMO. O Lançamento BaaS saiu para o
+  // Financeiro: ele gera lançamento financeiro, título a receber e título a
+  // pagar, e é ao lado desses três que ele se confere.
   const receita = MODULES.find((m) => m.key === 'receita')!
   assert.deepEqual(
     receita.features.filter((f) => f.enabled).map((f) => f.label),
-    ['Metas', 'Lançamento Diário', 'Lançamento BaaS'],
+    ['Metas', 'Lançamento Diário'],
   )
 })
 
-test('FINANCEIRO tem os sete menus da especificação, nessa ordem', () => {
+test('FINANCEIRO tem os OITO menus da especificação, nessa ordem', () => {
+  // Contas a PAGAR antes de Contas a RECEBER, e Lançamentos BaaS fechando.
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
-      'Visão Geral', 'Lançamentos', 'Contas a Receber', 'Contas a Pagar',
-      'Categorias', 'Fornecedores', 'Condições BaaS',
+      'Visão Geral', 'Lançamentos', 'Contas a Pagar', 'Contas a Receber',
+      'Categorias', 'Fornecedores', 'Condições BaaS', 'Lançamentos BaaS',
     ],
   )
+})
+
+test('Lançamentos BaaS está em FINANCEIRO, nunca em RECEITA', () => {
+  const baas = activeFeatures().find((f) => f.key === 'financeiro.baas')!
+  assert.equal(baas.moduleKey, 'financeiro')
+  assert.equal(baas.route, '/dashboard/lancamento-baas')
+  const receita = MODULES.find((m) => m.key === 'receita')!
+  assert.ok(!receita.features.some((f) => /baas/i.test(f.label)))
 })
 
 test('Metas e Lançamento Diário NÃO estão em Financeiro', () => {
@@ -356,9 +365,9 @@ test('RECEITA e FINANCEIRO são seções SEPARADAS na sidebar', () => {
 
   assert.equal(receita.label, 'RECEITA')
   assert.equal(financeiro.label, 'FINANCEIRO')
-  assert.equal(receita.items.length, 3)
-  assert.equal(financeiro.items.length, 7)
-  // RECEITA vem ANTES: é o que produz o que o Financeiro administra.
+  assert.equal(receita.items.length, 2)
+  assert.equal(financeiro.items.length, 8)
+  // RECEITA vem ANTES: é a meta que dá sentido à leitura do resto.
   assert.ok(nav.indexOf(receita) < nav.indexOf(financeiro))
 })
 
@@ -437,12 +446,46 @@ test('as seções da sidebar saem na ordem da especificação', () => {
   const secoes = navigationFor('ADMIN').map((s) => s.key)
   assert.deepEqual(
     secoes,
-    ['executivo', 'carteira', 'operacoes', 'comercial', 'receita', 'financeiro', 'admin'],
+    ['executivo', 'receita', 'comercial', 'carteira', 'operacoes', 'financeiro', 'admin'],
   )
 })
 
-test('o ADMIN sem chave de governança vê EXECUTIVO sem Conselho', () => {
-  // A seção não pode desaparecer: o Cockpit continua nela.
-  const executivo = navigationFor('ADMIN', null).find((s) => s.key === 'executivo')!
+test('quem NÃO é sócio vê EXECUTIVO sem Conselho', () => {
+  // `socio: false` é a resposta de quem CONSULTOU o banco. `undefined` seria
+  // "não sei" — e quem não sabe (o proxy) não decide. A sidebar sempre sabe:
+  // o layout é server component e lê `isPartner` do banco.
+  const executivo = navigationFor('ADMIN', null, false).find((s) => s.key === 'executivo')!
   assert.deepEqual(executivo.items.map((i) => i.label), ['Cockpit'])
+})
+
+/* ── A SIDEBAR DESTA RODADA, item por item ───────────────────────────────── */
+
+test('EXECUTIVO: Cockpit e Conselho', () => {
+  const s = navigationFor('ADMIN', null, true).find((x) => x.key === 'executivo')!
+  assert.deepEqual(s.items.map((i) => i.label), ['Cockpit', 'Conselho'])
+})
+
+test('RECEITA vem antes de COMERCIAL e de FINANCEIRO', () => {
+  const chaves = navigationFor('ADMIN', null, true).map((s) => s.key)
+  assert.ok(chaves.indexOf('receita') < chaves.indexOf('comercial'))
+  assert.ok(chaves.indexOf('receita') < chaves.indexOf('financeiro'))
+})
+
+test('Contas a PAGAR vem antes de Contas a RECEBER', () => {
+  const rotulos = navigationFor('ADMIN')
+    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
+  assert.ok(rotulos.indexOf('Contas a Pagar') < rotulos.indexOf('Contas a Receber'))
+})
+
+test('Lançamentos BaaS FECHA o Financeiro', () => {
+  const rotulos = navigationFor('ADMIN')
+    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
+  assert.equal(rotulos[rotulos.length - 1], 'Lançamentos BaaS')
+})
+
+test('nenhum menu novo foi inventado — as sete seções e nada mais', () => {
+  const chaves = navigationFor('ADMIN', ['view_auditoria'], true).map((s) => s.key)
+  assert.deepEqual(chaves, [
+    'executivo', 'receita', 'comercial', 'carteira', 'operacoes', 'financeiro', 'admin',
+  ])
 })

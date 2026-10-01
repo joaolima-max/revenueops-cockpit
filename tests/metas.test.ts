@@ -14,7 +14,7 @@ import {
   avaliarMeta, validarValorMeta, PADRAO_POR_TIPO, META_TIPOS,
   META_DIRECOES, META_UNIDADES,
   calcularPacing, avaliarCompleto, acumulaNoMes,
-  ehMetaDePipeline, META_TIPO_LABEL,
+  ehMetaDePipeline, META_TIPO_LABEL, padraoDoTipo,
 } from '../lib/metas'
 
 /* ── Maior é melhor ──────────────────────────────────────────────────────── */
@@ -326,11 +326,45 @@ test('a unidade determina formatacao, comparacao e projecao do MED', () => {
  * METAS DE PIPELINE
  * ========================================================================= */
 
-test('os cinco tipos de meta de pipeline sao oferecidos na criacao', () => {
-  for (const t of ['LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS',
-                   'CONVERSAO_LEADS', 'ATIVIDADE_ASSISTIDA']) {
+test('SAO DOIS os tipos de meta de pipeline oferecidos: geracao e conversao', () => {
+  for (const t of ['LEADS_GERADOS', 'CONVERSAO_LEADS']) {
     assert.ok(META_TIPOS.includes(t as never), `${t} nao aparece na criacao`)
     assert.ok(ehMetaDePipeline(t))
+  }
+})
+
+test('Leads Ganhos, Leads Perdidos e Atividade Assistida SAIRAM da criacao', () => {
+  // Ganho e perda sao o DESFECHO da geracao e da conversao: metar os quatro
+  // produziria alvos que se contradizem. Atividade assistida e indicador de
+  // acompanhamento, nao objetivo.
+  for (const t of ['LEADS_GANHOS', 'LEADS_PERDIDOS', 'ATIVIDADE_ASSISTIDA']) {
+    assert.ok(
+      !META_TIPOS.includes(t as never),
+      `${t} voltou para a lista de criacao`,
+    )
+  }
+})
+
+test('os tres legados continuam LEGIVEIS e apurados', () => {
+  // Uma meta ja gravada com eles continua valendo — apaga-la da leitura
+  // esconderia um alvo ativo.
+  for (const t of ['LEADS_GANHOS', 'LEADS_PERDIDOS', 'ATIVIDADE_ASSISTIDA']) {
+    assert.ok(ehMetaDePipeline(t), `${t} deixou de ser apurado`)
+    assert.ok(META_TIPO_LABEL[t], `${t} sem rotulo`)
+    assert.ok(/legado/i.test(META_TIPO_LABEL[t]), `${t} nao esta marcado como legado`)
+    assert.ok(padraoDoTipo(t), `${t} sem padrao para avaliar`)
+  }
+})
+
+test('o rotulo da conversao e "Conversao de Fechamento"', () => {
+  // O que se mede e quanto do que foi DECIDIDO fechou — nao a conversao de
+  // um lead em particular.
+  assert.equal(META_TIPO_LABEL.CONVERSAO_LEADS, 'Conversão de Fechamento')
+  for (const t of META_TIPOS) {
+    assert.ok(
+      !/convers[ãa]o de lead/i.test(META_TIPO_LABEL[t]),
+      `o rotulo de ${t} voltou a dizer "Conversao de Lead"`,
+    )
   }
 })
 
@@ -351,9 +385,9 @@ test('as metas operacionais nao sao confundidas com as de pipeline', () => {
   }
 })
 
-test('perder MENOS e melhor — a direcao padrao de leads perdidos inverte', () => {
-  assert.equal(PADRAO_POR_TIPO.LEADS_PERDIDOS.direcao, 'MENOR_MELHOR')
-  assert.equal(PADRAO_POR_TIPO.LEADS_GANHOS.direcao, 'MAIOR_MELHOR')
+test('perder MENOS e melhor — a direcao do legado de perdidos inverte', () => {
+  assert.equal(padraoDoTipo('LEADS_PERDIDOS')!.direcao, 'MENOR_MELHOR')
+  assert.equal(padraoDoTipo('LEADS_GANHOS')!.direcao, 'MAIOR_MELHOR')
   assert.equal(PADRAO_POR_TIPO.LEADS_GERADOS.direcao, 'MAIOR_MELHOR')
 })
 
@@ -373,7 +407,7 @@ test('meta de conversao em 20%: realizado 25% atinge', () => {
   assert.equal(a.pacing.projecao, 25)
 })
 
-test('atividade assistida aceita as DUAS unidades, como o MED', () => {
+test('atividade assistida (legado) aceita as DUAS unidades, como o MED', () => {
   const pct = avaliarCompleto({
     tipo: 'ATIVIDADE_ASSISTIDA', periodo: '2026-10', meta: 60, realizado: 45,
     direcao: 'MAIOR_MELHOR', unidade: 'PERCENTUAL',

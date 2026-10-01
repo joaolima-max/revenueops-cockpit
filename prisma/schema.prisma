@@ -1363,8 +1363,16 @@ model CondicaoProduto {
   condicaoId String
   condicao   CondicaoComercial @relation(fields: [condicaoId], references: [id], onDelete: Cascade)
   nome       String
-  /// Preco unitario por transacao. Sempre em reais.
+  /// Preco unitario SEMPRE EM REAIS. Float, nunca texto: e dinheiro, e o
+  /// Lancamento BaaS multiplica este valor pelo volume.
+  ///
+  /// O OVERPRICE e a unica excecao percentual do cadastro, e mora em
+  /// `CondicaoComercial.overpricePercent` — nao aqui.
   preco      Float
+  /// O que se conta: "transacao", "conta", "mes", "consulta". Entra no rotulo
+  /// da coluna de volume do lancamento, para o colaborador saber o que esta
+  /// digitando. Nulo cai em "transacao", que e o caso da maioria.
+  unidade    String?           @default("transação")
   ativo      Boolean           @default(true)
   ordem      Int               @default(0)
   createdAt  DateTime          @default(now())

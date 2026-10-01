@@ -23,10 +23,15 @@ export default async function ConselhoPage() {
   /**
    * CONSELHO É DOS SÓCIOS.
    *
-   * `socio()` lê `User.isPartner` do banco a cada requisição — o proxy já
-   * barrou pela marca do token, mas a página não pode depender dela: um token
-   * de 7 dias continuaria abrindo o Conselho por uma semana depois de alguém
-   * deixar de ser sócio.
+   * `socio()` lê `User.isPartner` do BANCO a cada requisição, e esta página é
+   * a ÚNICA autoridade sobre o acesso.
+   *
+   * O proxy não decide: ele roda no edge, só conhece o JWT, e o JWT vive 7
+   * dias. Quando `isPartner` passou a entrar no token, o cookie de quem já
+   * estava logado não o tinha — e tratar o ausente como "não é sócio" barrava
+   * o sócio legítimo, com a sidebar mostrando o menu e o clique virando
+   * redirect. Ler do banco resolve as duas pontas: o sócio entra agora, e
+   * quem deixa de ser sócio perde o acesso agora.
    *
    * Ser ADMIN, ser Diretor ou estar no departamento Conselho NÃO basta, de
    * propósito. Eram três formas de inferir sócio, e cada uma delas dava falso

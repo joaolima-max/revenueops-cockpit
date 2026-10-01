@@ -18,7 +18,9 @@ import {
 } from '../lib/financeiro'
 // O limite de anexos mora em lib/arquivos.ts: a tela de Lancamentos precisa
 // dele no navegador, e lib/financeiro.ts importa Prisma.
-import { limiteAnexosAtingido, MAX_ANEXOS_LANCAMENTO } from '../lib/arquivos'
+import { limiteAnexosAtingido, MAX_ANEXOS_LANCAMENTO, validarArquivo } from '../lib/arquivos'
+// `podeVisualizar` e uma lista de MIMEs, sem Prisma: pode ser importada aqui.
+import { podeVisualizar } from '../lib/storage'
 // `lib/kpi.ts` tambem importa Prisma; aqui so entram as constantes e a regra
 // de soma, que sao puras.
 import {
@@ -326,4 +328,49 @@ test('TIPOS_QUE_SOMAM e subconjunto proprio dos seis tipos', () => {
   for (const t of TIPOS_QUE_SOMAM) {
     assert.ok(TIPOS_RECEITA_CONSELHO.includes(t))
   }
+})
+
+/* ========================================================================= *
+ * ANEXOS — formatos, limite e visualização (§45)
+ * ========================================================================= */
+
+test('foto e PDF sao aceitos — sao os dois formatos que a especificacao exige', () => {
+  for (const [nome, mime] of [
+    ['comprovante.jpg', 'image/jpeg'],
+    ['comprovante.jpeg', 'image/jpeg'],
+    ['print.png', 'image/png'],
+    ['recibo.webp', 'image/webp'],
+    ['nota.pdf', 'application/pdf'],
+  ] as const) {
+    assert.equal(
+      validarArquivo(nome, mime, 100_000), null,
+      `${nome} foi recusado`,
+    )
+  }
+})
+
+test('foto e PDF sao VISUALIZAVEIS; planilha so se baixa', () => {
+  // A regra do §45: visualizar foto/PDF abre; download explicito baixa. Uma
+  // planilha aberta inline seria uma aba em branco.
+  for (const m of ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']) {
+    assert.equal(podeVisualizar(m), true, `${m} deveria abrir`)
+  }
+  for (const m of [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/zip', 'text/csv',
+  ]) {
+    assert.equal(podeVisualizar(m), false, `${m} nao deveria abrir inline`)
+  }
+})
+
+test('o QUINTO anexo e bloqueado; o quarto passa', () => {
+  assert.equal(limiteAnexosAtingido(3), null, 'o quarto ainda cabe')
+  assert.ok(limiteAnexosAtingido(4), 'o quinto tem de ser recusado')
+  assert.ok(limiteAnexosAtingido(4)!.includes('4'))
+})
+
+test('MIME tem de bater com a extensao — extensao sozinha se falsifica', () => {
+  // Renomear um .exe para .pdf nao basta para subir.
+  assert.ok(validarArquivo('malicioso.pdf', 'application/x-msdownload', 1000))
+  assert.ok(validarArquivo('foto.png', 'application/pdf', 1000))
 })

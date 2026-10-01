@@ -16,6 +16,8 @@
  * Desabilitar uma FUNÇÃO desliga apenas ela.
  */
 
+import { hasPermission } from '@/lib/permissions'
+
 export type Role = 'ADMIN' | 'OPERACIONAL' | 'COMERCIAL' | 'GESTOR'
 
 export interface Feature {
@@ -52,11 +54,14 @@ export interface Feature {
    * só aparece no menu e só libera a rota para quem tem a chave gravada —
    * ser ADMIN não basta.
    *
-   * O proxy confere pela lista do token (defesa em profundidade, podendo
-   * estar até 7 dias atrasada no sentido PERMISSIVO); a palavra final é de
-   * `autorizado()`, que lê do banco a cada requisição.
+   * Aceita UMA chave ou uma LISTA — qualquer uma delas libera.
+   *
+   * A lista existe para Usuários: `manage_usuarios` implica consulta (quem
+   * edita também lê), e exigir só `view_usuarios` barraria quem tem a alçada
+   * mais forte. O contrário não vale — ler não dá direito de escrever, e isso
+   * é conferido no handler, não aqui.
    */
-  permissao?: string
+  permissao?: string | string[]
   /**
    * Função que exige ser SÓCIO. Hoje, só o Conselho Administrativo.
    *
@@ -86,6 +91,19 @@ export const ALWAYS_ON = [
 ]
 
 export const MODULES: Module[] = [
+  // ORDEM DAS SEÇÕES, e a leitura que ela produz:
+  //
+  //   EXECUTIVO  o retrato da empresa;
+  //   RECEITA    o objetivo e o insumo diário que o alimenta;
+  //   COMERCIAL  de onde vem o próximo cliente;
+  //   CARTEIRA   quem já é cliente;
+  //   OPERAÇÕES  o que mantém o cliente funcionando;
+  //   FINANCEIRO o que se faz com o dinheiro que entrou;
+  //   ADMIN      quem pode o quê.
+  //
+  // RECEITA vem antes do COMERCIAL porque a meta é o que dá sentido ao resto
+  // da leitura — e vem antes do FINANCEIRO porque receita é o que a operação
+  // PRODUZ, enquanto o Financeiro é o que se faz com isso.
   {
     key: 'executivo',
     label: 'EXECUTIVO',
@@ -110,27 +128,16 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    key: 'carteira',
-    label: 'CARTEIRA',
+    key: 'receita',
+    label: 'RECEITA',
     enabled: true,
     features: [
-      { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
-      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
-      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
-    ],
-  },
-  {
-    key: 'operacoes',
-    label: 'OPERAÇÕES',
-    enabled: true,
-    features: [
-      // ORDEM: Tarefas, Incidentes, Compliance.
-      { key: 'operacoes.tarefas', label: 'Tarefas', route: '/dashboard/tarefas', api: ['/api/tarefas'], enabled: true },
-      // As métricas operacionais não são um menu: são derivadas dos
-      // incidentes, e separá-las obrigava a abrir duas telas para o mesmo
-      // fato. Moram no topo de Incidentes, acima do registro.
-      { key: 'operacoes.incidentes', label: 'Incidentes', route: '/dashboard/incidentes', api: ['/api/incidentes'], enabled: true },
-      { key: 'operacoes.compliance', label: 'Compliance', route: '/dashboard/compliance', api: ['/api/compliance'], enabled: true },
+      // RECEITA é o OBJETIVO e o INSUMO: a meta e o lançamento diário que a
+      // alimenta. O Lançamento BaaS saiu daqui para o Financeiro — ele gera
+      // lançamento financeiro, título a receber e título a pagar, e é ao lado
+      // desses três que ele se confere.
+      { key: 'receita.metas', label: 'Metas', route: '/dashboard/metas', api: ['/api/metas'], enabled: true },
+      { key: 'receita.forecast', label: 'Lançamento Diário', route: '/dashboard/forecast', api: ['/api/forecast'], enabled: true },
     ],
   },
   {
@@ -167,20 +174,27 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    key: 'receita',
-    label: 'RECEITA',
+    key: 'carteira',
+    label: 'CARTEIRA',
     enabled: true,
     features: [
-      // RECEITA é separada de FINANCEIRO, de propósito. Receita é o que a
-      // operação PRODUZ — o objetivo, o insumo diário e o faturamento dos
-      // parceiros. Financeiro é o que se FAZ com isso: caixa, títulos,
-      // categorias, fornecedores. Misturar as duas fazia a meta aparecer no
-      // meio das contas a pagar.
-      { key: 'receita.metas', label: 'Metas', route: '/dashboard/metas', api: ['/api/metas'], enabled: true },
-      { key: 'receita.forecast', label: 'Lançamento Diário', route: '/dashboard/forecast', api: ['/api/forecast'], enabled: true },
-      // Lançamento BaaS mora aqui porque é lançamento de RECEITA operacional:
-      // tarifa o volume do parceiro e produz o faturamento do período.
-      { key: 'receita.baas', label: 'Lançamento BaaS', route: '/dashboard/lancamento-baas', api: ['/api/lancamento-baas'], enabled: true },
+      { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
+      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
+      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
+    ],
+  },
+  {
+    key: 'operacoes',
+    label: 'OPERAÇÕES',
+    enabled: true,
+    features: [
+      // ORDEM: Tarefas, Incidentes, Compliance.
+      { key: 'operacoes.tarefas', label: 'Tarefas', route: '/dashboard/tarefas', api: ['/api/tarefas'], enabled: true },
+      // As métricas operacionais não são um menu: são derivadas dos
+      // incidentes, e separá-las obrigava a abrir duas telas para o mesmo
+      // fato. Moram no topo de Incidentes, acima do registro.
+      { key: 'operacoes.incidentes', label: 'Incidentes', route: '/dashboard/incidentes', api: ['/api/incidentes'], enabled: true },
+      { key: 'operacoes.compliance', label: 'Compliance', route: '/dashboard/compliance', api: ['/api/compliance'], enabled: true },
     ],
   },
   {
@@ -192,16 +206,16 @@ export const MODULES: Module[] = [
       // do ambiente, e sem isso casaria por prefixo com todos os menus abaixo.
       { key: 'financeiro.visao', label: 'Visão Geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
       { key: 'financeiro.lancamentos', label: 'Lançamentos', route: '/dashboard/financeiro/lancamentos', api: ['/api/financeiro/lancamentos'], enabled: true },
-      { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
       // Contas a Pagar lê os MESMOS lançamentos de despesa da tela de
       // Lançamentos, pela data de vencimento. Não existe uma segunda base.
       { key: 'financeiro.pagar', label: 'Contas a Pagar', route: '/dashboard/financeiro/contas-pagar', api: ['/api/financeiro/contas-pagar'], enabled: true },
+      { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
       { key: 'financeiro.categorias', label: 'Categorias', route: '/dashboard/financeiro/categorias', api: ['/api/financeiro/categorias'], enabled: true },
       { key: 'financeiro.fornecedores', label: 'Fornecedores', route: '/dashboard/financeiro/fornecedores', api: ['/api/financeiro/fornecedores'], enabled: true },
-      { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', // `/produtos` não precisa de entrada própria: `checkAccess` casa por
-      // prefixo, então o pai já protege a sub-rota. Listar os dois faria um
-      // engolir o outro na resolução por rota mais específica.
-      api: ['/api/financeiro/condicoes-baas'], enabled: true },
+      { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },
+      // LANÇAMENTOS BAAS fecha o ambiente: ele tarifa o volume do parceiro e
+      // produz os três registros que os menus acima administram.
+      { key: 'financeiro.baas', label: 'Lançamentos BaaS', route: '/dashboard/lancamento-baas', api: ['/api/lancamento-baas'], enabled: true },
     ],
   },
   {
@@ -210,12 +224,34 @@ export const MODULES: Module[] = [
     enabled: true,
     roles: ['ADMIN'],
     features: [
-      { key: 'admin.usuarios', label: 'Usuários', route: '/dashboard/usuarios', api: ['/api/users'], enabled: true },
-      // AUDITORIA É DE POUCOS. Mesmo raciocínio do Conselho: a chave é
-      // restrita, então nem todo ADMIN entra — só quem foi autorizado.
+      // USUÁRIOS tem alçada PRÓPRIA — e é a chave que decide, não o perfil.
+      //
+      // `roles` lista os quatro perfis de propósito: a seção ADMIN restringe
+      // a ADMIN, e herdar essa restrição tornaria `view_usuarios` inútil —
+      // ninguém além de ADMIN poderia recebê-la, que é exatamente o contrário
+      // de ter uma chave própria. Quem decide é `permissao`.
+      //
+      // Editar exige `manage_usuarios`, conferido no handler: consultar quem
+      // tem acesso a quê é trabalho de auditoria e de suporte; alterar é de
+      // quem responde pelas alçadas.
+      {
+        key: 'admin.usuarios', label: 'Usuários', route: '/dashboard/usuarios',
+        api: ['/api/users'], enabled: true,
+        roles: ['ADMIN', 'OPERACIONAL', 'COMERCIAL', 'GESTOR'],
+        // Qualquer uma das duas abre a tela. Quem só edita também consulta.
+        permissao: ['view_usuarios', 'manage_usuarios'],
+      },
+      // AUDITORIA É DE POUCOS, e de quem for autorizado — não de todo ADMIN.
+      //
+      // Mesma razão de listar os quatro perfis: a chave é restrita (nunca
+      // concedida por perfil), e herdar `roles: ['ADMIN']` da seção impediria
+      // conceder auditoria a alguém que não é administrador do sistema. A
+      // chave é o gate.
       {
         key: 'admin.auditoria', label: 'Auditoria', route: '/dashboard/auditoria',
-        api: ['/api/auditoria'], enabled: true, permissao: 'view_auditoria',
+        api: ['/api/auditoria'], enabled: true,
+        roles: ['ADMIN', 'OPERACIONAL', 'COMERCIAL', 'GESTOR'],
+        permissao: 'view_auditoria',
       },
     ],
   },
@@ -249,15 +285,29 @@ function roleAllowed(feature: ResolvedFeature, role?: string): boolean {
 }
 
 /**
- * A chave restrita da função está concedida?
+ * A chave da função está concedida?
  *
- * Função sem `permissao` passa direto. Com `permissao`, exige a chave na lista
- * — e ser ADMIN não substitui, que é exatamente o ponto do Conselho e da
- * Auditoria.
+ * Delega a `hasPermission`, que é a ÚNICA regra de permissão do produto — e é
+ * ela que distingue os dois casos:
+ *
+ *   CHAVE RESTRITA (`view_auditoria`) → exige a chave na lista do usuário.
+ *     Ser ADMIN não substitui, que é o ponto da Auditoria.
+ *
+ *   CHAVE NORMAL (`view_usuarios`)    → vale o atalho de ADMIN e o default do
+ *     perfil, como em qualquer outra permissão do sistema.
+ *
+ * Esta função já comparou a lista com `includes` cru, e o efeito era um bug:
+ * um ADMIN sem lista explícita de permissões — que é o caso da maioria dos
+ * usuários em Production — perdia o menu de Usuários, porque `null.includes`
+ * nunca encontra nada. A regra de permissão não pode ter duas implementações.
  */
-function permissaoConcedida(feature: Feature, permissoes?: string[] | null): boolean {
+function permissaoConcedida(
+  feature: Feature, permissoes?: string[] | null, role?: string,
+): boolean {
   if (!feature.permissao) return true
-  return !!permissoes && permissoes.includes(feature.permissao)
+  const chaves = Array.isArray(feature.permissao) ? feature.permissao : [feature.permissao]
+  // QUALQUER uma libera. Ver o comentário em `Feature.permissao`.
+  return chaves.some((k) => hasPermission(permissoes ?? null, k, role ?? ''))
 }
 
 /**
@@ -267,13 +317,58 @@ function permissaoConcedida(feature: Feature, permissoes?: string[] | null): boo
 export interface Contexto {
   role?: string
   permissoes?: string[] | null
+  /**
+   * `true` libera, `false` barra, `undefined` NÃO DECIDE.
+   *
+   * A indecisão é deliberada: quem não consegue consultar o banco — o proxy —
+   * não deve opinar sobre quem é sócio. Ver `liberada`.
+   */
   socio?: boolean
 }
 
-/** Passa pelos três filtros: perfil, chave restrita e sócio. */
+/**
+ * Passa pelos filtros que o CONTEXTO consegue decidir.
+ *
+ * `socio` só é aplicado quando o chamador o informa EXPLICITAMENTE — e isso
+ * é a correção de um bug real.
+ *
+ * ── POR QUE O PROXY NÃO PODE DECIDIR SÓCIO ──────────────────────────────
+ *
+ * O proxy roda no edge e não consulta o banco: tudo o que ele sabe vem do
+ * JWT, que vive 7 dias. `isPartner` passou a entrar no token só a partir de
+ * uma versão — então o cookie de quem já estava logado não o tinha.
+ *
+ * Com `undefined` tratado como "não é sócio", o efeito foi o oposto do
+ * esperado: o sócio legítimo era BARRADO. A sidebar mostrava o Conselho
+ * (ela lê do banco, num server component) e o clique levava a um redirect.
+ * Token velho, para uma marca que nasce ausente, é restritivo — não
+ * permissivo.
+ *
+ * Então a autoridade sobre `socio` é a PÁGINA e a API, que leem
+ * `User.isPartner` do banco a cada requisição (`socio()` em lib/autorizacao).
+ * É mais seguro, não menos: revogar passa a valer na hora, em vez de esperar
+ * o token expirar.
+ */
 function liberada(feature: ResolvedFeature, ctx: Contexto): boolean {
-  if (feature.socio && !ctx.socio) return false
-  return roleAllowed(feature, ctx.role) && permissaoConcedida(feature, ctx.permissoes)
+  if (feature.socio && ctx.socio === false) return false
+  return roleAllowed(feature, ctx.role)
+    && permissaoConcedida(feature, ctx.permissoes, ctx.role)
+}
+
+/**
+ * A rota exige ser SÓCIO?
+ *
+ * Existe para que a obrigação fique visível do lado de quem pode cumpri-la: a
+ * página e a API, que consultam o banco. Uma função marcada `socio: true` sem
+ * `socio()` no handler seria uma rota aberta.
+ */
+export function exigeSocio(pathname: string): boolean {
+  const isApi = pathname.startsWith('/api/')
+  return activeFeatures().some((f) => {
+    if (!f.socio) return false
+    const paths = isApi ? (f.api ?? []) : [f.route]
+    return paths.some((p) => pathname === p || pathname.startsWith(p + '/'))
+  })
 }
 
 /**

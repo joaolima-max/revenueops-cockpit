@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { condicaoId, nome, preco, ordem } = await request.json()
+  const { condicaoId, nome, preco, unidade, ordem } = await request.json()
 
   if (typeof condicaoId !== 'string' || !condicaoId) {
     return NextResponse.json({ error: 'Informe a condição.' }, { status: 400 })
@@ -64,6 +64,12 @@ export async function POST(request: NextRequest) {
     const produto = await prisma.condicaoProduto.create({
       data: {
         condicaoId, nome: rotulo, preco: valor,
+        // O QUE SE CONTA no volume: transação, consulta, conta, mês. Entra no
+        // rótulo da coluna do lançamento, para o colaborador saber o que está
+        // digitando. Texto livre porque o contrato pode cobrar por qualquer
+        // coisa — limitar a uma lista fechada obrigaria migration por produto.
+        unidade: typeof unidade === 'string' && unidade.trim()
+          ? unidade.trim().slice(0, 40) : 'transação',
         ordem: Number.isFinite(Number(ordem)) ? Number(ordem) : 0,
       },
     })
@@ -89,7 +95,7 @@ export async function PUT(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { id, nome, preco, ativo, ordem } = await request.json()
+  const { id, nome, preco, unidade, ativo, ordem } = await request.json()
   if (typeof id !== 'string' || !id) {
     return NextResponse.json({ error: 'Informe o produto.' }, { status: 400 })
   }
@@ -109,6 +115,7 @@ export async function PUT(request: NextRequest) {
     }
     dados.preco = valor
   }
+  if (typeof unidade === 'string' && unidade.trim()) dados.unidade = unidade.trim().slice(0, 40)
   if (typeof ativo === 'boolean') dados.ativo = ativo
   if (ordem !== undefined && Number.isFinite(Number(ordem))) dados.ordem = Number(ordem)
 

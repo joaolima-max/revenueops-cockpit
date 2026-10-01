@@ -5,6 +5,7 @@ import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
 import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import GerenciarProdutos from '@/components/financeiro/GerenciarProdutos'
 import HairlineGrid from '@/components/ui/HairlineGrid'
 import StatTile from '@/components/ui/StatTile'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
@@ -18,8 +19,10 @@ interface Condicao {
   nomeFantasia: string
   identificacao: string
   tipo: TipoParceiro
+  /** LEGADO. A tarifa por transação virou produto; o valor fica no histórico. */
   pix: number | null
   kyc: number | null
+  _count?: { produtos: number }
   sustentacao: number | null
   apiMensal: number | null
   mensalidadeContaAtiva: number | null
@@ -91,6 +94,8 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
   const [carregando, setCarregando] = useState(true)
 
   const [modal, setModal] = useState<{ id?: string } | null>(null)
+  /** Painel de produtos tarifados do parceiro. */
+  const [produtosDe, setProdutosDe] = useState<Condicao | null>(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
@@ -245,8 +250,10 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
               <Th className="pl-5">Nome fantasia</Th>
               <Th>Identificação</Th>
               <Th>Tipo</Th>
-              <Th align="right">PIX</Th>
-              <Th align="right">KYC</Th>
+              {/* PRODUTOS em lugar de PIX e KYC: a tarifa por transação
+                  passou a ser cadastro próprio, e o número aqui diz quantos
+                  produtos o parceiro tem tarifados. */}
+              <Th align="right">Produtos</Th>
               <Th align="right">Sustentação</Th>
               <Th align="right">API mensal</Th>
               <Th align="right">Conta ativa</Th>
@@ -269,8 +276,13 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
                 </Td>
                 <Td className="t-mono text-subtle">{c.identificacao}</Td>
                 <Td><Badge tone={TIPO_TONE[c.tipo]}>{TIPO_LABEL[c.tipo]}</Badge></Td>
-                <Td align="right" numeric>{moeda(c.pix)}</Td>
-                <Td align="right" numeric>{moeda(c.kyc)}</Td>
+                <Td align="right">
+                  <button
+                    onClick={() => setProdutosDe(c)}
+                    className="t-sm text-accent-soft hover:underline tabular-nums">
+                    {c._count?.produtos ?? 0}
+                  </button>
+                </Td>
                 <Td align="right" numeric>
                   <span className="block">{moeda(c.sustentacao)}</span>
                   {c.sustentacaoInicio && (
@@ -304,6 +316,15 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
       </TableShell>
 
       {/* ── Cadastro / edição ────────────────────────────────────────────── */}
+      {produtosDe && (
+        <GerenciarProdutos
+          condicaoId={produtosDe.id}
+          condicaoNome={produtosDe.nomeFantasia}
+          podeGerenciar={podeGerenciar}
+          onFechar={() => { setProdutosDe(null); carregar() }}
+        />
+      )}
+
       {modal && (
         <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={(e) => e.target === e.currentTarget && setModal(null)}>
@@ -332,16 +353,14 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
                     <option value="WHITE_LABEL">White Label</option>
                   </select>
                 </div>
-                <div>
-                  <label className={lbl} htmlFor="c-pix">PIX (R$ por transação)</label>
-                  <input id="c-pix" type="number" step="0.01" min="0" value={form.pix} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, pix: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={lbl} htmlFor="c-kyc">KYC (R$ por consulta)</label>
-                  <input id="c-kyc" type="number" step="0.01" min="0" value={form.kyc} className={inp}
-                    onChange={(e) => setForm((p) => ({ ...p, kyc: e.target.value }))} />
-                </div>
+                {/* PIX e KYC SAÍRAM DAQUI.
+                    As tarifas por transação passaram a ser PRODUTOS — é o que
+                    permite cadastrar manutenção de conta, boleto, API e o que
+                    mais o contrato tiver, em vez de dois campos fixos.
+                    Mantê-los aqui criaria duas fontes para o mesmo preço: o
+                    Lançamento BaaS lê os produtos, e editar a coluna antiga
+                    não mudaria a tarifa aplicada. As colunas continuam no
+                    banco, com o valor histórico. */}
                 <div>
                   <label className={lbl} htmlFor="c-sust">Sustentação (R$/mês)</label>
                   <input id="c-sust" type="number" step="0.01" min="0" value={form.sustentacao} className={inp}

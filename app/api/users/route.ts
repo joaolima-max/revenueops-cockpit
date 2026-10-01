@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { roleDoPerfil, DEPARTAMENTOS, HIERARQUIAS, type Perfil, type Departamento, type Hierarquia } from '@/lib/permissions'
+import {
+  roleDoPerfil, DEPARTAMENTOS, HIERARQUIAS,
+  podeVerUsuarios, podeGerenciarUsuarios,
+  type Perfil, type Departamento, type Hierarquia,
+} from '@/lib/permissions'
 
 /**
  * Só aceita valor que EXISTE no enum. Texto solto do corpo da requisição não
@@ -16,12 +20,17 @@ function valido(v: unknown, permitidos: readonly string[]): string | null {
 export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // VER exige `view_usuarios` (ou `manage_usuarios`, que o implica). Antes
+  // bastava ser ADMIN — e todos os usuários de Production são ADMIN, então o
+  // ambiente estava aberto para todos eles.
+  if (!podeVerUsuarios(session.permissoes ?? null, session.role)) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
 
   const users = await prisma.user.findMany({
     select: {
       id: true, name: true, email: true, role: true, active: true, createdAt: true,
-      departamento: true, hierarquia: true,
+      departamento: true, hierarquia: true, isPartner: true,
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -32,7 +41,12 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // CRIAR é mutação: exige `manage_usuarios`. Ler não dá direito de escrever.
+  if (!podeGerenciarUsuarios(session.permissoes ?? null, session.role)) {
+    return NextResponse.json(
+      { error: 'Criar usuário exige a permissão de gerenciar usuários.' }, { status: 403 },
+    )
+  }
 
   const data = await request.json()
 
@@ -68,10 +82,12 @@ export async function POST(request: NextRequest) {
       role,
       departamento,
       hierarquia,
+      // SÓCIO nasce FALSE por omissão: o Conselho não se concede por descuido.
+      isPartner: data.isPartner === true,
     },
     select: {
       id: true, name: true, email: true, role: true, active: true, createdAt: true,
-      departamento: true, hierarquia: true,
+      departamento: true, hierarquia: true, isPartner: true,
     },
   })
 

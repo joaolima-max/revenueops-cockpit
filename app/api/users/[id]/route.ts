@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import {
-  roleDoPerfil, DEPARTAMENTOS, HIERARQUIAS,
+  roleDoPerfil, DEPARTAMENTOS, HIERARQUIAS, podeGerenciarUsuarios,
   type Perfil, type Departamento, type Hierarquia,
 } from '@/lib/permissions'
 
@@ -17,14 +18,20 @@ export async function PUT(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // EDITAR exige `manage_usuarios`. Quem só tem `view_usuarios` consulta e
+  // não altera — é a razão de as duas chaves serem separadas.
+  if (!podeGerenciarUsuarios(session.permissoes ?? null, session.role)) {
+    return NextResponse.json(
+      { error: 'Editar usuário exige a permissão de gerenciar usuários.' }, { status: 403 },
+    )
+  }
 
   const { id } = await params
   const body = await request.json()
 
   const atual = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, role: true, departamento: true },
+    select: { id: true, name: true, role: true, departamento: true, isPartner: true },
   })
   if (!atual) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
 
@@ -32,6 +39,15 @@ export async function PUT(
 
   if (body.name !== undefined) updateData.name = String(body.name).trim()
   if (body.active !== undefined) updateData.active = !!body.active
+
+  /**
+   * SÓCIO — a autorização do Conselho Administrativo.
+   *
+   * Eixo próprio: não é perfil, não é departamento, não é hierarquia. Marcar
+   * alguém como sócio é a decisão mais sensível desta tela, e por isso vai
+   * para a auditoria com destaque.
+   */
+  if (body.isPartner !== undefined) updateData.isPartner = !!body.isPartner
 
   if (body.departamento !== undefined) {
     updateData.departamento = valido(body.departamento, DEPARTAMENTOS) as Departamento | null
@@ -65,9 +81,21 @@ export async function PUT(
     data: updateData,
     select: {
       id: true, name: true, email: true, role: true, active: true, createdAt: true,
-      departamento: true, hierarquia: true,
+      departamento: true, hierarquia: true, isPartner: true,
     },
   })
+
+  // Virar ou deixar de ser SÓCIO é registrado à parte: é o que decide quem
+  // abre o Conselho, e quem audita depois precisa achar essa mudança.
+  if (atual.isPartner !== user.isPartner) {
+    await logAudit(
+      session.userId,
+      user.isPartner ? 'MARCOU_COMO_SOCIO' : 'REMOVEU_SOCIO',
+      'User', id,
+      `${atual.name}: acesso ao Conselho Administrativo `
+      + (user.isPartner ? 'concedido' : 'removido'),
+    )
+  }
 
   return NextResponse.json(user)
 }

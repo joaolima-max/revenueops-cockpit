@@ -26,6 +26,7 @@ import {
   DEPARTAMENTO_LABEL, HIERARQUIA_LABEL, PERFIL_LABEL,
   DEPARTAMENTO_DA_ORIGEM,
   ehSocio, podeVerLixeira, podeSerGestorDeConta,
+  podeVerUsuarios, podeGerenciarUsuarios,
 } from '../lib/permissions'
 import { navigationFor, checkAccess, activeFeatures } from '../lib/modules'
 
@@ -149,10 +150,49 @@ test('NAO ser socio barra o Conselho mesmo com todas as chaves', () => {
   assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', todas, false), 'forbidden')
 })
 
-test('a Auditoria continua exigindo ADMIN, ALEM da chave', () => {
-  // O modulo ADMIN tem `roles: ['ADMIN']`. A chave nao substitui o perfil:
-  // os dois filtros valem.
-  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', ['view_auditoria'], false), 'forbidden')
+test('a CHAVE e o gate da Auditoria — nao o perfil', () => {
+  // A funcao lista os quatro perfis de proposito: herdar `roles: ['ADMIN']`
+  // da secao impediria conceder auditoria a quem nao e administrador do
+  // sistema, e a chave restrita existe justamente para isso.
+  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', ['view_auditoria'], false), 'allow')
+  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', null, false), 'forbidden')
+  assert.equal(checkAccess('/dashboard/auditoria', 'ADMIN', null, false), 'forbidden',
+    'ser ADMIN nunca libera chave restrita')
+})
+
+test('USUARIOS tem alcada propria: view OU manage abrem a tela', () => {
+  for (const chaves of [['view_usuarios'], ['manage_usuarios'], ['view_usuarios', 'manage_usuarios']]) {
+    assert.equal(
+      checkAccess('/dashboard/usuarios', 'OPERACIONAL', chaves, false), 'allow',
+      `${chaves.join('+')} deveria abrir`,
+    )
+  }
+  assert.equal(checkAccess('/dashboard/usuarios', 'OPERACIONAL', null, false), 'forbidden')
+  assert.equal(checkAccess('/dashboard/usuarios', 'OPERACIONAL', ['view_leads'], false), 'forbidden')
+})
+
+test('ADMIN sem lista explicita CONTINUA vendo Usuarios', () => {
+  // A regressao que isto trava: `permissaoConcedida` comparava a lista com
+  // `includes` cru, e `null.includes` nunca encontra nada — um ADMIN sem
+  // lista (o caso da maioria em Production) perdia o menu.
+  assert.equal(checkAccess('/dashboard/usuarios', 'ADMIN', null), 'allow')
+  const itens = navigationFor('ADMIN', null, false).flatMap((s) => s.items.map((i) => i.label))
+  assert.ok(itens.includes('Usuários'))
+})
+
+test('ver e EDITAR usuarios sao alcadas separadas', () => {
+  // Consultar quem tem acesso a que e trabalho de auditoria; alterar e de
+  // quem responde pelas alcadas. Com uma chave so, quem precisa conferir
+  // ganharia o poder de conceder qualquer outra — inclusive a si mesmo.
+  assert.equal(podeVerUsuarios(['view_usuarios'], 'OPERACIONAL'), true)
+  assert.equal(podeGerenciarUsuarios(['view_usuarios'], 'OPERACIONAL'), false)
+
+  assert.equal(podeVerUsuarios(['manage_usuarios'], 'OPERACIONAL'), true,
+    'quem edita tambem le')
+  assert.equal(podeGerenciarUsuarios(['manage_usuarios'], 'OPERACIONAL'), true)
+
+  assert.equal(podeVerUsuarios(null, 'OPERACIONAL'), false)
+  assert.equal(podeGerenciarUsuarios(null, 'OPERACIONAL'), false)
 })
 
 test('cada funcao declara o eixo que a governa', () => {

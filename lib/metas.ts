@@ -47,14 +47,23 @@ export const META_TIPOS = [
   'RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS', 'TAKE_RATE',
   // De PIPELINE — alimentados pelo Comercial. Quantidade e percentual; nenhuma
   // monetária, porque o valor de um lead não está validado e não vira meta.
-  'LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS', 'CONVERSAO_LEADS',
-  'ATIVIDADE_ASSISTIDA',
+  //
+  // SÃO DOIS, e só dois. `LEADS_GANHOS`, `LEADS_PERDIDOS` e
+  // `ATIVIDADE_ASSISTIDA` saíram da criação: ganho e perda são o DESFECHO da
+  // geração e da conversão — metar os quatro produziria alvos que se
+  // contradizem (bater geração e conversão já determina os ganhos), e
+  // atividade assistida é indicador de acompanhamento, não objetivo.
+  //
+  // Os três continuam no enum do banco: há como ler metas gravadas com eles.
+  'LEADS_GERADOS', 'CONVERSAO_LEADS',
 ] as const
 
 /** Os tipos que a Visão geral do Comercial acompanha. */
 export const META_TIPOS_PIPELINE: readonly string[] = [
-  'LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS', 'CONVERSAO_LEADS',
-  'ATIVIDADE_ASSISTIDA',
+  'LEADS_GERADOS', 'CONVERSAO_LEADS',
+  // Legados: não são oferecidos, mas uma meta já gravada continua sendo
+  // apurada e exibida — apagá-la da leitura esconderia um alvo ativo.
+  'LEADS_GANHOS', 'LEADS_PERDIDOS', 'ATIVIDADE_ASSISTIDA',
 ]
 
 export function ehMetaDePipeline(tipo: string): boolean {
@@ -79,13 +88,27 @@ export const PADRAO_POR_TIPO: Record<MetaTipo, { unidade: MetaUnidade; direcao: 
 
   // ── Pipeline ──────────────────────────────────────────────────────────
   LEADS_GERADOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
-  LEADS_GANHOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
-  // Perder menos é melhor. A meta existe para ter teto, não alvo.
-  LEADS_PERDIDOS: { unidade: 'QUANTIDADE', direcao: 'MENOR_MELHOR' },
   CONVERSAO_LEADS: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
-  // Pode ser "60% da base acompanhada" ou "80 leads acompanhados": a unidade
-  // escolhida no cadastro decide, como no MED.
+}
+
+/**
+ * Padrão dos tipos LEGADOS, para que uma meta já gravada continue sendo
+ * avaliada. Não aparecem na criação — ver `META_TIPOS`.
+ */
+export const PADRAO_LEGADO: Record<string, { unidade: MetaUnidade; direcao: MetaDirecao }> = {
+  LEADS_GANHOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
+  LEADS_PERDIDOS: { unidade: 'QUANTIDADE', direcao: 'MENOR_MELHOR' },
   ATIVIDADE_ASSISTIDA: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
+  MED_PERCENTUAL: { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' },
+}
+
+/** O padrão de um tipo, oferecido ou legado. Null quando desconhecido. */
+export function padraoDoTipo(
+  tipo: string,
+): { unidade: MetaUnidade; direcao: MetaDirecao } | null {
+  return (PADRAO_POR_TIPO as Record<string, { unidade: MetaUnidade; direcao: MetaDirecao }>)[tipo]
+    ?? PADRAO_LEGADO[tipo]
+    ?? null
 }
 
 /**
@@ -108,14 +131,17 @@ export const META_TIPO_LABEL: Record<string, string> = {
   TAKE_RATE: 'Take Rate',
 
   LEADS_GERADOS: 'Geração de Leads',
-  LEADS_GANHOS: 'Leads Ganhos',
-  LEADS_PERDIDOS: 'Leads Perdidos',
-  CONVERSAO_LEADS: 'Conversão de Leads',
-  ATIVIDADE_ASSISTIDA: 'Atividade Assistida',
+  // "Conversão de FECHAMENTO": o que se mede é quanto do que foi decidido
+  // fechou, não a conversão de um lead em particular.
+  CONVERSAO_LEADS: 'Conversão de Fechamento',
 
-  // Legado: criadas antes de MED virar um indicador só, ou antes da revisão
-  // da taxonomia. Legíveis, nunca oferecidas.
+  // Legado: criadas antes de MED virar um indicador só, antes da revisão da
+  // taxonomia, ou antes de as metas de pipeline serem reduzidas a duas.
+  // Legíveis, nunca oferecidas.
   MED_PERCENTUAL: 'MED (legado — percentual)',
+  LEADS_GANHOS: 'Leads Ganhos (legado)',
+  LEADS_PERDIDOS: 'Leads Perdidos (legado)',
+  ATIVIDADE_ASSISTIDA: 'Atividade Assistida (legado)',
   RECEITA: 'Receita (legado)',
   MRR: 'MRR (legado)',
   FLOATING: 'Floating (legado)',

@@ -232,3 +232,62 @@ test('um periodo dentro do outro se sobrepoe', () => {
 test('o rotulo do periodo sai em pt-BR', () => {
   assert.equal(rotuloPeriodo(D('2026-10-01'), D('2026-10-31')), '01/10/2026 a 31/10/2026')
 })
+
+/* ========================================================================= *
+ * O EXEMPLO EXATO DA ESPECIFICAÇÃO (§56)
+ * ========================================================================= */
+
+test('§56: saldo 100.000, tarifas 10.065, overprice 25% -> residual 67.451,25', () => {
+  // Os seis números da especificacao, conferidos um por um.
+  const c = calcular(100_000, [
+    { nome: 'PIX', preco: 0.10, volume: 100_000 },  // 10.000,00
+    { nome: 'KYC', preco: 6.50, volume: 10 },       //      65,00
+  ], 25)
+
+  assert.equal(c.saldoInicial, 100_000)
+  assert.equal(c.totalTarifas, 10_065)
+  assert.equal(c.saldoRemanescente, 89_935)
+  assert.equal(c.overpricePercent, 25)
+  assert.equal(c.overpriceValor, 22_483.75)
+  assert.equal(c.valorCliente, 67_451.25)
+
+  // E o FECHAMENTO: nada aparece nem desaparece.
+  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 100_000)
+})
+
+test('a TAXA vem do cadastro — o calculo nunca a recebe do volume', () => {
+  // A assinatura separa preco de volume de proposito: nao ha caminho em que o
+  // colaborador digite o preco. Trocar um pelo outro produziria outro numero.
+  const correto = calcular(1_000, [{ nome: 'P', preco: 0.5, volume: 100 }], null)
+  const trocado = calcular(1_000, [{ nome: 'P', preco: 100, volume: 0.5 }], null)
+  assert.equal(correto.totalTarifas, 50)
+  // Volume fracionario e recusado pela validacao; aqui so se mostra que a
+  // ordem importa e que os campos nao sao intercambiaveis por acidente.
+  assert.notEqual(correto.itens[0].volume, trocado.itens[0].volume)
+})
+
+test('produtos DINAMICOS: a cascata nao conhece PIX nem KYC por nome', () => {
+  // Nada no calculo depende do nome do produto — e por isso manutencao de
+  // conta, boleto e API entram sem alteracao de codigo.
+  const c = calcular(10_000, [
+    { nome: 'Manutenção de conta', preco: 12.90, volume: 50 },
+    { nome: 'Boleto', preco: 2.45, volume: 200 },
+    { nome: 'API', preco: 0.01, volume: 30_000 },
+  ], 10)
+  assert.equal(c.itens.length, 3)
+  assert.equal(c.totalTarifas, centavos(12.90 * 50 + 2.45 * 200 + 0.01 * 30_000))
+  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 10_000)
+})
+
+test('um produto SO tambem fecha a conta', () => {
+  const c = calcular(500, [{ nome: 'Único', preco: 1.37, volume: 73 }], 15)
+  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 500)
+})
+
+test('saldo zerado: nenhuma tarifa, nenhum overprice, residual zero', () => {
+  const c = calcular(0, [{ nome: 'P', preco: 1, volume: 0 }], 25)
+  assert.equal(c.totalTarifas, 0)
+  assert.equal(c.saldoRemanescente, 0)
+  assert.equal(c.overpriceValor, 0, 'overprice sobre zero e zero, nao um erro')
+  assert.equal(c.valorCliente, 0)
+})

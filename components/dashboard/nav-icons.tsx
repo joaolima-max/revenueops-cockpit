@@ -27,7 +27,7 @@ export const ICONS: Record<string, ReactNode> = {
   'conselho': I.metricas,
   'receita.forecast': I.forecast,
   'receita.metas': I.metas,
-  'receita.baas': I.lancamentoBaas,
+
   'carteira.clientes': I.clientes,
   'carteira.volumetria': I.volumetria,
   'operacoes.incidentes': I.incidentes,
@@ -45,6 +45,7 @@ export const ICONS: Record<string, ReactNode> = {
   'financeiro.categorias': I.parametros,
   'financeiro.fornecedores': I.clientes,
   'financeiro.condicoes': I.metricas,
+  'financeiro.baas': I.lancamentoBaas,
   'admin.usuarios': I.usuarios,
   'admin.auditoria': I.auditoria,
 }

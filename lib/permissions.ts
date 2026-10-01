@@ -57,6 +57,9 @@ export const ALL_PERMISSIONS = [
   // Compliance
   { key: 'view_compliance',  label: 'Ver Compliance',           group: 'Compliance' },
   { key: 'manage_compliance',label: 'Gerenciar Compliance',     group: 'Compliance' },
+  // Administração
+  { key: 'view_usuarios',    label: 'Ver Usuários',             group: 'Administração' },
+  { key: 'manage_usuarios',  label: 'Gerenciar Usuários',       group: 'Administração' },
   // Governança — concedidas UMA A UMA, nunca por perfil. Ver PERMISSOES_RESTRITAS.
   //
   // O CONSELHO NÃO ESTÁ AQUI. Ele é governado por `User.isPartner`, uma
@@ -92,6 +95,8 @@ export function permissaoRestrita(key: string): boolean {
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   // Tudo MENOS as restritas: ser ADMIN não é ser sócio nem auditor.
   ADMIN: ALL_PERMISSIONS.map(p => p.key).filter(k => !permissaoRestrita(k)),
+  // As chaves de Usuários NÃO entram nos perfis não-admin: conceder alçada é
+  // decisão de quem responde por elas, não consequência do departamento.
   OPERACIONAL: [
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
@@ -263,4 +268,30 @@ export function podeSerGestorDeConta(
   u: { active?: boolean | null } | null | undefined,
 ): boolean {
   return !!u?.active
+}
+
+
+/* ========================================================================= *
+ * USUÁRIOS — ver e editar são alçadas SEPARADAS
+ * ========================================================================= */
+
+/**
+ * Por que duas chaves e não uma.
+ *
+ * Consultar quem tem acesso a quê é trabalho de auditoria e de suporte;
+ * ALTERAR isso é trabalho de quem responde pelas alçadas. Com uma chave só,
+ * quem precisa conferir uma permissão ganharia o poder de conceder qualquer
+ * outra — inclusive a si mesmo.
+ *
+ * `manage_usuarios` NÃO implica `view_usuarios` por acidente: quem edita
+ * também lê, e por isso `podeVerUsuarios` aceita as duas. O contrário não
+ * vale — ler não dá direito de escrever.
+ */
+export function podeVerUsuarios(permissoes: string[] | null, role: string): boolean {
+  return hasPermission(permissoes, 'view_usuarios', role)
+    || hasPermission(permissoes, 'manage_usuarios', role)
+}
+
+export function podeGerenciarUsuarios(permissoes: string[] | null, role: string): boolean {
+  return hasPermission(permissoes, 'manage_usuarios', role)
 }

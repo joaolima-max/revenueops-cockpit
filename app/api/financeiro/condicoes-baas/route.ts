@@ -41,6 +41,10 @@ export async function GET(request: NextRequest) {
   const [condicoes, mrr, parceiros] = await Promise.all([
     prisma.condicaoComercial.findMany({
       where: incluirInativos ? {} : { ativo: true },
+      // Quantos produtos tarifados o parceiro tem. A tela usa o número como
+      // entrada para o painel de produtos — e zero é a informação de que o
+      // Lançamento BaaS ainda não tem o que tarifar nesse parceiro.
+      include: { _count: { select: { produtos: true } } },
       orderBy: [{ tipo: 'asc' }, { nomeFantasia: 'asc' }],
     }),
     calcularMrr(),

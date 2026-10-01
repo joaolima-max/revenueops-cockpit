@@ -27,7 +27,7 @@ import { calcular, rotuloPeriodo, type ProdutoTarifado } from '@/lib/lancamento-
  * possível sem recalcular à mão.
  */
 
-interface Produto { id: string; nome: string; preco: number }
+interface Produto { id: string; nome: string; preco: number; unidade: string | null }
 
 interface Parceiro {
   id: string
@@ -404,7 +404,10 @@ export default function LancamentoBaasClient() {
                         <THead>
                           <HeadRow>
                             <Th>Produto</Th>
-                            <Th align="right">Preço</Th>
+                            {/* TAXA é somente leitura: vem da condição
+                                cadastrada, e redigitá-la é como ela passa a
+                                divergir de Condições BaaS. */}
+                            <Th align="right">Taxa</Th>
                             <Th align="right">Volume</Th>
                             <Th align="right">Total</Th>
                           </HeadRow>
@@ -414,7 +417,15 @@ export default function LancamentoBaasClient() {
                             const vol = Math.max(0, Math.trunc(Number(volumes[p.nome] ?? 0)) || 0)
                             return (
                               <Row key={p.id}>
-                                <Td>{p.nome}</Td>
+                                <Td>
+                                  <span className="block text-fg">{p.nome}</span>
+                                  {/* A UNIDADE diz o que o volume conta —
+                                      transação, consulta, conta, mês. Sem
+                                      isso, "100" é ambíguo. */}
+                                  <span className="t-label text-subtle">
+                                    por {p.unidade ?? 'transação'}
+                                  </span>
+                                </Td>
                                 <Td align="right" numeric className="text-subtle">{moedaCheia(p.preco)}</Td>
                                 <Td align="right">
                                   <input

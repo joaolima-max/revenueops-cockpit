@@ -37,18 +37,28 @@ export function proxy(request: NextRequest) {
   // pela lista do token — primeira barreira. A palavra final é de
   // `autorizado()`, que lê do banco a cada requisição, porque um token de 7
   // dias faria uma revogação demorar até uma semana para valer.
-  const verdict = checkAccess(
-    pathname, session.role, session.permissoes ?? null, session.isPartner,
-  )
+  /**
+   * O proxy NÃO decide quem é sócio.
+   *
+   * Ele roda no edge e não consulta o banco: tudo o que sabe vem do JWT, que
+   * vive 7 dias. `isPartner` passou a entrar no token só a partir de uma
+   * versão, então o cookie de quem já estava logado não o tinha — e tratar o
+   * ausente como "não é sócio" BARRAVA o sócio legítimo. A sidebar mostrava o
+   * Conselho e o clique virava redirect.
+   *
+   * `socio` fica de fora da decisão aqui (ver `liberada` em lib/modules). A
+   * autoridade é a página e a API, que leem `User.isPartner` do banco a cada
+   * requisição — e por isso revogar vale na hora, em vez de esperar o token
+   * expirar.
+   */
+  const verdict = checkAccess(pathname, session.role, session.permissoes ?? null)
   if (verdict !== 'allow') {
     if (isApi) {
       return verdict === 'disabled'
         ? NextResponse.json({ error: 'Função indisponível' }, { status: 404 })
         : NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
-    const fallback = firstAvailableRoute(
-      session.role, session.permissoes ?? null, session.isPartner,
-    )
+    const fallback = firstAvailableRoute(session.role, session.permissoes ?? null)
     // Sem nenhuma rota liberada, ou o destino seria a própria página bloqueada:
     // volta ao login em vez de entrar em loop de redirect.
     if (!fallback || fallback === pathname) {

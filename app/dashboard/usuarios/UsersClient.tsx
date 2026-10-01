@@ -16,6 +16,8 @@ interface User {
   role: string
   departamento: string | null
   hierarquia: string | null
+  /** SÓCIO. É esta coluna que abre o Conselho Administrativo. */
+  isPartner: boolean
   active: boolean
   createdAt: Date
   permissoes?: string | null
@@ -66,7 +68,9 @@ function parsePermissoes(raw: string | null | undefined, role: string): string[]
   return DEFAULT_PERMISSIONS[role] || []
 }
 
-export default function UsersClient({ users: initialUsers }: { users: User[] }) {
+export default function UsersClient(
+  { users: initialUsers, podeGerenciar = false }: { users: User[]; podeGerenciar?: boolean },
+) {
   const [users, setUsers] = useState(initialUsers)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -105,6 +109,34 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * Marca ou desmarca SÓCIO.
+   *
+   * Confirmação explícita: é a decisão que abre o Conselho Administrativo, e
+   * uma caixa de marcação clicada por engano daria acesso a dado de sócio.
+   */
+  async function alternarSocio(user: User) {
+    const virando = !user.isPartner
+    if (!confirm(
+      virando
+        ? `Marcar ${user.name} como SÓCIO?\n\nIsto concede acesso ao Conselho Administrativo.`
+        : `Remover ${user.name} dos sócios?\n\nEle perde o acesso ao Conselho imediatamente.`,
+    )) return
+
+    const res = await fetch(`/api/users/${user.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isPartner: virando }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setUsers(users.map((u) => (u.id === user.id ? updated : u)))
+    } else {
+      const d = await res.json().catch(() => ({}))
+      alert(d.error ?? 'Não foi possível alterar.')
     }
   }
 
@@ -209,12 +241,17 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
           <h1 className="t-h1 text-fg">Usuários</h1>
           <p className="text-muted text-sm mt-1">{users.length} usuário(s) cadastrado(s)</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bp-btn-primary px-4 py-2 rounded-lg text-sm font-medium"
-        >
-          + Novo Usuário
-        </button>
+        {/* AS AÇÕES só aparecem com `manage_usuarios`. Quem tem apenas
+            `view_usuarios` consulta a lista — e a API recusa a mutação de
+            qualquer forma, porque esconder o botão não impede um POST. */}
+        {podeGerenciar && (
+          <button
+            onClick={() => setShowModal(true)}
+            className="bp-btn-primary px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            + Novo Usuário
+          </button>
+        )}
       </div>
 
       <div className="bg-surface rounded-xl border border-line overflow-hidden">
@@ -226,6 +263,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               <th className="text-left t-label text-subtle px-4 py-3">Perfil</th>
               <th className="text-left t-label text-subtle px-4 py-3">Departamento</th>
               <th className="text-left t-label text-subtle px-4 py-3">Hierarquia</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Sócio</th>
               <th className="text-left t-label text-subtle px-4 py-3">Status</th>
               <th className="text-left t-label text-subtle px-4 py-3">Criado</th>
               <th className="text-left t-label text-subtle px-4 py-3">Ações</th>
@@ -251,7 +289,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                     salvamento só: são três eixos da mesma decisão, e três
                     botões OK na mesma linha seriam três chances de esquecer um. */}
                 <td className="px-4 py-3">
-                  {editingId === user.id ? (
+                  {editingId === user.id && podeGerenciar ? (
                     <div className="flex items-center gap-2">
                       <select
                         value={editForm.perfil}
@@ -282,7 +320,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {editingId === user.id ? (
+                  {editingId === user.id && podeGerenciar ? (
                     <select
                       value={editForm.departamento}
                       onChange={(e) => setEditForm((p) => ({ ...p, departamento: e.target.value }))}
@@ -302,7 +340,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {editingId === user.id ? (
+                  {editingId === user.id && podeGerenciar ? (
                     <select
                       value={editForm.hierarquia}
                       onChange={(e) => setEditForm((p) => ({ ...p, hierarquia: e.target.value }))}
@@ -321,6 +359,32 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                     </span>
                   )}
                 </td>
+                {/* SÓCIO — o eixo que abre o Conselho. Não é perfil, não é
+                    departamento, não é hierarquia: é um fato sobre a pessoa,
+                    e por isso tem coluna própria. */}
+                <td className="px-4 py-3">
+                  {podeGerenciar ? (
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={user.isPartner}
+                        onChange={() => alternarSocio(user)}
+                        className="accent-[var(--color-accent)]"
+                      />
+                      <span className="text-xs text-muted">
+                        {user.isPartner ? 'Sócio' : '—'}
+                      </span>
+                    </label>
+                  ) : (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      user.isPartner
+                        ? 'bg-accent/10 text-accent-soft border border-accent/20'
+                        : 'text-subtle'
+                    }`}>
+                      {user.isPartner ? 'Sócio' : '—'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     user.active
@@ -332,6 +396,9 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                 </td>
                 <td className="px-4 py-3 text-sm text-subtle">{formatDate(user.createdAt)}</td>
                 <td className="px-4 py-3">
+                  {!podeGerenciar ? (
+                    <span className="text-xs text-subtle">somente consulta</span>
+                  ) : (
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => openEdit(user)}
@@ -367,6 +434,7 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       )}
                     </button>
                   </div>
+                  )}
                 </td>
               </tr>
             ))}

@@ -22,7 +22,7 @@ async function carregar(id: string) {
           overpricePercent: true,
           produtos: {
             where: { ativo: true },
-            select: { id: true, nome: true, preco: true },
+            select: { id: true, nome: true, preco: true, unidade: true },
             orderBy: [{ ordem: 'asc' }, { nome: 'asc' }],
           },
         },
