@@ -1481,6 +1481,13 @@ enum StatusLancamentoBaas {
   RASCUNHO
   /// Titulos gerados. Editar recalcula e ATUALIZA os titulos.
   LANCADO
-  /// Encerrado. Nao se edita mais: ha liquidacao envolvida.
+  /// LEGADO. Era um fechamento MANUAL, e ele nao protegia nada: um lancamento
+  /// com titulo ja pago continuava editavel enquanto ninguem o fechasse, e um
+  /// sem nenhuma liquidacao ficava travado no instante em que fosse fechado.
+  ///
+  /// O que impede mexer no passado passou a ser a LIQUIDACAO dos titulos
+  /// (ver `liquidacaoDe`). O valor fica no enum porque pode haver linha
+  /// gravada com ele — apaga-lo exigiria reescrever esses registros —, mas
+  /// nao e mais atribuido por nenhum caminho de codigo.
   FECHADO
 }

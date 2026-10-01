@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { paleta, gridProps, axisProps, signal, cursorBarra } from '@/lib/chart-theme'
-import { velaDegenerada, variacaoDaVela, type Vela, type Granularidade } from '@/lib/candle'
+import { velaDegenerada, type Vela, type Granularidade } from '@/lib/candle'
 import { NoData } from '@/components/ui/EmptyState'
 
 /**
@@ -22,9 +22,10 @@ import { NoData } from '@/components/ui/EmptyState'
  * janela (ver `lib/candle.ts`) — cada um dos quatro números foi medido em
  * algum dia daquele período.
  *
- * O TOOLTIP DECLARA O PERÍODO e quantas observações formaram a vela. Uma vela
- * de uma observação só não tem dispersão medida, e é marcada como tal em vez
- * de ser desenhada como se tivesse.
+ * O TOOLTIP DECLARA O PERÍODO e os quatro valores — e nada além disso. Uma
+ * vela de uma observação só é desenhada sem sombra, porque dispersão que não
+ * foi medida não se desenha; mas a explicação saiu do tooltip, que precisa
+ * responder "quanto abriu e quanto fechou" em quatro linhas.
  *
  * MOEDA SEMPRE POR EXTENSO: o formatador vem de fora, e nenhum eixo ou
  * tooltip usa K, M, MM ou BI.
@@ -105,7 +106,9 @@ export default function Candles({
 
     const cor = v.alta ? sig.pos : sig.neg
     const meio = x + width / 2
-    const larguraCorpo = Math.max(width * 0.62, 3)
+    // CANDLES MENORES: 44% da coluna, em vez de 62%. Mais espaço entre eles
+    // é o que faz a série parecer uma série, e não uma barra contínua.
+    const larguraCorpo = Math.max(width * 0.44, 3)
     const xCorpo = meio - larguraCorpo / 2
 
     const topoCorpo = yDe(Math.max(v.open, v.close))
@@ -130,41 +133,31 @@ export default function Candles({
     )
   }
 
+  /**
+   * O TOOLTIP: período e os quatro valores. Nada mais.
+   *
+   * Saíram a contagem de observações, a variação percentual e a nota sobre
+   * velas sem dispersão. Cada uma era verdadeira e nenhuma era a pergunta: o
+   * leitor quer saber quanto abriu e quanto fechou, e as três linhas extras
+   * transformavam um resumo de quatro números numa ficha de sete.
+   *
+   * Moeda por extenso, sempre — nunca K, M, MM ou BI.
+   */
   function Dica({ active, payload }: TooltipContentProps): ReactNode {
     if (!active || !payload?.length) return null
     const v = (payload[0].payload as { v: Vela }).v
-    const variacao = variacaoDaVela(v)
     const periodo = granularidade === 'SEMANA' ? 'Semana' : 'Mês'
-    const fmtData = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
 
     return (
-      <div className="rounded-xl border border-line-2 bg-surface px-3.5 py-3 space-y-1.5
-        shadow-[var(--bp-shadow-overlay)] min-w-[13rem]">
-        <p className="t-label text-fg">{periodo} · {v.rotulo}</p>
-        {/* O PERÍODO USADO, declarado: o candle é agregação de observações
-            diárias, e sem a janela o leitor não sabe o que está vendo. */}
-        <p className="t-label text-subtle">
-          {fmtData(v.de)} a {fmtData(v.ate)} · {v.observacoes}{' '}
-          observaç{v.observacoes === 1 ? 'ão' : 'ões'}
-        </p>
-        <div className="pt-1.5 space-y-0.5 border-t border-line">
+      <div className="rounded-xl border border-line-2 bg-surface px-3.5 py-3 space-y-1
+        shadow-[var(--bp-shadow-overlay)] min-w-[12rem]">
+        <p className="t-label text-subtle">{periodo} · {v.rotulo}</p>
+        <div className="pt-1 space-y-0.5 border-t border-line">
           <Linha rotulo="Abertura" valor={formatar(v.open)} />
           <Linha rotulo="Máxima" valor={formatar(v.high)} />
           <Linha rotulo="Mínima" valor={formatar(v.low)} />
           <Linha rotulo="Fechamento" valor={formatar(v.close)} />
         </div>
-        {variacao !== null && (
-          <p className="t-label pt-1" style={{ color: v.alta ? sig.pos : sig.neg }}>
-            {variacao >= 0 ? '+' : ''}{variacao.toFixed(1)}% no período
-          </p>
-        )}
-        {velaDegenerada(v) && (
-          <p className="t-label text-subtle">
-            {v.observacoes < 2
-              ? 'Uma observação só — sem dispersão medida.'
-              : 'Sem variação dentro da janela.'}
-          </p>
-        )}
       </div>
     )
   }
@@ -172,13 +165,22 @@ export default function Candles({
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <ComposedChart data={dados} margin={{ top: 6, right: 0, bottom: 0, left: -8 }}>
+        {/* Grade só horizontal e sem tracejado, como no resto dos gráficos:
+            ela orienta a leitura, não decora. */}
         <CartesianGrid {...gridProps(p)} />
-        <XAxis dataKey="rotulo" {...axisProps(p)} />
+        {/* EIXO TEMPORAL LIMPO: `interval="preserveStartEnd"` deixa o recharts
+            esconder rótulos quando não cabem, em vez de empilhar texto
+            inclinado — é o que mantém o gráfico legível no mobile sem um
+            segundo componente. */}
+        <XAxis dataKey="rotulo" {...axisProps(p)} interval="preserveStartEnd" />
         <YAxis
           {...axisProps(p)}
           width={104}
           domain={[piso - folga, teto + folga]}
           tickFormatter={formatar}
+          // Quatro marcas bastam para dar escala. O padrão enchia o eixo de
+          // números e competia com as próprias velas.
+          tickCount={4}
         />
         <Tooltip cursor={cursorBarra(p)} content={Dica} />
         <Bar dataKey="faixa" shape={Vela1} isAnimationActive={false} />

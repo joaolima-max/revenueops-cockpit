@@ -55,7 +55,20 @@ export interface DadosGeracao {
   numeroConta: string
   periodoInicio: Date
   periodoFim: Date
-  /** Tarifas + overprice. A receita da Bass Pago. */
+  /**
+   * TARIFAS do período — o que se COBRA do parceiro, e o valor do título a
+   * receber. Não inclui o overprice.
+   */
+  tarifas: number
+  /**
+   * Tarifas + overprice — a RECEITA que a Bass Pago realiza no período, e o
+   * valor do lançamento financeiro.
+   *
+   * Os dois números são diferentes de propósito, e a diferença é o overprice:
+   * ele é receita nossa, mas NÃO é faturado ao parceiro — é realizado pagando
+   * a ele menos. Por isso entra no lançamento (que é o que a Receita do
+   * período soma) e fica fora do título a receber (que é o que se cobra).
+   */
   receita: number
   /** Saldo remanescente − overprice. O que é devido ao cliente. */
   valorCliente: number
@@ -94,21 +107,21 @@ async function categoria(
 }
 
 /**
- * A descrição dos registros gerados.
+ * A descrição dos registros gerados: "<o quê> — <parceiro> — <competência>".
  *
- * COMPACTA de propósito. A versão longa trazia o intervalo inteiro
- * ("01/09/2026 a 30/09/2026") e, somada ao nome do parceiro e à conta,
- * esticava a coluna de descrição em Lançamentos e em Contas a Receber.
+ * SIMPLES de propósito. A versão longa trazia a conta e o intervalo inteiro
+ * ("conta 12000 · 01/09/2026 a 30/09/2026"), e nenhuma dessas informações
+ * cabia numa linha de tabela — a conta e as datas exatas estão no detalhe do
+ * lançamento, que é onde se vai quando a pergunta é "de onde veio esse valor".
  *
- * O período vira a competência (`09/2026`), que é como se fala de um
- * fechamento mensal — e a data exata continua no `dataVencimento` do próprio
- * título e no Lançamento BaaS de origem, que é o registro completo.
+ * A composição por produto NÃO entra aqui: é justamente o que o painel de
+ * detalhes existe para mostrar.
  */
 function descricao(d: DadosGeracao, oque: string): string {
   const competencia = d.periodoFim.toLocaleDateString('pt-BR', {
     month: '2-digit', year: 'numeric', timeZone: 'UTC',
   })
-  return `${oque} · ${d.parceiroNome} · ${d.numeroConta} · ${competencia}`
+  return `${oque} — ${d.parceiroNome} — ${competencia}`
 }
 
 export interface TitulosGerados {
@@ -155,12 +168,13 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
 
     const vencimento = d.periodoFim
     const receita = centavos(d.receita)
+    const tarifas = centavos(d.tarifas)
     const cliente = centavos(d.valorCliente)
 
     /* ── 1. RECEITA da Bass Pago ───────────────────────────────────────── */
     const dadosReceita = {
       tipo: 'RECEITA' as const,
-      descricao: descricao(d, 'Tarifas e overprice'),
+      descricao: descricao(d, 'Lançamento BaaS'),
       categoriaId: catReceita,
       valor: receita,
       data: vencimento,
@@ -179,10 +193,13 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     /* ── 2. CONTA A RECEBER — sempre nasce ─────────────────────────────── */
     const dadosAR = devedorDoTitulo(d.clienteId, d.condicaoId)
 
+    // O TÍTULO COBRA AS TARIFAS, não a receita inteira. O overprice é
+    // realizado no outro lado — pagando menos ao parceiro —, e cobrá-lo aqui
+    // seria cobrar duas vezes o mesmo valor.
     const comum = {
-      descricao: descricao(d, 'Tarifas e overprice'),
+      descricao: descricao(d, 'Tarifas BaaS'),
       tipo: CATEGORIA_RECEITA_BAAS,
-      valor: receita,
+      valor: tarifas,
       dataVenc: vencimento,
     }
 
@@ -243,4 +260,105 @@ export async function clientePelaConta(numeroConta: string): Promise<string | nu
     select: { id: true },
   })
   return c?.id ?? null
+}
+
+
+/* ========================================================================= *
+ * LIQUIDAÇÃO — o que protege o passado
+ * ========================================================================= */
+
+export interface Liquidacao {
+  liquidado: boolean
+  /** Por que está travado, em linguagem de gente. Vazio quando não está. */
+  motivo: string
+}
+
+/**
+ * Algum título do lançamento já foi movimentado?
+ *
+ * É ISTO que impede editar e excluir — não um status marcado à mão.
+ *
+ * O "FECHADO" anterior não protegia nada: um lançamento com título já pago
+ * continuava editável enquanto ninguém o fechasse, e um lançamento sem
+ * nenhuma liquidação ficava travado no instante em que fosse fechado. O
+ * estado que importa é o dos títulos, e é ele que se consulta.
+ *
+ * CONSIDERA-SE LIQUIDADO:
+ *   - o título a receber com status PAGO ou FATURADO, ou com `dataPago`;
+ *   - o lançamento de despesa (Contas a Pagar) com status PAGO.
+ *
+ * FATURADO conta porque já saiu nota: cancelar o título depois disso é
+ * problema fiscal, não ajuste de cadastro.
+ */
+export async function liquidacaoDe(lancamentoBaasId: string): Promise<Liquidacao> {
+  const lb = await prisma.lancamentoBaas.findUnique({
+    where: { id: lancamentoBaasId },
+    select: {
+      contaReceber: { select: { status: true, dataPago: true } },
+      contaPagar: { select: { status: true } },
+    },
+  })
+  if (!lb) return { liquidado: false, motivo: '' }
+
+  const ar = lb.contaReceber
+  if (ar && (ar.status === 'PAGO' || ar.status === 'FATURADO' || ar.dataPago)) {
+    return {
+      liquidado: true,
+      motivo: ar.status === 'FATURADO'
+        ? 'o título a receber já foi faturado'
+        : 'o título a receber já foi recebido',
+    }
+  }
+
+  if (lb.contaPagar?.status === 'PAGO') {
+    return { liquidado: true, motivo: 'o título a pagar já foi pago' }
+  }
+
+  return { liquidado: false, motivo: '' }
+}
+
+/**
+ * Apaga os três registros gerados por um lançamento.
+ *
+ * Numa transação, e nesta ordem: primeiro solta os vínculos do
+ * `LancamentoBaas`, depois apaga os títulos. Apagar antes de soltar
+ * esbarraria nas FKs.
+ *
+ * NÃO É CHAMADA SOBRE NADA LIQUIDADO — quem chama confere `liquidacaoDe`
+ * primeiro. Esta função é o braço mecânico; a decisão é de quem a chama.
+ *
+ * `deleteMany` em vez de `delete`: um título que alguém já tenha removido à
+ * mão em Lançamentos não pode fazer a exclusão do lançamento falhar.
+ */
+export async function apagarTitulos(lancamentoBaasId: string): Promise<{
+  lancamento: boolean; contaReceber: boolean; contaPagar: boolean
+}> {
+  const lb = await prisma.lancamentoBaas.findUnique({
+    where: { id: lancamentoBaasId },
+    select: { lancamentoId: true, contaReceberId: true, contaPagarId: true },
+  })
+  if (!lb) return { lancamento: false, contaReceber: false, contaPagar: false }
+
+  await prisma.$transaction(async (tx) => {
+    // Solta os vínculos primeiro: as FKs são UNIQUE e apontam para os títulos.
+    await tx.lancamentoBaas.update({
+      where: { id: lancamentoBaasId },
+      data: { lancamentoId: null, contaReceberId: null, contaPagarId: null },
+    })
+
+    if (lb.contaReceberId) {
+      await tx.contaReceber.deleteMany({ where: { id: lb.contaReceberId } })
+    }
+    // Os dois lançamentos financeiros: a receita e a despesa do repasse.
+    const ids = [lb.lancamentoId, lb.contaPagarId].filter((x): x is string => !!x)
+    if (ids.length > 0) {
+      await tx.lancamentoFinanceiro.deleteMany({ where: { id: { in: ids } } })
+    }
+  })
+
+  return {
+    lancamento: !!lb.lancamentoId,
+    contaReceber: !!lb.contaReceberId,
+    contaPagar: !!lb.contaPagarId,
+  }
 }

@@ -26,7 +26,32 @@ function parseData(iso: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** Inclui categoria, fornecedor, parceiro e anexos — o que a tela lista. */
+/**
+ * Inclui categoria, fornecedor, parceiro, anexos — e a ORIGEM BaaS.
+ *
+ * As duas relações de Lançamento BaaS existem porque um lançamento pode ser
+ * o lado da RECEITA (`baasReceita`) ou o do REPASSE (`baasContaPagar`). Quando
+ * uma delas está preenchida, a tela oferece o detalhe: é como o usuário
+ * responde "de onde veio esse valor" sem sair de Lançamentos.
+ *
+ * Os ITENS vêm junto porque são a composição — taxa × volume de cada produto.
+ * É o conteúdo do painel, e buscá-lo numa segunda chamada só para abrir um
+ * modal seria um ida-e-volta por clique.
+ */
+const DETALHE_BAAS = {
+  select: {
+    id: true, numeroConta: true, periodoInicio: true, periodoFim: true,
+    saldoInicial: true, totalTarifas: true, saldoRemanescente: true,
+    overpricePercent: true, overpriceValor: true, valorCliente: true,
+    status: true, observacao: true,
+    condicao: { select: { nomeFantasia: true, identificacao: true, tipo: true } },
+    itens: {
+      select: { id: true, nome: true, preco: true, volume: true, total: true },
+      orderBy: { ordem: 'asc' as const },
+    },
+  },
+} as const
+
 const INCLUDE_LANCAMENTO = {
   categoria: { select: { id: true, nome: true, tipo: true, natureza: true } },
   criadoPor: { select: { id: true, name: true } },
@@ -35,6 +60,8 @@ const INCLUDE_LANCAMENTO = {
   anexos: {
     include: { documento: { select: { id: true, nome: true, mime: true, tamanho: true } } },
   },
+  baasReceita: DETALHE_BAAS,
+  baasContaPagar: DETALHE_BAAS,
 } as const
 
 /**

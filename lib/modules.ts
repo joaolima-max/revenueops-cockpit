@@ -94,16 +94,15 @@ export const MODULES: Module[] = [
   // ORDEM DAS SEÇÕES, e a leitura que ela produz:
   //
   //   EXECUTIVO  o retrato da empresa;
-  //   RECEITA    o objetivo e o insumo diário que o alimenta;
-  //   COMERCIAL  de onde vem o próximo cliente;
+  //   RECEITA    a meta e o insumo diário que a alimenta;
   //   CARTEIRA   quem já é cliente;
+  //   COMERCIAL  de onde vem o próximo;
   //   OPERAÇÕES  o que mantém o cliente funcionando;
   //   FINANCEIRO o que se faz com o dinheiro que entrou;
   //   ADMIN      quem pode o quê.
   //
-  // RECEITA vem antes do COMERCIAL porque a meta é o que dá sentido ao resto
-  // da leitura — e vem antes do FINANCEIRO porque receita é o que a operação
-  // PRODUZ, enquanto o Financeiro é o que se faz com isso.
+  // CARTEIRA antes de COMERCIAL: a base instalada vem antes da prospecção,
+  // porque é dela que sai a receita que a meta mede.
   {
     key: 'executivo',
     label: 'EXECUTIVO',
@@ -141,6 +140,16 @@ export const MODULES: Module[] = [
     ],
   },
   {
+    key: 'carteira',
+    label: 'CARTEIRA',
+    enabled: true,
+    features: [
+      { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
+      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
+      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
+    ],
+  },
+  {
     key: 'comercial',
     label: 'COMERCIAL',
     enabled: true,
@@ -171,16 +180,6 @@ export const MODULES: Module[] = [
         api: ['/api/pipeline/funis', '/api/pipeline/etapas'],
         enabled: true, roles: ['ADMIN'], oculto: true,
       },
-    ],
-  },
-  {
-    key: 'carteira',
-    label: 'CARTEIRA',
-    enabled: true,
-    features: [
-      { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
-      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
-      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
     ],
   },
   {

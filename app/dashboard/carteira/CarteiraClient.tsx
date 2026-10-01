@@ -252,14 +252,20 @@ export default function CarteiraClient() {
         <Table>
           <THead>
             <HeadRow>
-              <Th>Cliente</Th>
-              <Th>Conta</Th>
-              <Th>Segmento</Th>
-              <Th>Modelo</Th>
-              <Th>Status</Th>
-              <Th align="right">Mensalidade API</Th>
-              <Th>Gestor</Th>
-              <Th align="right">Ações</Th>
+              {/* MODELO antes de SEGMENTO, e os dois com largura própria.
+                  Estavam colados: segmento é texto cadastrado, de largura
+                  imprevisível, e sem teto ele encostava no modelo — que é um
+                  badge curto e fixo. Ordenar do fixo para o variável, com
+                  larguras declaradas, é o que dá respiro entre as duas
+                  colunas sem alargar a tabela. */}
+              <Th className="pl-5">Cliente</Th>
+              <Th className="w-[7rem]">Conta</Th>
+              <Th className="w-[7.5rem]">Modelo</Th>
+              <Th className="w-[10rem]">Segmento</Th>
+              <Th className="w-[6rem]">Status</Th>
+              <Th align="right" className="w-[9rem]">Mensalidade API</Th>
+              <Th className="w-[9rem]">Gestor</Th>
+              <Th align="right" className="w-[6rem]">Ações</Th>
             </HeadRow>
           </THead>
           <tbody>
@@ -280,10 +286,17 @@ export default function CarteiraClient() {
                 <Td className="t-mono text-muted">
                   {c.numeroConta ?? <span className="text-subtle">—</span>}
                 </Td>
-                {/* Segmento e modelo são categorias, não status: tom neutro.
-                    O nome vem da entidade, com retaguarda no enum antigo. */}
-                {/* Mesmo teto do card do Pipeline: segmento é texto
-                    cadastrado, e um nome longo esticava a coluna. */}
+                {/* MODELO antes de SEGMENTO, na ordem do cabeçalho, com
+                    `pr-4` de respiro. Os dois estavam colados: o modelo é um
+                    badge curto e fixo, o segmento é texto cadastrado de
+                    largura imprevisível, e sem espaçamento o segundo começava
+                    encostado no primeiro.
+                    Os dois são categorias, não status: tom neutro. O nome do
+                    segmento vem da entidade, com retaguarda no enum antigo, e
+                    trunca com o nome completo no hover. */}
+                <Td className="pr-4">
+                  <Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge>
+                </Td>
                 <Td className="max-w-0">
                   {c.segmentoComercial
                     ? <Badge truncar title={c.segmentoComercial.nome}>{c.segmentoComercial.nome}</Badge>
@@ -294,7 +307,6 @@ export default function CarteiraClient() {
                         })()
                       : <span className="text-subtle">—</span>}
                 </Td>
-                <Td><Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge></Td>
                 <Td><Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{CLIENTE_STATUS_LABELS[c.status]}</Badge></Td>
                 <Td align="right" numeric className="text-fg">
                   {c.mensalidadeApi ? formatCurrency(c.mensalidadeApi) : <span className="text-subtle">—</span>}

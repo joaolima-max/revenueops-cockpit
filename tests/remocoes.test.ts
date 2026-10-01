@@ -446,7 +446,7 @@ test('as seções da sidebar saem na ordem da especificação', () => {
   const secoes = navigationFor('ADMIN').map((s) => s.key)
   assert.deepEqual(
     secoes,
-    ['executivo', 'receita', 'comercial', 'carteira', 'operacoes', 'financeiro', 'admin'],
+    ['executivo', 'receita', 'carteira', 'comercial', 'operacoes', 'financeiro', 'admin'],
   )
 })
 
@@ -465,10 +465,18 @@ test('EXECUTIVO: Cockpit e Conselho', () => {
   assert.deepEqual(s.items.map((i) => i.label), ['Cockpit', 'Conselho'])
 })
 
-test('RECEITA vem antes de COMERCIAL e de FINANCEIRO', () => {
-  const chaves = navigationFor('ADMIN', null, true).map((s) => s.key)
-  assert.ok(chaves.indexOf('receita') < chaves.indexOf('comercial'))
-  assert.ok(chaves.indexOf('receita') < chaves.indexOf('financeiro'))
+test('a ordem das seções é a da especificação, par a par', () => {
+  const k = navigationFor('ADMIN', null, true).map((s) => s.key)
+  const antes = (a: string, b: string) =>
+    assert.ok(k.indexOf(a) < k.indexOf(b), `${a} deveria vir antes de ${b}`)
+
+  antes('executivo', 'receita')
+  antes('receita', 'carteira')
+  // CARTEIRA antes de COMERCIAL: a base instalada vem antes da prospecção.
+  antes('carteira', 'comercial')
+  antes('comercial', 'operacoes')
+  antes('operacoes', 'financeiro')
+  antes('financeiro', 'admin')
 })
 
 test('Contas a PAGAR vem antes de Contas a RECEBER', () => {
@@ -486,6 +494,6 @@ test('Lançamentos BaaS FECHA o Financeiro', () => {
 test('nenhum menu novo foi inventado — as sete seções e nada mais', () => {
   const chaves = navigationFor('ADMIN', ['view_auditoria'], true).map((s) => s.key)
   assert.deepEqual(chaves, [
-    'executivo', 'receita', 'comercial', 'carteira', 'operacoes', 'financeiro', 'admin',
+    'executivo', 'receita', 'carteira', 'comercial', 'operacoes', 'financeiro', 'admin',
   ])
 })

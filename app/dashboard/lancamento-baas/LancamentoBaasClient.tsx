@@ -13,6 +13,7 @@ import {
 import Figure from '@/components/ui/Figure'
 import { figuraMoeda, moedaCheia, quantidadeCompacta } from '@/lib/format-financeiro'
 import { calcular, rotuloPeriodo, type ProdutoTarifado } from '@/lib/lancamento-baas'
+import DetalheBaas from '@/components/financeiro/DetalheBaas'
 
 /**
  * LANÇAMENTO BAAS — ambiente OPERACIONAL de lançamento, não dashboard.
@@ -64,12 +65,26 @@ interface Lancamento {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  RASCUNHO: 'Rascunho', LANCADO: 'Lançado', FECHADO: 'Fechado',
+  RASCUNHO: 'Rascunho', LANCADO: 'Lançado',
+  // Legado: havia um fechamento manual, que saiu. Linhas antigas podem ter o
+  // valor, e sem rótulo apareceriam como o enum cru.
+  FECHADO: 'Lançado (legado)',
 }
 const STATUS_TONE: Record<string, BadgeTone> = {
   RASCUNHO: 'neutral', LANCADO: 'accent', FECHADO: 'pos',
 }
 const TIPO_LABEL: Record<string, string> = { BAAS: 'BaaS', WHITE_LABEL: 'White Label' }
+
+/**
+ * Falta algum dos três registros?
+ *
+ * É o que decide se a ação de lançar continua disponível. Um conjunto
+ * incompleto é possível por fora: apagar o lançamento financeiro em
+ * Lançamentos zera o vínculo aqui, por `ON DELETE SET NULL`.
+ */
+function faltaTitulo(l: Lancamento): boolean {
+  return !l.lancamentoId || !l.contaReceberId || !l.contaPagarId
+}
 
 const FORM_VAZIO = {
   condicaoId: '', numeroConta: '', periodoInicio: '', periodoFim: '',
@@ -84,6 +99,8 @@ export default function LancamentoBaasClient() {
   const [versao, setVersao] = useState(0)
 
   const [modal, setModal] = useState<'novo' | Lancamento | null>(null)
+  /** Painel de detalhes: de onde o valor veio, produto por produto. */
+  const [detalhe, setDetalhe] = useState<Lancamento | null>(null)
   const [form, setForm] = useState(FORM_VAZIO)
   /** Volume por produto, por NOME: o nome é o que sobrevive ao snapshot. */
   const [volumes, setVolumes] = useState<Record<string, string>>({})
@@ -198,11 +215,15 @@ export default function LancamentoBaasClient() {
   }
 
   async function lancar(l: Lancamento) {
+    const reparo = l.status !== 'RASCUNHO'
     if (!confirm(
-      `Lançar ${l.condicao.nomeFantasia}?\n\n`
-      + `Isto gera o lançamento financeiro da receita (${moedaCheia(l.totalTarifas + l.overpriceValor)}), `
-      + `o título a receber e o título a pagar do valor devido ao cliente `
-      + `(${moedaCheia(l.valorCliente)}).`,
+      `${reparo ? 'Regerar os títulos de' : 'Lançar'} ${l.condicao.nomeFantasia}?\n\n`
+      + `Lançamentos · receita: ${moedaCheia(l.totalTarifas + l.overpriceValor)}\n`
+      + `Contas a Receber · tarifas: ${moedaCheia(l.totalTarifas)}\n`
+      + `Contas a Pagar · devido ao parceiro: ${moedaCheia(l.valorCliente)}`
+      + (reparo
+        ? '\n\nOs registros que já existem são ATUALIZADOS, não duplicados.'
+        : ''),
     )) return
 
     const res = await fetch(`/api/lancamento-baas/${l.id}`, { method: 'POST' })
@@ -213,14 +234,34 @@ export default function LancamentoBaasClient() {
     }
   }
 
-  async function fechar(l: Lancamento) {
-    if (!confirm('Fechar este lançamento? Depois de fechado ele não pode mais ser editado.')) return
-    const res = await fetch(`/api/lancamento-baas/${l.id}?acao=fechar`, { method: 'POST' })
-    if (res.ok) setVersao((v) => v + 1)
-  }
-
+  /**
+   * EXCLUIR o lançamento e os registros financeiros que ele gerou.
+   *
+   * Substituiu a ação "Fechar". A confirmação diz exatamente o que sai junto —
+   * um "Excluir?" seco esconderia que três registros desaparecem.
+   *
+   * Quando há título liquidado, o servidor recusa e a mensagem explica qual.
+   */
   async function excluir(l: Lancamento) {
-    if (!confirm('Excluir este rascunho?')) return
+    const vinculados = [
+      l.lancamentoId && 'o lançamento financeiro',
+      l.contaReceberId && 'o título a receber',
+      l.contaPagarId && 'o título a pagar',
+    ].filter(Boolean)
+
+    const aviso = vinculados.length > 0
+      ? `\n\nSaem junto: ${vinculados.join(', ')}.`
+      + '\n\nSe algum deles já tiver sido recebido, faturado ou pago, a exclusão é recusada —'
+      + ' histórico financeiro movimentado não se apaga.'
+      : '\n\nEste lançamento ainda não gerou títulos.'
+
+    if (!confirm(
+      `Excluir este lançamento BaaS?\n\n`
+      + `${l.condicao.nomeFantasia} · conta ${l.numeroConta}`
+      + `\n${rotuloPeriodo(new Date(l.periodoInicio), new Date(l.periodoFim))}`
+      + aviso,
+    )) return
+
     const res = await fetch(`/api/lancamento-baas/${l.id}`, { method: 'DELETE' })
     if (res.ok) setVersao((v) => v + 1)
     else {
@@ -305,17 +346,31 @@ export default function LancamentoBaasClient() {
                 <Td><Badge tone={STATUS_TONE[l.status]}>{STATUS_LABEL[l.status]}</Badge></Td>
                 <Td align="right">
                   <span className="inline-flex gap-2">
-                    {podeGerenciar && l.status !== 'FECHADO' && (
-                      <Button size="sm" onClick={() => abrirEdicao(l)}>Editar</Button>
-                    )}
-                    {podeGerenciar && l.status === 'RASCUNHO' && (
+                    {/* DETALHES para qualquer um: é onde se vê de onde o
+                        valor veio, e isso não depende de poder editar. */}
+                    <Button size="sm" onClick={() => setDetalhe(l)}>Detalhes</Button>
+                    {podeGerenciar && (
                       <>
-                        <Button size="sm" variant="primary" onClick={() => lancar(l)}>Lançar</Button>
+                        <Button size="sm" onClick={() => abrirEdicao(l)}>Editar</Button>
+                        {/* LANÇAR aparece enquanto FALTAR algum dos três
+                            registros — não só no rascunho.
+                            Um lançamento pode ficar incompleto por fora: quem
+                            apagar o lançamento financeiro em Lançamentos zera
+                            o vínculo (`ON DELETE SET NULL`) e deixa o conjunto
+                            quebrado. Sem este botão não havia como reparar, e
+                            a única saída era recriar o lançamento.
+                            A ação é idempotente: ela preenche o que falta e
+                            atualiza o que existe. */}
+                        {faltaTitulo(l) && (
+                          <Button size="sm" variant="primary" onClick={() => lancar(l)}>
+                            {l.status === 'RASCUNHO' ? 'Lançar' : 'Regerar títulos'}
+                          </Button>
+                        )}
+                        {/* EXCLUIR em qualquer estado. O que bloqueia é a
+                            LIQUIDAÇÃO dos títulos, conferida no servidor — não
+                            um status marcado à mão. */}
                         <Button size="sm" variant="danger" onClick={() => excluir(l)}>Excluir</Button>
                       </>
-                    )}
-                    {podeGerenciar && l.status === 'LANCADO' && (
-                      <Button size="sm" onClick={() => fechar(l)}>Fechar</Button>
                     )}
                   </span>
                 </Td>
@@ -324,6 +379,8 @@ export default function LancamentoBaasClient() {
           </tbody>
         </Table>
       </TableShell>
+
+      {detalhe && <DetalheBaas l={detalhe} onFechar={() => setDetalhe(null)} />}
 
       {/* ── FORMULÁRIO ────────────────────────────────────────────────────── */}
       {modal && (

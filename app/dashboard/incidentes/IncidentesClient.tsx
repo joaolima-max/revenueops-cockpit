@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { formatDate, INCIDENTE_CRITICIDADE_LABELS, INCIDENTE_CRITICIDADE_COLORS } from '@/lib/utils'
 import { CRITICIDADES, calcularDowntime } from '@/lib/incidentes'
 import Button from '@/components/ui/Button'
@@ -36,6 +36,20 @@ function paraInputLocal(iso: string | null | undefined): string {
 
 export default function IncidentesClient({ initial, podeRegistrar, podeAdministrar }: Props) {
   const [incidentes, setIncidentes] = useState(initial)
+
+  /**
+   * O RELÓGIO dos incidentes abertos.
+   *
+   * Começa em `null` e só passa a valer depois de montar: renderizar o agora
+   * no servidor produziria um HTML diferente do que o cliente pinta um
+   * segundo depois — o erro de hidratação. Com `null`,
+   * `calcularDowntime(..., undefined)` usa o relógio do próprio servidor no
+   * primeiro render, que é o comportamento de antes.
+   *
+   * Tica a cada 30s, e SÓ quando há incidente aberto: num quadro todo
+   * resolvido, nenhum número muda e um intervalo rodando seria desperdício.
+   */
+  const [tiquetaque, setTiquetaque] = useState<Date | null>(null)
   const [modal, setModal] = useState<{ id?: string } | null>(null)
   const [form, setForm] = useState(FORM_VAZIO)
   const [saving, setSaving] = useState(false)
@@ -127,6 +141,24 @@ export default function IncidentesClient({ initial, podeRegistrar, podeAdministr
 
   const abertos = incidentes.filter((i) => !i.fim).length
 
+  /**
+   * Tica só enquanto houver incidente aberto.
+   *
+   * `abertos` na dependência: o intervalo nasce quando o primeiro incidente
+   * abre e morre quando o último é resolvido. Num quadro todo resolvido,
+   * nenhum número muda — e um intervalo rodando seria redesenho sem efeito.
+   */
+  useEffect(() => {
+    if (abertos === 0) return
+    const tick = () => setTiquetaque(new Date())
+    tick()
+    const id = setInterval(tick, 30_000)
+    return () => clearInterval(id)
+  }, [abertos])
+
+  /** O agora do cliente, ou `undefined` no primeiro render (ver `tiquetaque`). */
+  const agora = tiquetaque ?? undefined
+
   return (
     <div className="space-y-8">
       {/* A metade de baixo da tela: o REGISTRO. As métricas ficam acima,
@@ -151,8 +183,18 @@ export default function IncidentesClient({ initial, podeRegistrar, podeAdministr
       <div className="space-y-3">
         {incidentes.map((inc) => {
           const isAberto = !inc.fim
-          // Única fonte do downtime: a janela do incidente.
-          const downtime = calcularDowntime(inc.inicio, inc.fim)
+          /**
+           * UMA chamada, DOIS rótulos.
+           *
+           * Downtime e MTTR são o MESMO número — não dois cálculos que
+           * coincidem. Chamar `calcularDowntime` duas vezes abriria a porta
+           * para eles divergirem no dia em que alguém mudasse um dos lados;
+           * aqui não há como.
+           *
+           * `agora` vem do relógio que tica: num incidente aberto os dois
+           * sobem juntos, segundo a segundo.
+           */
+          const duracao = calcularDowntime(inc.inicio, inc.fim, agora)
 
           return (
             <div key={inc.id} className={`bg-surface border rounded-xl p-5 ${isAberto ? 'border-neg/20' : 'border-line'}`}>
@@ -173,7 +215,12 @@ export default function IncidentesClient({ initial, podeRegistrar, podeAdministr
                     <span>Início: {formatDate(inc.inicio)}</span>
                     {inc.fim && <span>Encerramento: {formatDate(inc.fim)}</span>}
                     <span className={isAberto ? 'text-warn' : 'text-fg'}>
-                      Downtime: {downtime.rotulo}
+                      Downtime: {duracao.rotulo}
+                    </span>
+                    {/* MTTR = DOWNTIME. Mesma variável, não um segundo
+                        cálculo. Num incidente aberto, os dois sobem juntos. */}
+                    <span className={isAberto ? 'text-warn' : 'text-fg'}>
+                      MTTR: {duracao.rotulo}
                     </span>
                   </div>
                 </div>

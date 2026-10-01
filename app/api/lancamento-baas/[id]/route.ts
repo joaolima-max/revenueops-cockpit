@@ -6,7 +6,9 @@ import { logAudit } from '@/lib/audit'
 import {
   calcular, receitaBassPago, validarLancamento, type ProdutoTarifado,
 } from '@/lib/lancamento-baas'
-import { gerarTitulos, clientePelaConta } from '@/lib/baas-titulos'
+import {
+  gerarTitulos, clientePelaConta, liquidacaoDe, apagarTitulos,
+} from '@/lib/baas-titulos'
 
 function podeGerenciar(s: { permissoes?: string[]; role: string }): boolean {
   return hasPermission(s.permissoes ?? null, 'manage_receita', s.role)
@@ -60,9 +62,16 @@ export async function GET(_r: NextRequest, { params }: { params: Promise<{ id: s
  * EDIÇÃO — recalcula e ATUALIZA os títulos vinculados, nunca cria um segundo
  * conjunto.
  *
- * FECHADO não se edita: há liquidação envolvida, e sobrescrever o valor de um
- * título já baixado apagaria o histórico do que foi efetivamente pago. A
- * recusa diz isso em vez de falhar em silêncio.
+ * O QUE IMPEDE A EDIÇÃO É A LIQUIDAÇÃO, não um status manual.
+ *
+ * Havia um "FECHADO" que alguém marcava à mão, e ele não protegia nada: um
+ * lançamento com título já pago continuava editável enquanto ninguém o
+ * fechasse, e um lançamento sem nenhum título liquidado ficava travado assim
+ * que fosse fechado. O estado que importa é o dos títulos.
+ *
+ * Agora a recusa vem de `liquidacaoDe`: se o título a receber foi recebido ou
+ * o a pagar foi pago, sobrescrever o valor apagaria o histórico do que foi
+ * efetivamente movimentado.
  */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -73,12 +82,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const atual = await carregar(id)
   if (!atual) return NextResponse.json({ error: 'Lançamento não encontrado.' }, { status: 404 })
 
-  if (atual.status === 'FECHADO') {
+  const liq = await liquidacaoDe(id)
+  if (liq.liquidado) {
     return NextResponse.json(
       {
-        error: 'Este lançamento está fechado e não pode ser editado. '
-          + 'Há títulos liquidados vinculados a ele, e sobrescrevê-los apagaria '
-          + 'o histórico do que foi pago.',
+        error: `Este lançamento não pode ser editado: ${liq.motivo}. `
+          + 'Sobrescrever o valor apagaria o histórico do que foi movimentado.',
       },
       { status: 409 },
     )
@@ -139,6 +148,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       numeroConta: String(body.numeroConta).trim(),
       periodoInicio: inicio,
       periodoFim: fim,
+      // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
+      // overprice). A diferença é o overprice, realizado pagando menos ao
+      // parceiro — faturá-lo também seria cobrar duas vezes.
+      tarifas: calc.totalTarifas,
       receita: receitaBassPago(calc),
       valorCliente: calc.valorCliente,
       criadoPorId: session.userId,
@@ -162,7 +175,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
  * Idempotente: chamar duas vezes não cria um segundo conjunto, porque as três
  * FKs são UNIQUE e `gerarTitulos` atualiza quando já existem.
  */
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   if (!podeGerenciar(session)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
@@ -171,23 +184,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const l = await carregar(id)
   if (!l) return NextResponse.json({ error: 'Lançamento não encontrado.' }, { status: 404 })
 
-  const acao = new URL(request.url).searchParams.get('acao')
-
-  if (acao === 'fechar') {
-    if (l.status !== 'LANCADO') {
-      return NextResponse.json(
-        { error: 'Só um lançamento já lançado pode ser fechado.' }, { status: 409 },
-      )
-    }
-    await prisma.lancamentoBaas.update({ where: { id }, data: { status: 'FECHADO' } })
-    await logAudit(session.userId, 'FECHOU_LANCAMENTO_BAAS', 'LancamentoBaas', id,
-      `${l.condicao.nomeFantasia} · ${l.numeroConta}`)
-    return NextResponse.json({ lancamento: await carregar(id) })
-  }
-
-  if (l.status === 'FECHADO') {
-    return NextResponse.json({ error: 'Lançamento fechado.' }, { status: 409 })
-  }
+  // A ação "fechar" SAIU. Não havia fluxo de fechamento manual a defender: o
+  // que protege o passado é a liquidação dos títulos, conferida onde importa.
 
   const calc = calcular(
     l.saldoInicial,
@@ -203,6 +201,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       numeroConta: l.numeroConta,
       periodoInicio: l.periodoInicio,
       periodoFim: l.periodoFim,
+      // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
+      // overprice). A diferença é o overprice, realizado pagando menos ao
+      // parceiro — faturá-lo também seria cobrar duas vezes.
+      tarifas: calc.totalTarifas,
       receita: receitaBassPago(calc),
       valorCliente: calc.valorCliente,
       criadoPorId: session.userId,
@@ -227,7 +229,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 }
 
-/** Exclui apenas RASCUNHO. Lançado tem títulos; fechado tem liquidação. */
+/**
+ * EXCLUIR O LANÇAMENTO BAAS — e os registros financeiros que ele gerou.
+ *
+ * Substituiu a ação "Fechar", que não protegia nada: era um status marcado à
+ * mão, e o que de fato impede mexer no passado é a LIQUIDAÇÃO dos títulos.
+ *
+ * REGRA:
+ *   nada liquidado  → apaga o lançamento, o título a receber e o a pagar;
+ *   algo liquidado  → RECUSA, dizendo o quê.
+ *
+ * Não se apaga histórico financeiro movimentado. E não se deixa título órfão:
+ * os três saem juntos, numa transação.
+ */
 export async function DELETE(_r: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
@@ -236,24 +250,52 @@ export async function DELETE(_r: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const l = await prisma.lancamentoBaas.findUnique({
     where: { id },
-    select: { id: true, status: true, condicao: { select: { nomeFantasia: true } } },
+    select: {
+      id: true, status: true, numeroConta: true,
+      periodoInicio: true, periodoFim: true,
+      saldoInicial: true, totalTarifas: true, overpriceValor: true, valorCliente: true,
+      condicao: { select: { nomeFantasia: true, tipo: true } },
+    },
   })
   if (!l) return NextResponse.json({ error: 'Lançamento não encontrado.' }, { status: 404 })
 
-  if (l.status !== 'RASCUNHO') {
+  // A LIQUIDAÇÃO é a única coisa que bloqueia.
+  const liq = await liquidacaoDe(id)
+  if (liq.liquidado) {
     return NextResponse.json(
       {
-        error: 'Este lançamento já gerou títulos financeiros. Excluí-lo deixaria '
-          + 'o lançamento, o título a receber e o a pagar órfãos. '
-          + 'Ajuste os valores editando-o, ou cancele os títulos em Lançamentos.',
+        error: `Não é possível excluir: ${liq.motivo}. `
+          + 'Histórico financeiro movimentado não se apaga — cancele ou estorne o '
+          + 'título em Lançamentos e em Contas a Receber antes, se for o caso.',
       },
       { status: 409 },
     )
   }
 
-  await prisma.lancamentoBaas.delete({ where: { id } })
-  await logAudit(session.userId, 'EXCLUIU_LANCAMENTO_BAAS', 'LancamentoBaas', id,
-    `Rascunho de ${l.condicao.nomeFantasia}`)
+  const apagados = await apagarTitulos(id)
 
-  return NextResponse.json({ success: true })
+  /**
+   * A AUDITORIA É GRAVADA ANTES DO DELETE.
+   *
+   * Depois do delete o registro não existe mais para ser consultado, e a
+   * trilha precisa carregar os valores — não só o id de algo que sumiu.
+   */
+  const f = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+  await logAudit(
+    session.userId, 'EXCLUIU_LANCAMENTO_BAAS', 'LancamentoBaas', id,
+    `${l.condicao.nomeFantasia} (${l.condicao.tipo}) · conta ${l.numeroConta} · `
+    + `${f(l.periodoInicio)} a ${f(l.periodoFim)} · `
+    + `saldo ${l.saldoInicial} · tarifas ${l.totalTarifas} · `
+    + `overprice ${l.overpriceValor} · residual ${l.valorCliente} · `
+    + `status ${l.status} · removidos: `
+    + [
+        apagados.lancamento && 'lançamento',
+        apagados.contaReceber && 'título a receber',
+        apagados.contaPagar && 'título a pagar',
+      ].filter(Boolean).join(', ') || 'nenhum título vinculado',
+  )
+
+  await prisma.lancamentoBaas.delete({ where: { id } })
+
+  return NextResponse.json({ success: true, removidos: apagados })
 }

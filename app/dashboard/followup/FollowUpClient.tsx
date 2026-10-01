@@ -130,6 +130,21 @@ function fmtDateFull(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+/**
+ * A cor da DATA PREVISTA.
+ *
+ * Vermelho e âmbar ficam: atraso e vencimento próximo são estados com
+ * significado — alguém precisa agir.
+ *
+ * Uma data NO PRAZO não é um estado bom; é só uma data. Ela estava em verde,
+ * e verde no design system significa atingimento. O resultado era um
+ * follow-up agendado para o mês que vem parecendo uma conquista, ao lado de
+ * um atrasado em vermelho.
+ *
+ * Agora usa o AZUL institucional (`accent-soft`), que é a cor de informação.
+ * O token já é ajustado por tema: #6b8cff no escuro, #1b4fd8 no claro — nos
+ * dois casos com contraste contra a superfície.
+ */
 function proximoContatoColor(iso: string | null): string {
   if (!iso) return 'text-subtle'
   const d = new Date(iso)
@@ -138,7 +153,7 @@ function proximoContatoColor(iso: string | null): string {
   const diffDays = diffMs / (1000 * 60 * 60 * 24)
   if (diffDays < 0) return 'text-neg'
   if (diffDays <= 1) return 'text-warn'
-  return 'text-pos'
+  return 'text-accent-soft'
 }
 
 function isCarteiraGeral(clienteId: string): boolean {
@@ -524,9 +539,12 @@ export default function FollowUpClient({ clientes, usuarios, userId }: Props) {
               const dayNum = weekDayNums[i]
               const events = getEventsForDay(dayNum, dayDate)
               const isToday = weekOffset === 0 && dayNum === todayNum
+              // O DIA DE HOJE em AZUL, não em verde: é informação de posição
+              // no calendário, não atingimento. O token é ajustado por tema,
+              // então o contraste vale em Light e em Dark.
               return (
-                <div key={i} className={`bg-surface border rounded-xl p-3 min-h-[160px] ${isToday ? 'border-pos/40' : 'border-line'}`}>
-                  <div className={`text-xs font-semibold mb-2 ${isToday ? 'text-pos' : 'text-subtle'}`}>
+                <div key={i} className={`bg-surface border rounded-xl p-3 min-h-[160px] ${isToday ? 'border-accent/40' : 'border-line'}`}>
+                  <div className={`text-xs font-semibold mb-2 ${isToday ? 'text-accent-soft' : 'text-subtle'}`}>
                     {DIAS[dayNum]}
                     <span className="block text-subtle font-normal">{fmtDate(dayDate)}</span>
                   </div>

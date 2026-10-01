@@ -18,7 +18,10 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import { calcular, receitaBassPago, centavos } from '../lib/lancamento-baas'
+
+const ler = (p: string) => readFileSync(p, 'utf8')
 import { devedorDoTitulo, CATEGORIA_RECEITA_BAAS, CATEGORIA_DESPESA_BAAS } from '../lib/baas-titulos'
 
 /* ========================================================================= *
@@ -39,34 +42,62 @@ test('§7: a cascata produz os seis numeros da especificacao', () => {
   assert.equal(CENARIO.valorCliente, 67_451.25)
 })
 
-test('§7: CONTAS A RECEBER = receita da Bass Pago (tarifas + overprice)', () => {
-  // Nao e o saldo, nao sao so as tarifas: e o que a Bass Pago cobrou.
-  assert.equal(receitaBassPago(CENARIO), 32_548.75)
-  assert.equal(
-    receitaBassPago(CENARIO),
-    centavos(CENARIO.totalTarifas + CENARIO.overpriceValor),
-  )
+test('§12: CONTAS A RECEBER = R$ 10.065,00 — SO as tarifas', () => {
+  // O que se COBRA do parceiro. NAO inclui o overprice: ele e receita nossa,
+  // mas e realizado pagando ao parceiro menos — fatura-lo tambem seria cobrar
+  // duas vezes o mesmo valor.
+  assert.equal(CENARIO.totalTarifas, 10_065)
 })
 
-test('§7: CONTAS A PAGAR = R$ 67.451,25, o residual do parceiro', () => {
+test('§12: CONTAS A PAGAR = R$ 67.451,25 — o residual do parceiro', () => {
   assert.equal(CENARIO.valorCliente, 67_451.25)
 })
 
-test('§7: AR + AP = saldo informado — nada aparece nem desaparece', () => {
+test('§12: NAO INVERTER — o AR e o menor, o AP e o maior', () => {
+  // A troca dos dois seria silenciosa: os numeros existem e a soma nao fecha
+  // com nada visivel. Este teste e o que a pega.
+  assert.ok(CENARIO.totalTarifas < CENARIO.valorCliente)
+  assert.notEqual(CENARIO.totalTarifas, CENARIO.valorCliente)
+})
+
+test('§12: NAO SOMAR os dois como uma receita unica', () => {
+  // AR + AP = 77.516,25, que nao e receita nenhuma: e a soma de uma cobranca
+  // com uma divida. A receita da Bass Pago e outra coisa.
+  const somaErrada = centavos(CENARIO.totalTarifas + CENARIO.valorCliente)
+  assert.equal(somaErrada, 77_516.25)
+  assert.notEqual(somaErrada, receitaBassPago(CENARIO))
+  assert.notEqual(somaErrada, CENARIO.saldoInicial)
+})
+
+test('LANCAMENTOS registra a RECEITA: tarifas + overprice', () => {
+  // O lancamento financeiro e o que a Receita do periodo soma, e a receita
+  // inclui o overprice. O titulo a receber cobra menos — a diferenca e
+  // exatamente o overprice retido.
+  assert.equal(receitaBassPago(CENARIO), 32_548.75)
   assert.equal(
-    centavos(receitaBassPago(CENARIO) + CENARIO.valorCliente),
+    centavos(receitaBassPago(CENARIO) - CENARIO.totalTarifas),
+    CENARIO.overpriceValor,
+  )
+})
+
+test('tarifas + overprice + residual = saldo informado', () => {
+  // A identidade que fecha a cascata: o saldo do parceiro se reparte em
+  // cobranca, retencao e devolucao, sem sobra.
+  assert.equal(
+    centavos(CENARIO.totalTarifas + CENARIO.overpriceValor + CENARIO.valorCliente),
     100_000,
   )
 })
 
 test('o AR NAO inclui mensalidade nem nada fora do lancamento', () => {
-  // A fonte do valor e o proprio calculo do lancamento. Se o AR passasse a
-  // somar mensalidade de API ou sustentacao, este teste quebraria — e seria
-  // dupla contagem, porque essas parcelas tem lugar proprio no MRR.
-  const soTarifas = CENARIO.totalTarifas
-  const soOverprice = CENARIO.overpriceValor
-  assert.equal(receitaBassPago(CENARIO), centavos(soTarifas + soOverprice))
-  // Nenhuma terceira parcela cabe na identidade acima.
+  // A fonte do valor e o proprio calculo. Se o AR passasse a somar
+  // mensalidade de API ou sustentacao, seria dupla contagem: essas parcelas
+  // tem lugar proprio no MRR.
+  assert.equal(
+    CENARIO.totalTarifas,
+    centavos(CENARIO.itens.reduce((a, i) => a + i.total, 0)),
+    'o AR deixou de ser a soma pura dos produtos tarifados',
+  )
 })
 
 /* ========================================================================= *
@@ -137,4 +168,138 @@ test('o mesmo lancamento recalculado duas vezes da o MESMO resultado', () => {
   const b = calcular(100_000, [{ nome: 'PIX', preco: 0.10, volume: 100_000 }], 25)
   assert.deepEqual(a, b)
   assert.equal(receitaBassPago(a), receitaBassPago(b))
+})
+
+/* ========================================================================= *
+ * EXCLUIR, NÃO FECHAR
+ * ========================================================================= */
+
+test('a acao "fechar" saiu da API', () => {
+  // Era um status marcado a mao, e nao protegia nada: um lancamento com
+  // titulo ja pago continuava editavel enquanto ninguem o fechasse, e um sem
+  // nenhuma liquidacao ficava travado no instante em que fosse fechado.
+  const rota = ler('app/api/lancamento-baas/[id]/route.ts')
+  assert.ok(!rota.includes("acao === 'fechar'"), 'a acao fechar voltou')
+  assert.ok(!rota.includes("status: 'FECHADO'"), 'alguem volta a gravar FECHADO')
+  assert.ok(!rota.includes('FECHOU_LANCAMENTO_BAAS'), 'o evento de fechamento voltou')
+})
+
+test('o botao "Fechar" saiu da tela', () => {
+  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  assert.ok(!tela.includes('>Fechar</Button>'), 'o botao Fechar voltou a lista')
+  assert.ok(!tela.includes('async function fechar('), 'o handler de fechar voltou')
+  assert.ok(!tela.includes('acao=fechar'), 'a chamada de fechar voltou')
+})
+
+test('EXCLUIR existe, e em qualquer estado', () => {
+  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  assert.ok(tela.includes('>Excluir</Button>'))
+  // Fora de qualquer `l.status === 'RASCUNHO'`: o que bloqueia e a liquidacao,
+  // conferida no servidor — nao o estado do lancamento.
+  assert.ok(tela.includes('onClick={() => excluir(l)}'))
+})
+
+test('a confirmacao DIZ o que sai junto', () => {
+  // Um "Excluir?" seco esconderia que tres registros desaparecem.
+  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  assert.ok(tela.includes('Excluir este lançamento BaaS?'))
+  assert.ok(tela.includes('o lançamento financeiro'))
+  assert.ok(tela.includes('o título a receber'))
+  assert.ok(tela.includes('o título a pagar'))
+})
+
+test('a EDICAO e bloqueada pela LIQUIDACAO, nao por status', () => {
+  const rota = ler('app/api/lancamento-baas/[id]/route.ts')
+  assert.ok(rota.includes('await liquidacaoDe(id)'))
+  assert.ok(!rota.includes("atual.status === 'FECHADO'"), 'a guarda por status voltou')
+})
+
+test('a EXCLUSAO confere liquidacao e apaga os tres', () => {
+  const rota = ler('app/api/lancamento-baas/[id]/route.ts')
+  const ini = rota.indexOf('export async function DELETE')
+  const del = rota.slice(ini)
+  assert.ok(del.includes('liquidacaoDe(id)'), 'a exclusao nao confere liquidacao')
+  assert.ok(del.includes('apagarTitulos(id)'), 'a exclusao nao remove os titulos')
+  assert.ok(del.includes('EXCLUIU_LANCAMENTO_BAAS'), 'a exclusao nao e auditada')
+})
+
+test('a AUDITORIA da exclusao e gravada ANTES do delete', () => {
+  // Depois do delete o registro nao existe mais para ser consultado, e a
+  // trilha precisa carregar os valores — nao so o id de algo que sumiu.
+  const rota = ler('app/api/lancamento-baas/[id]/route.ts')
+  const del = rota.slice(rota.indexOf('export async function DELETE'))
+  const iAudit = del.indexOf('EXCLUIU_LANCAMENTO_BAAS')
+  const iDelete = del.indexOf('lancamentoBaas.delete')
+  assert.ok(iAudit > 0 && iDelete > 0)
+  assert.ok(iAudit < iDelete, 'a auditoria ficou depois do delete')
+})
+
+test('a trilha de auditoria carrega os VALORES, nao so o id', () => {
+  const rota = ler('app/api/lancamento-baas/[id]/route.ts')
+  const del = rota.slice(rota.indexOf('export async function DELETE'))
+  for (const campo of ['saldo', 'tarifas', 'overprice', 'residual']) {
+    assert.ok(del.includes(campo), `a auditoria nao registra ${campo}`)
+  }
+})
+
+/* ========================================================================= *
+ * DETALHES — de onde veio o valor
+ * ========================================================================= */
+
+test('o detalhe mostra PRODUTO | TAXA | VOLUME | TOTAL', () => {
+  const d = ler('components/financeiro/DetalheBaas.tsx')
+  for (const col of ['Produto', 'Taxa', 'Volume', 'Total']) {
+    assert.ok(d.includes(`>${col}<`), `a coluna ${col} saiu do detalhe`)
+  }
+  assert.ok(d.includes('Total de Tarifas'))
+})
+
+test('o detalhe mostra a cascata inteira, etapa por etapa', () => {
+  const d = ler('components/financeiro/DetalheBaas.tsx')
+  for (const etapa of [
+    'Saldo inicial da conta', 'Total de Tarifas', 'Saldo após tarifas',
+    'Overprice', 'Valor residual devido ao parceiro',
+  ]) {
+    assert.ok(d.includes(etapa), `a etapa "${etapa}" saiu do detalhe`)
+  }
+})
+
+test('o detalhe diz o que cada modulo recebeu', () => {
+  const d = ler('components/financeiro/DetalheBaas.tsx')
+  assert.ok(d.includes('Contas a Receber'))
+  assert.ok(d.includes('Contas a Pagar'))
+  assert.ok(d.includes('Só as tarifas — o que se cobra'))
+})
+
+test('o detalhe e alcancavel DE LANCAMENTOS', () => {
+  // E a pergunta que a tela de Lancamentos levanta: de onde veio esse valor?
+  const l = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  assert.ok(l.includes('function origemBaas('))
+  assert.ok(l.includes('setDetalheBaas(origemBaas(l))'))
+  assert.ok(l.includes('<DetalheBaas'))
+})
+
+test('o detalhe NAO e um dashboard: nenhum grafico', () => {
+  const d = ler('components/financeiro/DetalheBaas.tsx')
+  for (const proibido of ['recharts', '<Bar ', '<Line ', '<Area ', 'ResponsiveContainer']) {
+    assert.ok(!d.includes(proibido), `${proibido} entrou no painel de detalhes`)
+  }
+})
+
+/* ========================================================================= *
+ * DESCRIÇÃO SIMPLES
+ * ========================================================================= */
+
+test('a descricao gerada e simples: "<o que> — <parceiro> — <competencia>"', () => {
+  const t = ler('lib/baas-titulos.ts')
+  assert.ok(t.includes('`${oque} — ${d.parceiroNome} — ${competencia}`'))
+  // A composicao por produto NAO entra na descricao: e o que o detalhe mostra.
+  assert.ok(!t.includes('conta ${d.numeroConta} ·'), 'a conta voltou para a descricao')
+})
+
+test('os tres registros tem descricoes distinguiveis', () => {
+  const t = ler('lib/baas-titulos.ts')
+  assert.ok(t.includes("descricao(d, 'Lançamento BaaS')"), 'o lancamento financeiro')
+  assert.ok(t.includes("descricao(d, 'Tarifas BaaS')"), 'o titulo a receber')
+  assert.ok(t.includes("descricao(d, 'Repasse ao parceiro')"), 'o titulo a pagar')
 })

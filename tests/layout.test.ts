@@ -141,3 +141,147 @@ test('as acoes e o status continuam na tabela', () => {
     assert.ok(LANCAMENTOS.includes(`>${col}<`), `a coluna ${col} desapareceu`)
   }
 })
+
+/* ========================================================================= *
+ * CARTEIRA — Modelo e Segmento separados
+ * ========================================================================= */
+
+test('MODELO vem antes de SEGMENTO, e os dois tem largura propria', () => {
+  // Estavam colados: segmento e texto cadastrado, de largura imprevisivel, e
+  // sem teto encostava no modelo — que e um badge curto e fixo.
+  const iModelo = CARTEIRA.indexOf('>Modelo<')
+  const iSegmento = CARTEIRA.indexOf('>Segmento<')
+  assert.ok(iModelo > 0 && iSegmento > 0, 'uma das colunas desapareceu')
+  assert.ok(iModelo < iSegmento, 'Modelo deveria vir antes de Segmento')
+
+  assert.ok(CARTEIRA.includes('className="w-[7.5rem]">Modelo'))
+  assert.ok(CARTEIRA.includes('className="w-[10rem]">Segmento'))
+})
+
+test('ha RESPIRO entre o badge do modelo e o do segmento', () => {
+  assert.ok(CARTEIRA.includes('<Td className="pr-4">'), 'o espacamento entre as duas colunas saiu')
+})
+
+test('a Carteira preserva as colunas que a tela existe para dar', () => {
+  for (const col of ['Cliente', 'Conta', 'Modelo', 'Segmento', 'Status', 'Gestor', 'Ações']) {
+    assert.ok(CARTEIRA.includes(`>${col}<`), `a coluna ${col} desapareceu`)
+  }
+})
+
+/* ========================================================================= *
+ * FOLLOW UP — a data em AZUL
+ * ========================================================================= */
+
+test('a data prevista NO PRAZO usa o azul institucional, nao verde', () => {
+  // Verde no design system significa atingimento. Um follow-up agendado para
+  // o mes que vem nao e uma conquista — e so uma data.
+  const F = ler('app/dashboard/followup/FollowUpClient.tsx')
+  assert.ok(
+    F.includes("return 'text-accent-soft'"),
+    'a data voltou a ser verde',
+  )
+  assert.ok(!/if \(diffDays < 0\) return 'text-neg'[\s\S]{0,120}return 'text-pos'/.test(F))
+})
+
+test('ATRASO e VENCIMENTO PROXIMO continuam vermelho e ambar', () => {
+  // Esses dois tem significado funcional: alguem precisa agir.
+  const F = ler('app/dashboard/followup/FollowUpClient.tsx')
+  assert.ok(F.includes("if (diffDays < 0) return 'text-neg'"))
+  assert.ok(F.includes("if (diffDays <= 1) return 'text-warn'"))
+})
+
+test('o DIA DE HOJE no calendario e azul, borda inclusa', () => {
+  const F = ler('app/dashboard/followup/FollowUpClient.tsx')
+  assert.ok(F.includes("isToday ? 'text-accent-soft'"))
+  assert.ok(F.includes("isToday ? 'border-accent/40'"))
+  assert.ok(!F.includes("isToday ? 'text-pos'"))
+  assert.ok(!F.includes("isToday ? 'border-pos/40'"))
+})
+
+test('o azul e um TOKEN, e por isso funciona em Light e em Dark', () => {
+  // `accent-soft` tem valor proprio por tema (#6b8cff no escuro, #1b4fd8 no
+  // claro). Uma cor fixa em hex funcionaria num tema e falharia no outro.
+  const css = ler('app/globals.css')
+  assert.ok(css.includes('--color-accent-soft: #6b8cff'), 'o token do tema escuro saiu')
+  assert.ok(css.includes('--color-accent-soft: #1b4fd8'), 'o token do tema claro saiu')
+})
+
+/* ========================================================================= *
+ * COCKPIT — velas simplificadas
+ * ========================================================================= */
+
+/** Só o corpo da função do tooltip — comentários do arquivo não contam. */
+function corpoDoTooltip(): string {
+  const C = ler('components/ui/Candles.tsx')
+  const ini = C.indexOf('function Dica(')
+  const fim = C.indexOf('return (\n    <ResponsiveContainer')
+  assert.ok(ini > 0 && fim > ini, 'a função do tooltip mudou de forma')
+  return C.slice(ini, fim)
+}
+
+test('o tooltip da vela mostra PERIODO e OHLC — e nada mais', () => {
+  const t = corpoDoTooltip()
+  for (const r of ['Abertura', 'Máxima', 'Mínima', 'Fechamento']) {
+    assert.ok(t.includes(`rotulo="${r}"`), `${r} saiu do tooltip`)
+  }
+  assert.ok(t.includes('periodo'), 'o periodo saiu do tooltip')
+
+  // O que saiu: contagem de observacoes, variacao percentual e a nota sobre
+  // vela sem dispersao. Cada uma era verdadeira e nenhuma era a pergunta.
+  assert.ok(!t.includes('observaç'), 'a contagem de observacoes voltou ao tooltip')
+  assert.ok(!t.includes('% no período'), 'a variacao percentual voltou ao tooltip')
+  assert.ok(!t.includes('velaDegenerada'), 'a nota de vela sem dispersao voltou')
+})
+
+test('o calculo de variacao saiu do grafico', () => {
+  const C = ler('components/ui/Candles.tsx')
+  assert.ok(!C.includes('variacaoDaVela'), 'o grafico voltou a calcular variacao')
+})
+
+test('sem indicador de trading: nenhum RSI, MACD, banda ou media movel', () => {
+  const C = ler('components/ui/Candles.tsx')
+  // Palavra inteira: `/EMA/i` casaria dentro de "SEMANA", e `/SMA/i` dentro
+  // de "mesma" — um teste que falha por substring nao protege nada.
+  for (const proibido of ['RSI', 'MACD', 'Bollinger', 'EMA', 'SMA', 'ATR', 'Ichimoku']) {
+    assert.ok(
+      !new RegExp(`\\b${proibido}\\b`).test(C),
+      `${proibido} apareceu no grafico de velas`,
+    )
+  }
+  // Uma única série: a das velas. Nenhuma linha ou área sobreposta.
+  assert.equal((C.match(/<Bar /g) ?? []).length, 1, 'ha mais de uma serie no grafico')
+  assert.ok(!C.includes('<Line '), 'uma linha foi sobreposta as velas')
+  assert.ok(!C.includes('<Area '), 'uma area foi sobreposta as velas')
+})
+
+test('a grade e discreta: so horizontal, sem tracejado', () => {
+  const tema = ler('lib/chart-theme.ts')
+  assert.ok(tema.includes('vertical: false'))
+  assert.ok(tema.includes("strokeDasharray: '0'"))
+})
+
+test('o eixo e limpo: poucas marcas e rotulos que nao se empilham', () => {
+  const C = ler('components/ui/Candles.tsx')
+  assert.ok(C.includes('tickCount={4}'), 'o eixo voltou a encher de numeros')
+  assert.ok(C.includes('interval="preserveStartEnd"'), 'os rotulos voltam a competir no mobile')
+})
+
+test('os candles sao estreitos — a serie precisa parecer uma serie', () => {
+  const C = ler('components/ui/Candles.tsx')
+  assert.ok(C.includes('width * 0.44'), 'os candles voltaram a encostar um no outro')
+})
+
+test('o valor no tooltip vem do formatador de fora — moeda por extenso', () => {
+  // Nunca K, M, MM ou BI: quem passa o formatador e o Cockpit, com `moedaCheia`.
+  const C = ler('components/ui/Candles.tsx')
+  assert.ok(C.includes('formatar: (n: number) => string'))
+  const cockpit = ler('components/dashboard/DashboardCharts.tsx')
+  assert.ok(cockpit.includes('formatar={moedaCheia}'))
+})
+
+test('cada vela tem titulo proprio no Cockpit', () => {
+  const cockpit = ler('components/dashboard/DashboardCharts.tsx')
+  for (const t of ['TPV — velas mensais', 'Receita — velas mensais', 'Transações — velas mensais']) {
+    assert.ok(cockpit.includes(t), `o grafico "${t}" perdeu o titulo`)
+  }
+})

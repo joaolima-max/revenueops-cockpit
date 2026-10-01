@@ -18,10 +18,12 @@ export interface MetricasDTO {
   /** Soma do downtime dos ENCERRADOS, em minutos. */
   downtimeTotal: number
   /**
-   * MTTR — a média do downtime de TODOS os incidentes, abertos incluídos.
+   * MTTR MÉDIO — a média do downtime de todos os incidentes, abertos
+   * incluídos.
    *
-   * É literalmente o downtime: um incidente isolado tem MTTR igual à própria
-   * duração. Enquanto há incidente aberto, o número cresce junto com ele.
+   * É uma métrica AGREGADA, e o rótulo da tela diz isso. O MTTR de um
+   * incidente individual é o downtime dele, e aparece na lista abaixo, sobre
+   * a mesma variável — não há dois cálculos.
    */
   mttr: number | null
   /** Há incidente aberto? Então o MTTR está correndo, e a tela diz isso. */
@@ -37,10 +39,12 @@ export interface MetricasDTO {
  * tê-las numa tela separada obrigava a abrir duas telas para ler o mesmo fato,
  * e a comparar de memória o número do painel com a linha do registro.
  *
- * MTTR É O DOWNTIME. Não existe segundo cálculo: o downtime de um incidente é
- * (fim − início), derivado por `calcularDowntime`, e o MTTR do conjunto é a
- * média desses mesmos números. Um incidente isolado tem MTTR igual ao próprio
- * downtime, e todas as telas mostram o mesmo valor.
+ * MTTR É O DOWNTIME, no incidente individual: a lista abaixo mostra os dois
+ * rótulos sobre a MESMA variável, de uma só chamada a `calcularDowntime`.
+ *
+ * Aqui em cima o número é a MÉDIA do conjunto, e o rótulo diz "MTTR médio"
+ * justamente para não haver dois valores diferentes com o mesmo nome na
+ * mesma tela.
  *
  * ACUMULADO conta só os encerrados — somar uma duração que ainda cresce faria
  * o total do mês mudar a cada refresh. O MTTR conta TODOS: ele É o downtime, e
@@ -83,10 +87,16 @@ export default function MetricasOperacionais({ m }: { m: MetricasDTO }) {
         <StatTile label="Downtime acumulado" figura={null}
           note={`${m.encerrados} encerrados`}
           valorTexto={formatarDuracao(m.downtimeTotal)} />
-        <StatTile label="MTTR" figura={null}
+        {/* "MTTR MÉDIO", não "MTTR".
+            O MTTR de um incidente É o downtime dele — é o que a lista abaixo
+            mostra, com os dois rótulos sobre a mesma variável. Este tile é
+            outra coisa: a média do conjunto. Chamá-lo só de "MTTR" punha dois
+            números diferentes com o mesmo nome na mesma tela, e era de onde
+            vinha a dúvida sobre qual valia. */}
+        <StatTile label="MTTR médio" figura={null}
           note={m.mttrEmCurso
-            ? 'Média do downtime · correndo, há incidente aberto'
-            : 'Média do downtime dos incidentes'}
+            ? `Média de ${m.total} incidente${m.total === 1 ? '' : 's'} · correndo`
+            : `Média de ${m.total} incidente${m.total === 1 ? '' : 's'}`}
           valorTexto={m.mttr === null ? '—' : formatarDuracao(m.mttr)} />
       </HairlineGrid>
 

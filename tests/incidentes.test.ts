@@ -10,6 +10,9 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
+
+const ler = (p: string) => readFileSync(p, 'utf8')
 import {
   calcularDowntime, formatarDuracao, validarJanela,
   podeAdministrarIncidente, podeRegistrarIncidente, CRITICIDADES,
@@ -114,4 +117,85 @@ test('registrar e fechar é de quem opera; COMERCIAL fica fora', () => {
 
 test('a escala de criticidade é a do sistema, com quatro níveis', () => {
   assert.deepEqual([...CRITICIDADES], ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'])
+})
+
+/* ========================================================================= *
+ * MTTR = DOWNTIME — a igualdade, no incidente individual
+ * ========================================================================= */
+
+test('MTTR E o DOWNTIME: mesma chamada, mesmo numero', () => {
+  // A tela mostra os dois rotulos sobre UMA variavel. Nao sao dois calculos
+  // que coincidem — e o mesmo valor exibido duas vezes, e e isso que impede
+  // que divirjam quando alguem mexer num dos lados.
+  const t = ler('app/dashboard/incidentes/IncidentesClient.tsx')
+  assert.ok(
+    t.includes('const duracao = calcularDowntime(inc.inicio, inc.fim, agora)'),
+    'a duracao deixou de ser calculada uma vez so',
+  )
+  assert.ok(t.includes('Downtime: {duracao.rotulo}'))
+  assert.ok(t.includes('MTTR: {duracao.rotulo}'))
+
+  // Nenhuma segunda chamada DENTRO DO RENDER da lista. Fora dele existe uma
+  // outra, na confirmacao de exclusao — ela monta uma frase, nao exibe um
+  // segundo MTTR, e por isso nao disputa com o da tela.
+  const render = t.slice(t.indexOf('{incidentes.map((inc) => {'))
+  const chamadas = (render.match(/calcularDowntime\(inc\./g) ?? []).length
+  assert.equal(chamadas, 1, 'voltou a existir um segundo calculo de downtime no render')
+})
+
+test('incidente ABERTO: os dois valores sao identicos a cada instante', () => {
+  const inicio = T('2026-10-01T08:00:00Z')
+  for (const minutos of [1, 42, 102, 1_000]) {
+    const agora = new Date(inicio.getTime() + minutos * 60_000)
+    const d = calcularDowntime(inicio, null, agora)
+    // O MTTR do incidente E este objeto — nao ha segundo calculo para comparar.
+    assert.equal(d.minutos, minutos)
+    assert.equal(d.encerrado, false)
+  }
+})
+
+test('incidente ENCERRADO: a igualdade se mantem, e o relogio nao mexe mais', () => {
+  const inicio = T('2026-10-01T08:00:00Z')
+  const fim = T('2026-10-01T10:10:30Z')
+  const a = calcularDowntime(inicio, fim, T('2026-10-01T11:00:00Z'))
+  const b = calcularDowntime(inicio, fim, T('2026-12-25T23:59:00Z'))
+  assert.equal(a.minutos, b.minutos, 'o downtime final mudou com o passar do tempo')
+  // 2h10min30s arredondados ao minuto. O valor exato importa menos que a
+  // ESTABILIDADE: encerrado, o numero nao se move mais.
+  assert.equal(a.minutos, Math.round((fim.getTime() - inicio.getTime()) / 60_000))
+  assert.equal(a.rotulo, b.rotulo)
+  assert.equal(a.encerrado, true)
+})
+
+test('o relogio tica SO quando ha incidente aberto', () => {
+  // Num quadro todo resolvido nenhum numero muda, e um intervalo rodando
+  // seria redesenho sem efeito.
+  const t = ler('app/dashboard/incidentes/IncidentesClient.tsx')
+  assert.ok(t.includes('if (abertos === 0) return'), 'o intervalo roda sempre')
+  assert.ok(t.includes('setInterval(tick, 30_000)'))
+  assert.ok(t.includes('clearInterval(id)'), 'o intervalo nao e limpo')
+})
+
+test('o agregado se chama "MTTR medio" — nao "MTTR"', () => {
+  // Dois numeros diferentes com o mesmo nome na mesma tela era de onde vinha
+  // a duvida sobre qual valia.
+  const m = ler('components/incidentes/MetricasOperacionais.tsx')
+  assert.ok(m.includes('label="MTTR médio"'), 'o agregado voltou a se chamar MTTR')
+  assert.ok(!m.includes('label="MTTR"'))
+})
+
+test('na tela do registro, o UNICO MTTR e o que espelha a duracao', () => {
+  // Nenhuma divisao, media ou soma com o nome de MTTR no registro: a media
+  // vive no painel de metricas, com o rotulo "MTTR medio".
+  //
+  // Os COMENTARIOS sao retirados antes da contagem — eles explicam a regra, e
+  // um teste que os contasse quebraria ao se documentar melhor.
+  const t = ler('app/dashboard/incidentes/IncidentesClient.tsx')
+  const codigo = t
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+  const mencoes = codigo.match(/MTTR/g) ?? []
+  assert.equal(mencoes.length, 1, `MTTR aparece ${mencoes.length}x no codigo do registro`)
+  assert.ok(codigo.includes('MTTR: {duracao.rotulo}'))
 })

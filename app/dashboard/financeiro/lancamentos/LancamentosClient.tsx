@@ -13,6 +13,20 @@ import { formatDate, formatMesRef } from '@/lib/utils'
 import {
   validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO, TAMANHO_MAX,
 } from '@/lib/arquivos'
+import DetalheBaas, { type LancamentoBaasDetalhe } from '@/components/financeiro/DetalheBaas'
+
+/**
+ * O Lançamento BaaS que originou a linha, se houver.
+ *
+ * Um lançamento é o lado da receita OU o do repasse — nunca os dois —, e nos
+ * dois casos o detalhe é o mesmo registro de origem.
+ */
+function origemBaas(l: {
+  baasReceita?: LancamentoBaasDetalhe | null
+  baasContaPagar?: LancamentoBaasDetalhe | null
+}): LancamentoBaasDetalhe | null {
+  return l.baasReceita ?? l.baasContaPagar ?? null
+}
 
 /**
  * A segunda linha da descrição: tipo, fornecedor, parceiro e anexos.
@@ -78,6 +92,13 @@ interface Lancamento {
   id: string
   tipo: Tipo
   descricao: string
+  /**
+   * ORIGEM BaaS, quando houver. Um lançamento pode ser o lado da RECEITA ou o
+   * do REPASSE de um Lançamento BaaS — nos dois casos o detalhe é o mesmo
+   * registro, e é dele que vem a composição por produto.
+   */
+  baasReceita?: LancamentoBaasDetalhe | null
+  baasContaPagar?: LancamentoBaasDetalhe | null
   valor: number
   data: string
   dataVencimento: string | null
@@ -164,6 +185,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   const [erroAnexo, setErroAnexo] = useState('')
   /** Nome do arquivo em upload — o progresso que o fetch não dá. */
   const [nomeEnviando, setNomeEnviando] = useState('')
+  /** Detalhe do Lançamento BaaS que originou a linha. */
+  const [detalheBaas, setDetalheBaas] = useState<LancamentoBaasDetalhe | null>(null)
 
   // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
   // `.then`, e `vivo` evita escrever em componente já desmontado.
@@ -507,6 +530,14 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                 </Td>
                 <Td align="right">
                   <span className="inline-flex gap-2">
+                    {/* DETALHE da origem BaaS: a composição por produto, que
+                        é o que responde "de onde veio esse valor". Só aparece
+                        nas linhas que vêm de um Lançamento BaaS. */}
+                    {origemBaas(l) && (
+                      <Button size="sm" onClick={() => setDetalheBaas(origemBaas(l))}>
+                        Detalhes
+                      </Button>
+                    )}
                     <Button size="sm" onClick={() => { setAnexosDe(l); setErroAnexo('') }}>
                       Anexos {l.anexos.length > 0 && `(${l.anexos.length})`}
                     </Button>
@@ -746,6 +777,10 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       )}
 
       {/* ── Anexos ───────────────────────────────────────────────────────── */}
+      {detalheBaas && (
+        <DetalheBaas l={detalheBaas} onFechar={() => setDetalheBaas(null)} />
+      )}
+
       {anexosDe && (
         <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={(e) => e.target === e.currentTarget && setAnexosDe(null)}>
