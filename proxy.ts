@@ -45,6 +45,19 @@ export function proxy(request: NextRequest) {
   return NextResponse.next()
 }
 
+/**
+ * O que o proxy NAO intercepta.
+ *
+ * Alem dos internos do Next, os ARQUIVOS DE MARCA em /public precisam sair
+ * daqui. O favicon e requisitado pelo navegador direto em `/icon.png`, antes
+ * de existir sessao: com o proxy no caminho, ele recebia 307 para /login e a
+ * aba ficava sem icone. O mesmo valia para a logo quando referenciada por
+ * caminho direto.
+ *
+ * Sao imagens publicas da marca — nao ha o que proteger nelas, e /public nao
+ * guarda mais nada alem delas (os arquivos de exemplo do Next sairam). Todo o
+ * resto continua passando pela checagem de sessao e de modulo.
+ */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|svg|ico|webp|avif|woff2?)$).*)'],
 }
