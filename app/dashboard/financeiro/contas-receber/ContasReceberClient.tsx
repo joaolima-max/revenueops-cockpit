@@ -30,7 +30,12 @@ interface Titulo {
   notas: string | null
   parcela: number | null
   totalParcel: number | null
-  cliente: { id: string; nome: string; modeloOperacional: string }
+  /** Devedor quando é cliente da carteira. Null quando é parceiro. */
+  cliente: { id: string; nome: string; modeloOperacional: string } | null
+  /** Devedor quando é parceiro BaaS/White Label. */
+  condicao: { id: string; nomeFantasia: string; identificacao: string; tipo: string } | null
+  /** Nome de quem deve, resolvido pelo servidor. */
+  devedor: string
 }
 
 interface Resumo {
@@ -153,7 +158,7 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
   }
 
   async function excluir(t: Titulo) {
-    if (!confirm(`Excluir o título "${t.descricao}" de ${t.cliente.nome}?`)) return
+    if (!confirm(`Excluir o título "${t.descricao}" de ${t.devedor}?`)) return
     const res = await fetch(`/api/financeiro/contas-receber/${t.id}`, { method: 'DELETE' })
     if (res.ok) { carregar(); return }
     const d = await res.json().catch(() => ({}))
@@ -278,7 +283,9 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
                         </span>
                       )}
                     </Td>
-                    <Td className="t-sm text-muted">{t.cliente.nome}</Td>
+                    {/* DEVEDOR já resolvido pelo servidor: pode ser cliente
+                        da carteira ou parceiro BaaS/White Label. */}
+                    <Td className="t-sm text-muted">{t.devedor}</Td>
                     <Td><Badge>{t.tipo}</Badge></Td>
                     <Td className="t-num">
                       <span className="block text-fg">{formatDate(t.dataVenc)}</span>

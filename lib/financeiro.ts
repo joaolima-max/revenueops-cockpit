@@ -658,7 +658,17 @@ export interface TituloReceber {
   notas: string | null
   parcela: number | null
   totalParcel: number | null
-  cliente: { id: string; nome: string; modeloOperacional: string }
+  /** Devedor quando é cliente da carteira. Null quando é parceiro. */
+  cliente: { id: string; nome: string; modeloOperacional: string } | null
+  /** Devedor quando é parceiro BaaS/White Label. Null quando é cliente. */
+  condicao: { id: string; nomeFantasia: string; identificacao: string; tipo: string } | null
+  /**
+   * O nome de quem deve, já resolvido.
+   *
+   * A tela não precisa saber que existem dois tipos de devedor — e resolver
+   * isto em cada lugar que lista títulos é como as telas passam a discordar.
+   */
+  devedor: string
 }
 
 export interface ResumoReceber {
@@ -715,7 +725,12 @@ export async function contasAReceber(
         ? { descricao: { contains: filtro.descricao, mode: 'insensitive' as const } }
         : {}),
     },
-    include: { cliente: { select: { id: true, nome: true, modeloOperacional: true } } },
+    include: {
+      cliente: { select: { id: true, nome: true, modeloOperacional: true } },
+      // O DEVEDOR pode ser um PARCCEIRO: a receita do Lançamento BaaS é devida
+      // pelo BaaS/White Label, que não é Cliente.
+      condicao: { select: { id: true, nomeFantasia: true, identificacao: true, tipo: true } },
+    },
     orderBy: [{ dataVenc: 'asc' }],
     take: 500,
   })
@@ -737,6 +752,16 @@ export async function contasAReceber(
       parcela: l.parcela,
       totalParcel: l.totalParcel,
       cliente: l.cliente,
+      condicao: l.condicao,
+      /**
+       * O nome de quem deve, pronto para a tela.
+       *
+       * Resolver isto aqui, e não em cada lugar que lista títulos, é o que
+       * impede a tela de ter de saber que existem dois tipos de devedor.
+       */
+      devedor: l.cliente?.nome
+        ?? l.condicao?.nomeFantasia
+        ?? 'Sem devedor vinculado',
     }
   })
 

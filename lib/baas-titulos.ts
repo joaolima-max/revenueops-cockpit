@@ -28,6 +28,26 @@ import { centavos } from '@/lib/lancamento-baas'
 export const CATEGORIA_RECEITA_BAAS = 'Tarifas BaaS'
 export const CATEGORIA_DESPESA_BAAS = 'Repasse a Cliente BaaS'
 
+/**
+ * Quem DEVE o título a receber.
+ *
+ * Cliente da carteira quando a conta do lançamento casa com um; o PARCEIRO em
+ * qualquer outro caso — que é o normal, porque a receita das tarifas é devida
+ * pelo BaaS/White Label.
+ *
+ * EXATAMENTE UM dos dois. O banco exige o mesmo, por CHECK: nenhum seria
+ * título sem devedor, e os dois juntos seriam duas cobranças para o mesmo
+ * valor. A função existe para que o código nunca tente o contrário — e para
+ * que a regra seja testável sem banco.
+ */
+export function devedorDoTitulo(
+  clienteId: string | null, condicaoId: string,
+): { clienteId: string | null; condicaoId: string | null } {
+  return clienteId
+    ? { clienteId, condicaoId: null }
+    : { clienteId: null, condicaoId }
+}
+
 export interface DadosGeracao {
   lancamentoBaasId: string
   condicaoId: string
@@ -40,7 +60,14 @@ export interface DadosGeracao {
   /** Saldo remanescente − overprice. O que é devido ao cliente. */
   valorCliente: number
   criadoPorId: string
-  /** Cliente do título a receber, quando o número de conta casa com um. */
+  /**
+   * Cliente da carteira cujo `numeroConta` casa com a conta do lançamento.
+   *
+   * OPCIONAL e quase sempre nulo: a receita das tarifas é devida pelo
+   * PARCEIRO, não por um cliente da carteira. Quando há correspondência, o
+   * título sai no nome do cliente — é o caso em que a conta é de um cliente
+   * cadastrado, e aí é dele que se cobra.
+   */
   clienteId: string | null
 }
 
@@ -66,15 +93,28 @@ async function categoria(
   return c.id
 }
 
+/**
+ * A descrição dos registros gerados.
+ *
+ * COMPACTA de propósito. A versão longa trazia o intervalo inteiro
+ * ("01/09/2026 a 30/09/2026") e, somada ao nome do parceiro e à conta,
+ * esticava a coluna de descrição em Lançamentos e em Contas a Receber.
+ *
+ * O período vira a competência (`09/2026`), que é como se fala de um
+ * fechamento mensal — e a data exata continua no `dataVencimento` do próprio
+ * título e no Lançamento BaaS de origem, que é o registro completo.
+ */
 function descricao(d: DadosGeracao, oque: string): string {
-  const f = (x: Date) => x.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-  return `${oque} · ${d.parceiroNome} · conta ${d.numeroConta} · `
-    + `${f(d.periodoInicio)} a ${f(d.periodoFim)}`
+  const competencia = d.periodoFim.toLocaleDateString('pt-BR', {
+    month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  })
+  return `${oque} · ${d.parceiroNome} · ${d.numeroConta} · ${competencia}`
 }
 
 export interface TitulosGerados {
   lancamentoId: string
-  contaReceberId: string | null
+  /** Sempre presente: o título nasce no nome do parceiro quando não há cliente. */
+  contaReceberId: string
   contaPagarId: string
 }
 
@@ -85,11 +125,20 @@ export interface TitulosGerados {
  * passam a ser devidos. Inventar "30 dias depois" seria um prazo que nenhum
  * contrato do sistema conhece.
  *
- * O título a receber só nasce quando o número de conta casa com um cliente
- * cadastrado: `ContaReceber.clienteId` é obrigatório, e inventar um cliente
- * para satisfazer a FK criaria um registro fantasma. Sem cliente, a receita
- * fica no lançamento financeiro — que é onde ela conta — e a tela diz por que
- * não houve título.
+ * ── O TÍTULO A RECEBER SAI NO NOME DO PARCEIRO ──────────────────────────
+ *
+ * A receita das tarifas é devida pelo BaaS/White Label. Antes, o AR só nascia
+ * quando o número da conta casava com um `Cliente` cadastrado — porque
+ * `ContaReceber.clienteId` era obrigatório —, e como parceiro não é Cliente, o
+ * título do primeiro lançamento de teste simplesmente não nasceu.
+ *
+ * A v24 tornou `clienteId` opcional e acrescentou `condicaoId`, com uma
+ * CHECK garantindo exatamente um devedor. Agora:
+ *
+ *   conta casa com um cliente da carteira → o título é do cliente;
+ *   caso contrário (o normal)             → o título é do PARCEIRO.
+ *
+ * Nunca os dois: seriam duas cobranças para o mesmo valor.
  */
 export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
   return prisma.$transaction(async (tx) => {
@@ -127,28 +176,32 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
         })
       : await tx.lancamentoFinanceiro.create({ data: dadosReceita })
 
-    /* ── 2. CONTA A RECEBER ────────────────────────────────────────────── */
-    let contaReceberId: string | null = atual.contaReceberId
-    if (d.clienteId) {
-      const dadosAR = {
-        clienteId: d.clienteId,
-        descricao: descricao(d, 'Tarifas e overprice'),
-        tipo: CATEGORIA_RECEITA_BAAS,
-        valor: receita,
-        dataVenc: vencimento,
-      }
-      const ar = contaReceberId
-        ? await tx.contaReceber.update({ where: { id: contaReceberId }, data: dadosAR })
-        : await tx.contaReceber.create({ data: dadosAR })
-      contaReceberId = ar.id
+    /* ── 2. CONTA A RECEBER — sempre nasce ─────────────────────────────── */
+    const dadosAR = devedorDoTitulo(d.clienteId, d.condicaoId)
+
+    const comum = {
+      descricao: descricao(d, 'Tarifas e overprice'),
+      tipo: CATEGORIA_RECEITA_BAAS,
+      valor: receita,
+      dataVenc: vencimento,
     }
+
+    const ar = atual.contaReceberId
+      ? await tx.contaReceber.update({
+          where: { id: atual.contaReceberId }, data: { ...comum, ...dadosAR },
+        })
+      : await tx.contaReceber.create({ data: { ...comum, ...dadosAR } })
+    const contaReceberId: string = ar.id
 
     /* ── 3. DESPESA — o residual devido ao cliente ─────────────────────── */
     // Status PENDENTE: o título nasce em aberto, para ser complementado e
     // baixado em Contas a Pagar.
     const dadosAP = {
       tipo: 'DESPESA' as const,
-      descricao: descricao(d, 'Repasse ao cliente'),
+      // "ao PARCEIRO": o residual é devido ao BaaS/White Label, que não é
+      // cliente da carteira. O rótulo antigo dizia "cliente" e confundia os
+      // dois lados do lançamento.
+      descricao: descricao(d, 'Repasse ao parceiro'),
       categoriaId: catDespesa,
       valor: cliente,
       data: vencimento,

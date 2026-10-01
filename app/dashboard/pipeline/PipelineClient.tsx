@@ -303,13 +303,25 @@ export default function PipelineClient({ leads, podeAdministrar }: {
                       )}
 
                       {/* RESULTADO + SEGMENTO. O segmento é o do LEAD, nunca
-                          inventado: lead sem segmento não ganha badge. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <Badge tone={TOM_RESULTADO[card.resultado]}>
+                          inventado: lead sem segmento não ganha badge.
+                          O resultado NÃO trunca — são três palavras curtas e
+                          conhecidas. O SEGMENTO trunca: é texto cadastrado, e
+                          um nome como "Instituições de Pagamento" esticava o
+                          card e empurrava o responsável para baixo. O dado no
+                          banco continua inteiro; só a exibição é compactada, e
+                          o hover mostra o nome completo. */}
+                      <div className="mt-2 flex items-center gap-1.5 min-w-0">
+                        <Badge tone={TOM_RESULTADO[card.resultado]} className="flex-none">
                           {RESULTADO_LABEL[card.resultado]}
                         </Badge>
                         {rotuloSegmento(card.lead?.segmento) && (
-                          <Badge tone="neutral">{rotuloSegmento(card.lead?.segmento)}</Badge>
+                          <Badge
+                            tone="neutral"
+                            truncar="max-w-[7.5rem]"
+                            title={rotuloSegmento(card.lead?.segmento) ?? undefined}
+                          >
+                            {rotuloSegmento(card.lead?.segmento)}
+                          </Badge>
                         )}
                       </div>
 

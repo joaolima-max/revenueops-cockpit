@@ -16,13 +16,41 @@ const TONE: Record<BadgeTone, string> = {
 }
 
 export default function Badge({
-  tone = 'neutral', children, className,
-}: { tone?: BadgeTone; children: React.ReactNode; className?: string }) {
+  tone = 'neutral', children, className, title, truncar,
+}: {
+  tone?: BadgeTone
+  children: React.ReactNode
+  className?: string
+  /**
+   * Texto completo no hover. Obrigatório na prática quando `truncar` está
+   * ligado: um rótulo cortado sem tooltip esconde informação.
+   */
+  title?: string
+  /**
+   * Teto de largura com reticências.
+   *
+   * O badge já era `whitespace-nowrap`, mas sem teto: um segmento como
+   * "Instituições de Pagamento" esticava o card do Pipeline e empurrava os
+   * outros elementos. Agora corta e o hover mostra o nome inteiro.
+   *
+   * `true` usa o teto padrão; uma classe (`max-w-[7rem]`) ajusta caso a caso.
+   */
+  truncar?: boolean | string
+}) {
+  const teto = truncar === true ? 'max-w-[9rem]' : truncar || undefined
+
   return (
-    <span className={cn(
-      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 t-label whitespace-nowrap',
-      TONE[tone], className
-    )}>
+    <span
+      title={title}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 t-label whitespace-nowrap',
+        // `overflow-hidden` + `text-ellipsis` só cortam com largura limitada —
+        // e `min-w-0` é o que permite o flex item encolher até o teto.
+        teto && 'min-w-0 overflow-hidden text-ellipsis',
+        teto,
+        TONE[tone], className
+      )}
+    >
       {children}
     </span>
   )

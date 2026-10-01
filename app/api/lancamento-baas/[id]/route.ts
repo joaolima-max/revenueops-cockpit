@@ -29,7 +29,14 @@ async function carregar(id: string) {
       },
       itens: { orderBy: { ordem: 'asc' } },
       lancamento: { select: { id: true, descricao: true, valor: true } },
-      contaReceber: { select: { id: true, descricao: true, valor: true, status: true } },
+      contaReceber: {
+        select: {
+          id: true, descricao: true, valor: true, status: true,
+          // Quem deve: cliente da carteira ou o próprio parceiro.
+          cliente: { select: { id: true, nome: true } },
+          condicao: { select: { id: true, nomeFantasia: true } },
+        },
+      },
       contaPagar: { select: { id: true, descricao: true, valor: true, status: true } },
       criadoPor: { select: { id: true, name: true } },
     },
@@ -206,7 +213,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       session.userId, 'LANCOU_BAAS', 'LancamentoBaas', id,
       `${l.condicao.nomeFantasia} · receita ${receitaBassPago(calc)} · `
       + `cliente ${calc.valorCliente} · lançamento ${titulos.lancamentoId} · `
-      + `AR ${titulos.contaReceberId ?? 'sem cliente vinculado'} · AP ${titulos.contaPagarId}`,
+      + `AR ${titulos.contaReceberId} · AP ${titulos.contaPagarId}`,
     )
 
     return NextResponse.json({ lancamento: await carregar(id), titulos })

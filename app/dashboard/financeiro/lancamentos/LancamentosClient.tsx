@@ -14,6 +14,28 @@ import {
   validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO, TAMANHO_MAX,
 } from '@/lib/arquivos'
 
+/**
+ * A segunda linha da descrição: tipo, fornecedor, parceiro e anexos.
+ *
+ * Montada numa função para poder ir junto no `title` — o texto truncado sem
+ * tooltip esconderia justamente o fornecedor e o parceiro, que é o que
+ * distingue dois lançamentos de mesma descrição.
+ */
+function contexto(l: {
+  tipo: string
+  fornecedor: { razaoSocial: string } | null
+  condicao: { nomeFantasia: string } | null
+  anexos: unknown[]
+}): string {
+  const partes = [l.tipo === 'RECEITA' ? 'Receita' : 'Despesa']
+  if (l.fornecedor) partes.push(l.fornecedor.razaoSocial)
+  if (l.condicao) partes.push(l.condicao.nomeFantasia)
+  if (l.anexos.length > 0) {
+    partes.push(`${l.anexos.length} anexo${l.anexos.length === 1 ? '' : 's'}`)
+  }
+  return partes.join(' · ')
+}
+
 /** MIMEs que o navegador abre inline — o resto só faz sentido baixar. */
 const VISUALIZAVEIS = [
   'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -427,8 +449,11 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
         <Table>
           <THead>
             <HeadRow>
-              <Th className="pl-5">Descrição</Th>
-              <Th>Categoria</Th>
+              {/* A DESCRIÇÃO tem teto de largura: ela é texto livre, e sem
+                  limite um lançamento com descrição longa empurrava as
+                  colunas de valor e ações para fora da tela. */}
+              <Th className="pl-5 w-[clamp(12rem,32%,24rem)]">Descrição</Th>
+              <Th className="w-[9rem]">Categoria</Th>
               <Th>Lançamento</Th>
               <Th>Vencimento</Th>
               <Th>Período</Th>
@@ -444,16 +469,21 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
               <EmptyRow colSpan={8}>Nenhum lançamento com esses filtros.</EmptyRow>
             ) : lancamentos.map((l) => (
               <Row key={l.id}>
-                <Td className="pl-5">
-                  <span className="block t-body font-medium text-fg">{l.descricao}</span>
-                  <span className="block t-label text-subtle mt-0.5">
-                    {l.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
-                    {l.fornecedor && ` · ${l.fornecedor.razaoSocial}`}
-                    {l.condicao && ` · ${l.condicao.nomeFantasia}`}
-                    {l.anexos.length > 0 && ` · ${l.anexos.length} anexo${l.anexos.length === 1 ? '' : 's'}`}
+                {/* DUAS LINHAS, as duas truncadas. `max-w-0` com `w-full` é o
+                    que faz a célula respeitar o teto da coluna em vez de
+                    crescer com o conteúdo — sem isso, `truncate` não corta
+                    nada dentro de uma tabela. O título leva o texto inteiro. */}
+                <Td className="pl-5 max-w-0">
+                  <span className="block t-body font-medium text-fg bp-truncate" title={l.descricao}>
+                    {l.descricao}
+                  </span>
+                  <span className="block t-label text-subtle mt-0.5 bp-truncate" title={contexto(l)}>
+                    {contexto(l)}
                   </span>
                 </Td>
-                <Td><Badge>{l.categoria.nome}</Badge></Td>
+                <Td className="max-w-0">
+                  <Badge truncar title={l.categoria.nome}>{l.categoria.nome}</Badge>
+                </Td>
                 <Td className="text-subtle t-num">{formatDate(l.data)}</Td>
                 <Td className="text-subtle t-num">
                   {l.dataVencimento ? formatDate(l.dataVencimento) : '—'}

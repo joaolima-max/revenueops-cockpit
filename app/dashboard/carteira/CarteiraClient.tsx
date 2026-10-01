@@ -282,11 +282,16 @@ export default function CarteiraClient() {
                 </Td>
                 {/* Segmento e modelo são categorias, não status: tom neutro.
                     O nome vem da entidade, com retaguarda no enum antigo. */}
-                <Td>
+                {/* Mesmo teto do card do Pipeline: segmento é texto
+                    cadastrado, e um nome longo esticava a coluna. */}
+                <Td className="max-w-0">
                   {c.segmentoComercial
-                    ? <Badge>{c.segmentoComercial.nome}</Badge>
+                    ? <Badge truncar title={c.segmentoComercial.nome}>{c.segmentoComercial.nome}</Badge>
                     : c.segmento
-                      ? <Badge>{SEGMENTO_CRM_LABELS[c.segmento] ?? c.segmento}</Badge>
+                      ? (() => {
+                          const nome = SEGMENTO_CRM_LABELS[c.segmento] ?? c.segmento
+                          return <Badge truncar title={nome}>{nome}</Badge>
+                        })()
                       : <span className="text-subtle">—</span>}
                 </Td>
                 <Td><Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge></Td>

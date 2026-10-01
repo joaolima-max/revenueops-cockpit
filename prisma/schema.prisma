@@ -665,9 +665,24 @@ model ContaReceber {
   notas          String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
-  clienteId      String
-  cliente        Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// DEVEDOR — um cliente da carteira OU um parceiro BaaS/White Label.
+  ///
+  /// `clienteId` virou opcional porque a receita do Lancamento BaaS e devida
+  /// pelo PARCEIRO, e parceiro nao e Cliente: ele mora em CondicaoComercial.
+  /// Exigir um Cliente obrigava a inventar um registro fantasma so para
+  /// satisfazer a FK — e foi por isso que o titulo a receber do primeiro
+  /// lancamento de teste simplesmente nao nasceu.
+  ///
+  /// Exatamente UM dos dois esta preenchido: nenhum seria titulo sem devedor,
+  /// e os dois juntos seriam duas cobrancas para o mesmo valor.
+  clienteId      String?
+  cliente        Cliente?           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  condicaoId     String?
+  condicao       CondicaoComercial? @relation(fields: [condicaoId], references: [id], onDelete: Restrict)
   lancamentoBaas LancamentoBaas?
+
+  @@index([clienteId])
+  @@index([condicaoId])
 }
 
 model FollowUp {
@@ -1299,6 +1314,7 @@ model CondicaoComercial {
   lancamentos     LancamentoFinanceiro[]
   produtos        CondicaoProduto[]
   lancamentosBaas LancamentoBaas[]
+  contasReceber   ContaReceber[]
 
   @@index([tipo, ativo])
 }
