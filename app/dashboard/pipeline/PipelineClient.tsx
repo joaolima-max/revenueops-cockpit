@@ -10,9 +10,47 @@ import Panel from '@/components/ui/Panel'
 import TransferirModal from '@/components/pipeline/TransferirModal'
 import CardDetalheModal, { TOM_RESULTADO } from '@/components/pipeline/CardDetalheModal'
 import { RESULTADO_LABEL } from '@/lib/pipeline'
+import { SEGMENTO_CRM_LABELS, SEGMENTO_LABELS } from '@/lib/utils'
 import type { AcessoFunil, FunilResumo, EtapaResumo, Card, ResultadoCard } from '@/components/pipeline/tipos'
 
-interface Lead { id: string; name: string; company: string | null }
+interface Lead {
+  id: string; name: string; company: string | null
+  cnpj: string | null; segmento: string | null
+}
+
+/** Rótulo do segmento. Nunca inventa: sem segmento no lead, não há badge. */
+function rotuloSegmento(s: string | null | undefined): string | null {
+  if (!s) return null
+  return SEGMENTO_CRM_LABELS[s] ?? SEGMENTO_LABELS[s] ?? s
+}
+
+/**
+ * Filtra os leads do seletor.
+ *
+ * Busca por empresa, executivo e CNPJ — as três formas de chegar a um lead
+ * sem lembrar exatamente como foi cadastrado. Acento e caixa são ignorados,
+ * porque "Cripto" e "cripto" são a mesma busca e ninguém digita o acento ao
+ * procurar.
+ *
+ * Com muitos leads, o seletor precisa disto para ser usável: uma lista de
+ * centenas de `<option>` não se percorre com o olho.
+ */
+function normalizar(v: string): string {
+  return v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+export function filtrarLeads(
+  leads: Lead[], busca: string, segmento: string,
+): Lead[] {
+  const termo = normalizar(busca.trim())
+  return leads.filter((l) => {
+    if (segmento && l.segmento !== segmento) return false
+    if (!termo) return true
+    return [l.company, l.name, l.cnpj].some(
+      (campo) => !!campo && normalizar(campo).includes(termo),
+    )
+  })
+}
 
 /**
  * QUADRO DO PIPELINE.
@@ -26,6 +64,9 @@ interface Lead { id: string; name: string; company: string | null }
  * clicou e salva. O título do card vem do próprio Lead.
  */
 const FORM_VAZIO = { leadId: '' }
+
+/** Quantos leads o seletor desenha de uma vez. Acima disso, exige refinar. */
+const MAX_OPCOES_LEAD = 50
 
 /** Filtro de resultado do quadro. "" = todos. */
 const FILTROS: Array<{ valor: '' | ResultadoCard; label: string }> = [
@@ -43,6 +84,23 @@ export default function PipelineClient({ leads, podeAdministrar }: {
   const [funil, setFunil] = useState<FunilResumo | null>(null)
   const [etapas, setEtapas] = useState<EtapaResumo[]>([])
   const [cards, setCards] = useState<Card[]>([])
+  // Busca e filtro do seletor de lead. Vivem no componente inteiro para não
+  // zerarem a cada reabertura do formulário na mesma coluna.
+  const [buscaLead, setBuscaLead] = useState('')
+  const [segmentoLead, setSegmentoLead] = useState('')
+
+  const leadsFiltrados = useMemo(
+    () => filtrarLeads(leads, buscaLead, segmentoLead),
+    [leads, buscaLead, segmentoLead],
+  )
+
+  /** Só os segmentos que EXISTEM na base de leads — nunca o enum inteiro: um
+   *  filtro que oferece segmento sem nenhum lead só produz lista vazia. */
+  const segmentosDisponiveis = useMemo(() => {
+    const s = new Set<string>()
+    for (const l of leads) if (l.segmento) s.add(l.segmento)
+    return [...s].sort((a, b) => (rotuloSegmento(a) ?? a).localeCompare(rotuloSegmento(b) ?? b))
+  }, [leads])
   const [acesso, setAcesso] = useState<AcessoFunil | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
@@ -240,12 +298,19 @@ export default function PipelineClient({ leads, podeAdministrar }: {
                           {card.cliente?.nome ?? card.lead?.company ?? card.lead?.name}
                         </p>
                       )}
+                      {card.lead && card.lead.company && card.lead.name && (
+                        <p className="t-label text-subtle/80 mt-0.5 truncate">{card.lead.name}</p>
+                      )}
 
-                      {/* ETAPA + RESULTADO, separados e rotulados. */}
-                      <div className="mt-2">
+                      {/* RESULTADO + SEGMENTO. O segmento é o do LEAD, nunca
+                          inventado: lead sem segmento não ganha badge. */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Badge tone={TOM_RESULTADO[card.resultado]}>
                           {RESULTADO_LABEL[card.resultado]}
                         </Badge>
+                        {rotuloSegmento(card.lead?.segmento) && (
+                          <Badge tone="neutral">{rotuloSegmento(card.lead?.segmento)}</Badge>
+                        )}
                       </div>
 
                       <p className="t-label text-subtle mt-1.5">{card.owner.name}</p>
@@ -263,19 +328,58 @@ export default function PipelineClient({ leads, podeAdministrar }: {
 
                   {acesso?.criar && (criando ? (
                     <div className="bg-surface-2 border border-line rounded-lg p-2.5 space-y-2">
-                      <select autoFocus value={form.leadId}
-                        onChange={(e) => setForm({ leadId: e.target.value })}
+                      {/* BUSCA antes do seletor. Com muitos leads, uma lista de
+                          centenas de opções não se percorre com o olho — e o
+                          card nasce de um lead que já existe, então achar o
+                          lead É a tarefa. Busca por empresa, executivo e CNPJ. */}
+                      <input autoFocus value={buscaLead}
+                        onChange={(e) => setBuscaLead(e.target.value)}
+                        placeholder="Buscar empresa, executivo ou CNPJ…"
+                        className="bp-field w-full t-sm" />
+
+                      <select value={segmentoLead}
+                        onChange={(e) => setSegmentoLead(e.target.value)}
                         className="bp-field w-full t-sm">
-                        <option value="">Selecione o lead *</option>
-                        {leads.map((l) => <option key={l.id} value={l.id}>{l.company || l.name}</option>)}
+                        <option value="">Todos os segmentos</option>
+                        {segmentosDisponiveis.map((sg) => (
+                          <option key={sg} value={sg}>{rotuloSegmento(sg)}</option>
+                        ))}
                       </select>
-                      {leads.length === 0 && (
+
+                      <select value={form.leadId}
+                        onChange={(e) => setForm({ leadId: e.target.value })}
+                        className="bp-field w-full t-sm" size={Math.min(Math.max(leadsFiltrados.length, 2), 6)}>
+                        <option value="">Selecione o lead *</option>
+                        {leadsFiltrados.slice(0, MAX_OPCOES_LEAD).map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.company || l.name}
+                            {l.company && l.name ? ` · ${l.name}` : ''}
+                            {rotuloSegmento(l.segmento) ? ` — ${rotuloSegmento(l.segmento)}` : ''}
+                          </option>
+                        ))}
+                      </select>
+
+                      {leads.length === 0 ? (
                         <p className="t-label text-subtle">
                           Nenhum lead cadastrado. Cadastre em <Link href="/dashboard/leads" className="text-accent-soft">Leads</Link>.
                         </p>
-                      )}
+                      ) : leadsFiltrados.length === 0 ? (
+                        <p className="t-label text-subtle">
+                          Nenhum lead encontrado. Ajuste a busca ou cadastre em{' '}
+                          <Link href="/dashboard/leads" className="text-accent-soft">Leads</Link>.
+                        </p>
+                      ) : leadsFiltrados.length > MAX_OPCOES_LEAD ? (
+                        <p className="t-label text-subtle">
+                          {leadsFiltrados.length} leads encontrados · mostrando os {MAX_OPCOES_LEAD}{' '}
+                          primeiros. Refine a busca.
+                        </p>
+                      ) : null}
+
                       <div className="flex gap-1.5">
-                        <Button size="sm" className="flex-1" onClick={() => { setCriandoEm(null); setForm(FORM_VAZIO) }}>Cancelar</Button>
+                        <Button size="sm" className="flex-1"
+                          onClick={() => { setCriandoEm(null); setForm(FORM_VAZIO); setBuscaLead(''); setSegmentoLead('') }}>
+                          Cancelar
+                        </Button>
                         <Button size="sm" variant="primary" className="flex-1"
                           disabled={salvando || !form.leadId}
                           onClick={() => criar(etapa.id)}>

@@ -28,9 +28,26 @@ function calcularMetricas(
   const abertos = incidentes.filter((i) => !i.fim)
   const encerrados = incidentes.filter((i) => i.fim)
 
-  // Só os ENCERRADOS entram: a duração de um incidente aberto ainda está
-  // crescendo, e somá-la faria o acumulado mudar a cada refresh.
+  // ACUMULADO: só os ENCERRADOS. A duração de um incidente aberto ainda está
+  // crescendo, e somá-la faria o total do mês mudar a cada refresh — um número
+  // que ninguém consegue conferir contra nada.
   const downtimeTotal = encerrados.reduce((s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0)
+
+  /**
+   * MTTR É O DOWNTIME — a média dos MESMOS números, abertos incluídos.
+   *
+   * O downtime de um incidente é (fim − início), e enquanto ele está aberto o
+   * `fim` é agora: a duração cresce, e o MTTR cresce com ela. É o
+   * comportamento pedido, e é também o honesto — um incidente aberto há seis
+   * horas já custou seis horas, e tirá-lo da média faria o MTTR parecer melhor
+   * exatamente quando a operação está pior.
+   *
+   * Não existe segundo cálculo: `calcularDowntime` é a única fonte, a mesma da
+   * lista abaixo. Um incidente isolado tem MTTR igual ao próprio downtime.
+   */
+  const downtimeDeTodos = incidentes.reduce(
+    (s, i) => s + calcularDowntime(i.inicio, i.fim).minutos, 0,
+  )
 
   const meses = Array.from({ length: 6 }, (_, k) => {
     const inicio = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - (5 - k), 1))
@@ -50,8 +67,10 @@ function calcularMetricas(
     abertos: abertos.length,
     encerrados: encerrados.length,
     downtimeTotal,
-    // MTTR É O DOWNTIME: a média dos mesmos números, sem segundo cálculo.
-    mttr: encerrados.length > 0 ? downtimeTotal / encerrados.length : null,
+    // Média sobre TODOS: com incidente aberto, o MTTR acompanha a duração que
+    // continua correndo.
+    mttr: incidentes.length > 0 ? downtimeDeTodos / incidentes.length : null,
+    mttrEmCurso: abertos.length > 0,
     porCriticidade: CRITICIDADES.map((c) => ({
       criticidade: c,
       total: incidentes.filter((i) => i.criticidade === c).length,

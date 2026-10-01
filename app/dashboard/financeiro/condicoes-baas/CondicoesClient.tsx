@@ -209,11 +209,14 @@ export default function CondicoesClient({ podeGerenciar }: { podeGerenciar: bool
       />
 
       <HairlineGrid cols={3}>
+        {/* Conta ativa NÃO entra: o MRR é Mensalidades + Sustentação. A
+            coluna continua na tabela abaixo porque é dado do contrato — o que
+            saiu foi a participação no recorrente. */}
         <StatTile label="MRR destes cadastros"
           figura={mrr ? figuraMoeda(
-            mrr.sustentacaoBaas + mrr.sustentacaoWhiteLabel + mrr.apiMensalParceiros + mrr.mensalidadeContaAtiva,
+            mrr.sustentacaoBaas + mrr.sustentacaoWhiteLabel + mrr.apiMensalParceiros,
           ) : null}
-          note="Sustentação vigente + API mensal + conta ativa" />
+          note="Sustentação vigente + API mensal" />
         <StatTile label="BaaS ativos" figura={figuraContagem(parceiros.baasAtivos)} />
         <StatTile label="White Labels ativos" figura={figuraContagem(parceiros.whiteLabelsAtivos)} />
       </HairlineGrid>

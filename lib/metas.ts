@@ -43,8 +43,23 @@ export const UNIDADE_LABEL: Record<MetaUnidade, string> = {
  * percentual. Não é mais oferecido na criação.
  */
 export const META_TIPOS = [
+  // Operacionais — alimentados pelo Lançamento Diário.
   'RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS', 'TAKE_RATE',
+  // De PIPELINE — alimentados pelo Comercial. Quantidade e percentual; nenhuma
+  // monetária, porque o valor de um lead não está validado e não vira meta.
+  'LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS', 'CONVERSAO_LEADS',
+  'ATIVIDADE_ASSISTIDA',
 ] as const
+
+/** Os tipos que a Visão geral do Comercial acompanha. */
+export const META_TIPOS_PIPELINE: readonly string[] = [
+  'LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS', 'CONVERSAO_LEADS',
+  'ATIVIDADE_ASSISTIDA',
+]
+
+export function ehMetaDePipeline(tipo: string): boolean {
+  return META_TIPOS_PIPELINE.includes(tipo)
+}
 export type MetaTipo = (typeof META_TIPOS)[number]
 
 /**
@@ -61,6 +76,52 @@ export const PADRAO_POR_TIPO: Record<MetaTipo, { unidade: MetaUnidade; direcao: 
   // operação fala do indicador — e quem decide, no fim, é quem cadastra.
   MEDS: { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' },
   TAKE_RATE: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
+
+  // ── Pipeline ──────────────────────────────────────────────────────────
+  LEADS_GERADOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
+  LEADS_GANHOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
+  // Perder menos é melhor. A meta existe para ter teto, não alvo.
+  LEADS_PERDIDOS: { unidade: 'QUANTIDADE', direcao: 'MENOR_MELHOR' },
+  CONVERSAO_LEADS: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
+  // Pode ser "60% da base acompanhada" ou "80 leads acompanhados": a unidade
+  // escolhida no cadastro decide, como no MED.
+  ATIVIDADE_ASSISTIDA: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
+}
+
+/**
+ * Rótulo de cada tipo de meta — FONTE ÚNICA. A tela não monta o seu.
+ *
+ * "MED", não "MEDs" nem "MED %": é UM indicador, e a unidade da meta é que
+ * diz se o alvo é percentual ou quantidade. Carregar a unidade no rótulo era
+ * o que fazia parecer que existiam dois indicadores.
+ *
+ * Cobre também os tipos LEGADOS, que não são oferecidos na criação mas
+ * precisam de nome ao serem lidos — uma meta antiga sem rótulo apareceria na
+ * tabela como `FLOATING`.
+ */
+export const META_TIPO_LABEL: Record<string, string> = {
+  RECEITA_TARIFARIA: 'Receita Tarifária',
+  TPV: 'TPV',
+  SALDO_EM_CONTA: 'Saldo em Conta',
+  TRANSACOES: 'Transações',
+  MEDS: 'MED',
+  TAKE_RATE: 'Take Rate',
+
+  LEADS_GERADOS: 'Geração de Leads',
+  LEADS_GANHOS: 'Leads Ganhos',
+  LEADS_PERDIDOS: 'Leads Perdidos',
+  CONVERSAO_LEADS: 'Conversão de Leads',
+  ATIVIDADE_ASSISTIDA: 'Atividade Assistida',
+
+  // Legado: criadas antes de MED virar um indicador só, ou antes da revisão
+  // da taxonomia. Legíveis, nunca oferecidas.
+  MED_PERCENTUAL: 'MED (legado — percentual)',
+  RECEITA: 'Receita (legado)',
+  MRR: 'MRR (legado)',
+  FLOATING: 'Floating (legado)',
+  CLIENTES_ATIVOS: 'Clientes Ativos (legado)',
+  NOVOS_CLIENTES: 'Novos Clientes (legado)',
+  RETENCAO: 'Retenção (legado)',
 }
 
 export type SituacaoMeta = 'ATINGIDA' | 'NAO_ATINGIDA' | 'SEM_REALIZADO'

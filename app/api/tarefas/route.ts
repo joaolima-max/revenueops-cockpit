@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { notificar } from '@/lib/notificacoes'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -37,15 +38,20 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { titulo, descricao, prioridade, dueDate, clienteId, responsavelId } = body
 
-  if (!titulo || !responsavelId) {
-    return NextResponse.json({ error: 'Título e responsável são obrigatórios' }, { status: 400 })
+  // PRAZO É OBRIGATÓRIO. Uma tarefa sem data de vencimento não entra em
+  // nenhum dos lembretes (7, 3, 1, no dia, 1 após) — ela simplesmente nunca
+  // cobra ninguém, e é exatamente a tarefa que se esquece.
+  if (!titulo || !responsavelId || !dueDate) {
+    return NextResponse.json(
+      { error: 'Título, responsável e prazo são obrigatórios' }, { status: 400 },
+    )
   }
 
   const tarefa = await prisma.tarefa.create({
     data: {
       titulo, descricao: descricao || null,
       prioridade: prioridade || 'MEDIA',
-      dueDate: dueDate ? new Date(dueDate) : null,
+      dueDate: new Date(dueDate),
       clienteId: clienteId || null,
       responsavelId,
       criadoPorId: session.userId,
@@ -56,6 +62,33 @@ export async function POST(request: NextRequest) {
       criadoPor: { select: { id: true, name: true } },
     },
   })
+
+  /**
+   * O RESPONSÁVEL É AVISADO NA HORA — não espera o cron.
+   *
+   * Os lembretes de 7/3/1 dias cobram quem já sabe da tarefa. Quem acabou de
+   * ser designado precisa saber AGORA, senão descobre a tarefa no primeiro
+   * lembrete — que pode ser no dia do vencimento, se o prazo for curto.
+   *
+   * Sem `chave`: é notificação de ação direta, acontece uma vez e não é
+   * reprocessada. Atribuir a mesma tarefa de novo é um aviso novo e legítimo.
+   *
+   * Não se notifica quem criou a tarefa para si mesmo: a pessoa acabou de
+   * digitá-la.
+   */
+  if (tarefa.responsavelId !== session.userId) {
+    await notificar({
+      destinatarioId: tarefa.responsavelId,
+      titulo: `Nova tarefa: ${tarefa.titulo}`,
+      mensagem:
+        `${session.name} atribuiu a você a tarefa "${tarefa.titulo}", ` +
+        `com prazo em ${tarefa.dueDate!.toLocaleDateString('pt-BR', { timeZone: 'UTC' })}.`,
+      origem: 'TAREFA',
+      entidade: 'Tarefa',
+      entidadeId: tarefa.id,
+      href: '/dashboard/tarefas',
+    })
+  }
 
   return NextResponse.json({ tarefa }, { status: 201 })
 }

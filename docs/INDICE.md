@@ -1,6 +1,19 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V20.md`](./RODADA-V20.md)** — a rodada mais recente:
+> **Comece por [`RODADA-V21.md`](./RODADA-V21.md)** — a rodada mais recente:
+> **Conselho e Auditoria** passam a exigir chave explícita (ser ADMIN não
+> basta, e a conferência é no banco a cada requisição); Usuários ganham
+> **Departamento** e **Hierarquia**; nasce o **motor de lembretes** (tarefas,
+> follow-up, compliance, contas a pagar/receber e Lançamento Diário), idempotente
+> por chave única; a **Visão geral** do Comercial ganha analítica de leads
+> (segmento, etapa, segmento × etapa, **atividade assistida**, comparativos) e
+> **metas de pipeline**; o Cockpit ganha **velas** de TPV, Receita e Transações,
+> com BaaS e White Label em séries separadas; **MRR = Mensalidades +
+> Sustentação** (conta ativa sai); o Conselho passa a ter os seis tipos de
+> receita; e a **exclusão de Lead** foi corrigida — era um 500 silencioso
+> causado por FK `NO ACTION`.
+>
+> Antes dela, [`RODADA-V20.md`](./RODADA-V20.md):
 > Incidentes absorve **Métricas Operacionais**; CRM vira **Visão geral** e abre
 > o Comercial; **Funis** sai do menu e vira área interna do Pipeline; **MED
 > passa a ser um indicador só**, governado pela unidade; Contas a Receber deixa

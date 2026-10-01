@@ -44,6 +44,8 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
   const [lead, setLead] = useState(initial)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [excluindo, setExcluindo] = useState(false)
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: lead.name,
     email: lead.email || '',
@@ -76,10 +78,33 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
     }
   }
 
+  /**
+   * A outra metade do botão quebrado: a resposta era IGNORADA.
+   *
+   * O código antigo navegava para a lista sempre, mesmo quando a API falhava —
+   * então o usuário via a tela de leads e o lead ainda lá, sem explicação
+   * nenhuma. Agora só sai da página quando a exclusão aconteceu de fato, e a
+   * recusa aparece com o motivo (o 409 explica quantos cards bloqueiam).
+   */
   async function handleDelete() {
-    if (!confirm('Excluir este lead?')) return
-    await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
-    router.push('/dashboard/leads')
+    if (!confirm(`Excluir o lead ${lead.company ? `${lead.company} · ` : ''}${lead.name}? Esta ação não pode ser desfeita.`)) return
+
+    setErroExclusao(null)
+    setExcluindo(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        router.push('/dashboard/leads')
+        router.refresh()
+        return
+      }
+      const corpo = await res.json().catch(() => ({}))
+      setErroExclusao(corpo.error ?? 'Não foi possível excluir o lead.')
+    } catch {
+      setErroExclusao('Não foi possível excluir o lead. Verifique a conexão.')
+    } finally {
+      setExcluindo(false)
+    }
   }
 
   return (
@@ -106,13 +131,22 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
           {role === 'ADMIN' && (
             <button
               onClick={handleDelete}
-              className="px-4 py-2 bg-neg/10 text-neg border border-neg/25 rounded-lg text-sm hover:bg-neg/10"
+              disabled={excluindo}
+              className="px-4 py-2 bg-neg/10 text-neg border border-neg/25 rounded-lg text-sm hover:bg-neg/10 disabled:opacity-50"
             >
-              Excluir
+              {excluindo ? 'Excluindo…' : 'Excluir'}
             </button>
           )}
         </div>
       </div>
+
+      {/* A recusa aparece COM O MOTIVO. Antes a falha era silenciosa: a tela
+          navegava para a lista e o lead continuava lá. */}
+      {erroExclusao && (
+        <div className="mb-6 rounded-lg border border-neg/25 bg-neg/10 px-4 py-3">
+          <p className="t-sm text-neg">{erroExclusao}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -121,18 +155,22 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
             {editing ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* `obrigatorio` nos dois que o servidor exige — empresa e
+                      executivo. A edição não pode esvaziar o que a criação
+                      exigiu, senão o PUT viraria a porta de trás da regra. */}
                   {[
-                    { label: 'Empresa', key: 'company', type: 'text' },
-                    { label: 'Nome do executivo *', key: 'name', type: 'text' },
+                    { label: 'Nome da empresa *', key: 'company', type: 'text', obrigatorio: true },
+                    { label: 'Nome do executivo *', key: 'name', type: 'text', obrigatorio: true },
                     { label: 'CNPJ', key: 'cnpj', type: 'text' },
                     { label: 'Celular', key: 'phone', type: 'text' },
                     { label: 'E-mail', key: 'email', type: 'email' },
                     { label: 'Cargo', key: 'position', type: 'text' },
-                  ].map(({ label, key, type }) => (
+                  ].map(({ label, key, type, obrigatorio }) => (
                     <div key={key}>
                       <label className="bp-field-label">{label}</label>
                       <input
                         type={type}
+                        required={obrigatorio}
                         value={form[key as keyof typeof form]}
                         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                         className="bp-field w-full text-sm"

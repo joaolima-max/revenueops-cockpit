@@ -35,6 +35,7 @@ export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) 
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', position: '', cnpj: '', canal: '', segmento: '', notes: '' })
+  const [erro, setErro] = useState<string | null>(null)
 
   const filtered = leads.filter(l => {
     const matchSearch = !search || [l.name, l.email, l.company, l.cnpj].some(f => f?.toLowerCase().includes(search.toLowerCase()))
@@ -44,7 +45,7 @@ export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) 
   const ganhos = leads.filter(l => l.status === 'GANHO').length
 
   async function handleCreate(e: React.FormEvent) {
-    e.preventDefault(); setLoading(true)
+    e.preventDefault(); setLoading(true); setErro(null)
     try {
       const res = await fetch('/api/leads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -55,7 +56,14 @@ export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) 
         setLeads([lead, ...leads])
         setShowModal(false)
         setForm({ name: '', email: '', phone: '', company: '', position: '', cnpj: '', canal: '', segmento: '', notes: '' })
+        return
       }
+      // A recusa do servidor aparece. Falhar em silêncio deixava o modal
+      // aberto sem dizer o que estava errado.
+      const corpo = await res.json().catch(() => ({}))
+      setErro(corpo.error ?? 'Não foi possível criar o lead.')
+    } catch {
+      setErro('Não foi possível criar o lead. Verifique a conexão.')
     } finally { setLoading(false) }
   }
 
@@ -146,8 +154,16 @@ export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) 
               <button onClick={() => setShowModal(false)} className="text-subtle hover:text-fg">✕</button>
             </div>
             <form onSubmit={handleCreate} className="p-5 space-y-4">
+              {erro && (
+                <div className="rounded-lg border border-neg/25 bg-neg/10 px-3 py-2">
+                  <p className="t-sm text-neg">{erro}</p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="col-span-2"><label className={lbl}>Empresa</label><input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} className={inp} /></div>
+                {/* OS DOIS ÚNICOS OBRIGATÓRIOS. Todo o resto é opcional: um
+                    lead nasce de uma conversa, e exigir CNPJ ou segmento na
+                    criação faz o vendedor inventar valor para poder salvar. */}
+                <div className="col-span-2"><label className={lbl}>Nome da empresa *</label><input required value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} className={inp} /></div>
                 <div className="col-span-2"><label className={lbl}>Nome do executivo *</label><input required value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inp} /></div>
                 <div><label className={lbl}>CNPJ</label><input value={form.cnpj} onChange={e => setForm(p => ({ ...p, cnpj: e.target.value }))} className={inp} /></div>
                 <div><label className={lbl}>Celular</label><input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} className={inp} /></div>

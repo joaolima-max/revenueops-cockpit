@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  arrDoMrr, expandirLancamento, sustentacaoVigente, situacaoDoTitulo,
+  arrDoMrr, parcelasDoMrr, expandirLancamento, sustentacaoVigente, situacaoDoTitulo,
   mesesEntre, MESES_RECORRENCIA_INDEFINIDA,
   type Mrr,
 } from '../lib/financeiro'
@@ -23,34 +23,59 @@ import { limiteAnexosAtingido, MAX_ANEXOS_LANCAMENTO } from '../lib/arquivos'
 /**
  * A mesma soma que `calcularMrr` faz, sobre parcelas já carregadas.
  *
- *   MRR = sustentação BaaS (já vigente)
- *       + sustentação White Label (já vigente)
- *       + API mensal dos parceiros (BaaS + White Label)
- *       + mensalidade de conta ativa dos parceiros
- *       + API mensal dos clientes da Carteira
+ *   MRR = MENSALIDADES + SUSTENTAÇÃO
  *
- * `sustentacaoAguardandoInicio` NÃO entra: é justamente a parcela contratada
- * cuja data de início ainda não chegou.
+ *   Mensalidades = API mensal dos parceiros + API mensal da carteira
+ *   Sustentação  = BaaS + White Label, já vigentes
+ *
+ * CONTA ATIVA NÃO ENTRA. A quantidade de contas de um parceiro oscila com a
+ * operação dele, então o recorrente subia e descia sem nenhum contrato ter
+ * mudado — e um MRR que se move sozinho não serve para comparar mês a mês.
+ *
+ * `sustentacaoAguardandoInicio` também fica fora: é a parcela contratada cuja
+ * data de início ainda não chegou.
  */
 type Parcelas = Partial<Omit<Mrr, 'total'>>
 
 function totalMrr(p: Parcelas): number {
   return (p.sustentacaoBaas ?? 0) + (p.sustentacaoWhiteLabel ?? 0)
-    + (p.apiMensalParceiros ?? 0) + (p.mensalidadeContaAtiva ?? 0)
-    + (p.apiMensalCarteira ?? 0)
+    + (p.apiMensalParceiros ?? 0) + (p.apiMensalCarteira ?? 0)
 }
 
 /* ── MRR ─────────────────────────────────────────────────────────────────── */
 
-test('MRR soma as cinco parcelas da especificação', () => {
+test('MRR = Mensalidades + Sustentação', () => {
   const parcelas = {
     sustentacaoBaas: 12_000,
     sustentacaoWhiteLabel: 8_000,
     apiMensalParceiros: 5_500,
-    mensalidadeContaAtiva: 1_800,
     apiMensalCarteira: 3_200,
   }
-  assert.equal(totalMrr(parcelas), 30_500)
+  assert.equal(totalMrr(parcelas), 28_700)
+})
+
+test('MENSALIDADE DE CONTA ATIVA NÃO ENTRA NO MRR', () => {
+  // A regressão mais fácil de reintroduzir: a parcela continua sendo
+  // calculada e devolvida — para a tela poder dizer que está de fora —, e
+  // somá-la "para fechar o total" é o erro que este teste trava.
+  const semConta = totalMrr({ sustentacaoBaas: 10_000, apiMensalParceiros: 2_000 })
+  const comConta = totalMrr({
+    sustentacaoBaas: 10_000, apiMensalParceiros: 2_000, mensalidadeContaAtiva: 50_000,
+  })
+  assert.equal(semConta, 12_000)
+  assert.equal(comConta, 12_000, 'conta ativa voltou para o total do MRR')
+})
+
+test('as duas parcelas do MRR somam o total', () => {
+  const p = {
+    sustentacaoBaas: 12_000, sustentacaoWhiteLabel: 8_000,
+    apiMensalParceiros: 5_500, apiMensalCarteira: 3_200,
+    mensalidadeContaAtiva: 1_800, sustentacaoAguardandoInicio: 0,
+  }
+  const { mensalidades, sustentacao } = parcelasDoMrr({ ...p, total: totalMrr(p) })
+  assert.equal(mensalidades, 8_700)
+  assert.equal(sustentacao, 20_000)
+  assert.equal(mensalidades + sustentacao, totalMrr(p))
 })
 
 test('parcela ausente entra como zero, não como buraco no total', () => {
@@ -111,9 +136,10 @@ test('ARR é o MRR vezes doze, sem projeção de crescimento', () => {
 test('ARR usa o MRR calculado, não uma segunda apuração', () => {
   const mrr = totalMrr({
     sustentacaoBaas: 12_000, sustentacaoWhiteLabel: 8_000,
-    apiMensalParceiros: 5_500, mensalidadeContaAtiva: 1_800, apiMensalCarteira: 3_200,
+    apiMensalParceiros: 5_500, apiMensalCarteira: 3_200,
   })
   assert.equal(arrDoMrr(mrr), mrr * 12)
+  assert.equal(arrDoMrr(mrr), 344_400)
 })
 
 /* ── Expansão de lançamentos ─────────────────────────────────────────────── */

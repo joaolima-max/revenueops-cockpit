@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import Badge, { type BadgeTone } from '@/components/ui/Badge'
 import { RESULTADO_LABEL, RESULTADOS } from '@/lib/pipeline'
+import { SEGMENTO_CRM_LABELS, SEGMENTO_LABELS, CANAL_LABELS } from '@/lib/utils'
 import type { ResultadoCard } from './tipos'
 
 /** Tom do badge de resultado. Cor comunica desfecho, não categoria. */
@@ -246,8 +247,20 @@ export default function CardDetalheModal({
                 )}
                 {detalhe.lead?.email && <Campo rotulo="E-mail do lead">{detalhe.lead.email}</Campo>}
                 {detalhe.lead?.phone && <Campo rotulo="Telefone do lead">{detalhe.lead.phone}</Campo>}
-                {detalhe.lead?.segmento && <Campo rotulo="Segmento">{detalhe.lead.segmento}</Campo>}
-                {detalhe.lead?.canal && <Campo rotulo="Canal de origem">{detalhe.lead.canal}</Campo>}
+                {/* RÓTULO, não o valor do enum: a tela mostrava
+                    "CRYPTO_EXCHANGES" onde devia mostrar "Cripto Exchanges". */}
+                {detalhe.lead?.segmento && (
+                  <Campo rotulo="Segmento">
+                    {SEGMENTO_CRM_LABELS[detalhe.lead.segmento]
+                      ?? SEGMENTO_LABELS[detalhe.lead.segmento]
+                      ?? detalhe.lead.segmento}
+                  </Campo>
+                )}
+                {detalhe.lead?.canal && (
+                  <Campo rotulo="Canal de origem">
+                    {CANAL_LABELS[detalhe.lead.canal] ?? detalhe.lead.canal}
+                  </Campo>
+                )}
               </section>
 
               {detalhe.notes && (

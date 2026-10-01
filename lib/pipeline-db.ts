@@ -86,9 +86,17 @@ export async function acessoAoCard(session: SessaoMinima, dealId: string) {
   return { deal, acesso }
 }
 
+/**
+ * O que o card do quadro carrega.
+ *
+ * O SEGMENTO VEM DO LEAD, não do card. `Deal.segmento` existe na tabela, mas
+ * é uma cópia que pode envelhecer: corrigir o segmento no cadastro do lead
+ * deixaria o card mostrando o antigo. O lead é o dono do dado; o card só o
+ * exibe.
+ */
 export const INCLUDE_CARD = {
   owner: { select: { id: true, name: true } },
-  lead: { select: { id: true, name: true, company: true, cnpj: true } },
+  lead: { select: { id: true, name: true, company: true, cnpj: true, segmento: true } },
   cliente: { select: { id: true, nome: true } },
 } satisfies Prisma.DealInclude
 

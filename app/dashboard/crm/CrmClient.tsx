@@ -18,7 +18,8 @@ import {
 } from '@/lib/chart-theme'
 import { makeTooltip } from '@/components/ui/ChartTooltip'
 import { quantidadeCompacta, figuraPercentual } from '@/lib/format-financeiro'
-import { formatMesRef } from '@/lib/utils'
+import { MetaBar } from '@/components/ui/StatTile'
+import { formatMesRef, META_TIPO_LABELS } from '@/lib/utils'
 import { RESULTADO_LABEL } from '@/lib/pipeline'
 import type { ResultadoCard } from '@/components/pipeline/tipos'
 
@@ -41,10 +42,60 @@ interface Responsavel {
   taxa: number | null
 }
 
+interface FatiaLeads {
+  chave: string
+  label: string
+  total: number
+  /** Null com base vazia — nunca 0%. */
+  percentual: number | null
+}
+
+interface Comparativo {
+  atual: number
+  anterior: number
+  /** Null quando o anterior é zero: sair de zero não é crescimento percentual. */
+  variacao: number | null
+}
+
+interface MetaPipeline {
+  tipo: string
+  meta: number
+  realizado: number | null
+  direcao: string
+  unidade: string
+  atingimento: number | null
+  positivo: boolean
+  gap: number | null
+}
+
+interface LeituraLeads {
+  base: number
+  noPipeline: number
+  geradosNoPeriodo: Comparativo
+  ganhos: Comparativo
+  perdidos: Comparativo
+  conversao: { atual: number | null; anterior: number | null }
+  atividadeAssistida: {
+    total: number
+    percentual: number | null
+    comparativo: Comparativo
+  }
+  porSegmento: FatiaLeads[]
+  porEtapa: FatiaLeads[]
+  segmentoPorEtapa: Array<{
+    segmento: string; segmentoLabel: string; porEtapa: number[]; total: number
+  }>
+  etapasDaMatriz: string[]
+}
+
 interface Dados {
   funis: Array<{ id: string; nome: string }>
   funil: { id: string; nome: string } | null
   vazio?: boolean
+  periodo: string
+  periodoAnterior: string
+  leads: LeituraLeads
+  metasPipeline: MetaPipeline[]
   resumo: {
     totalCards: number; abertos: number; ganhos: number; perdas: number
     taxaConversao: number | null; cicloMedioDias: number | null
@@ -65,6 +116,30 @@ function dias(n: number | null): string {
 
 function pct(n: number | null, casas = 1): string {
   return n === null ? '—' : figuraPercentual(n, casas).completo
+}
+
+/**
+ * Nota do comparativo contra o mês anterior.
+ *
+ * Variação nula significa que o mês anterior foi ZERO — e aí a frase diz o
+ * número absoluto em vez de inventar "+100%" ou "∞%". Sair de zero é um
+ * começo, não um crescimento percentual.
+ */
+function notaComparativo(c: Comparativo, unidade = ''): string {
+  if (c.variacao === null) {
+    return c.anterior === 0
+      ? `${c.anterior}${unidade} no mês anterior`
+      : `vs ${c.anterior}${unidade} no mês anterior`
+  }
+  const sinal = c.variacao >= 0 ? '+' : ''
+  return `${sinal}${c.variacao.toFixed(1)}% vs mês anterior (${c.anterior}${unidade})`
+}
+
+/** Tom do comparativo. `melhorSubir` inverte para indicadores de perda. */
+function tomComparativo(c: Comparativo, melhorSubir = true): 'pos' | 'neg' | undefined {
+  if (c.variacao === null || c.variacao === 0) return undefined
+  const subiu = c.variacao > 0
+  return subiu === melhorSubir ? 'pos' : 'neg'
 }
 
 /**
@@ -128,6 +203,51 @@ export default function CrmClient() {
   const fatiasResultado: Fatia[] = distribuicao
     .map((d) => ({ id: d.resultado, nome: RESULTADO_LABEL[d.resultado], valor: d.total }))
 
+  const L = dados.leads
+
+  /**
+   * KPIs DE LEADS — volume, desfecho, conversão e acompanhamento.
+   *
+   * Nenhum valor monetário: o valor comercial de um lead não está validado,
+   * então não existe KPI em reais aqui, nem soma, nem ranking.
+   *
+   * Os três do meio comparam contra o MÊS ANTERIOR. Ganhos e perdas contam
+   * pelo mês do DESFECHO, não da criação — um card criado em agosto e ganho
+   * em outubro é ganho de outubro.
+   */
+  const kpisLeads = [
+    {
+      label: 'Leads no Pipeline', valor: quantidadeCompacta(L.noPipeline),
+      nota: `${quantidadeCompacta(L.base)} na base`,
+    },
+    {
+      label: 'Gerados no período', valor: quantidadeCompacta(L.geradosNoPeriodo.atual),
+      nota: notaComparativo(L.geradosNoPeriodo), tom: tomComparativo(L.geradosNoPeriodo),
+    },
+    {
+      label: 'Ganhos', valor: quantidadeCompacta(L.ganhos.atual),
+      nota: notaComparativo(L.ganhos), tom: tomComparativo(L.ganhos),
+    },
+    {
+      label: 'Perdidos', valor: quantidadeCompacta(L.perdidos.atual),
+      // Perder menos é melhor: o tom inverte.
+      nota: notaComparativo(L.perdidos), tom: tomComparativo(L.perdidos, false),
+    },
+    {
+      label: 'Conversão', valor: pct(L.conversao.atual, 1),
+      nota: L.conversao.anterior === null
+        ? 'Ganhos ÷ decididos'
+        : `${pct(L.conversao.anterior, 1)} no mês anterior`,
+    },
+    {
+      label: 'Em atividade assistida', valor: quantidadeCompacta(L.atividadeAssistida.total),
+      nota: L.atividadeAssistida.percentual === null
+        ? 'Card aberto com responsável, ou tarefa / follow-up em aberto'
+        : `${pct(L.atividadeAssistida.percentual, 1)} da base · ${notaComparativo(L.atividadeAssistida.comparativo)}`,
+      tom: tomComparativo(L.atividadeAssistida.comparativo),
+    },
+  ]
+
   const kpis = [
     { label: 'Cards no funil', valor: quantidadeCompacta(resumo.totalCards), nota: 'Total já registrado' },
     { label: 'Em andamento', valor: quantidadeCompacta(resumo.abertos), nota: 'Sem desfecho definido' },
@@ -136,6 +256,15 @@ export default function CrmClient() {
     { label: 'Taxa de conversão', valor: pct(resumo.taxaConversao, 1), nota: 'Ganhos ÷ decididos' },
     { label: 'Ciclo médio', valor: dias(resumo.cicloMedioDias), nota: 'Criação → desfecho' },
   ]
+
+  /** Só os segmentos com lead: barra de zero não informa nada. */
+  const segmentosComLead = L.porSegmento.filter((f) => f.total > 0)
+  const maxSegmento = Math.max(...segmentosComLead.map((f) => f.total), 1)
+
+  const maxEtapaLeads = Math.max(...L.porEtapa.map((f) => f.total), 1)
+  const maxMatriz = Math.max(
+    ...L.segmentoPorEtapa.flatMap((linha) => linha.porEtapa), 1,
+  )
 
   const grid = gridProps(p), eixo = axisProps(p), leg = legendProps(p), linha = LINE(p)
   const temEvolucao = hasSeries(serieEvolucao, 'criados', 'ganhos', 'perdidos')
@@ -162,18 +291,188 @@ export default function CrmClient() {
         })}
       </div>
 
-      {/* ── KPIs ──────────────────────────────────────────────────────────── */}
-      <HairlineGrid cols={6}>
-        {kpis.map((c) => (
-          <HairlineCell key={c.label} className="gap-2">
-            <p className="t-label text-subtle">{c.label}</p>
-            <p className={`t-figure-sm tabular-nums ${
-              c.tom === 'pos' ? 'text-pos' : c.tom === 'neg' ? 'text-neg' : 'text-fg'
-            }`}>{c.valor}</p>
-            <p className="t-label text-subtle/70">{c.nota}</p>
-          </HairlineCell>
-        ))}
-      </HairlineGrid>
+      {/* ── LEITURA DE LEADS ──────────────────────────────────────────────
+          Abre a tela: volume, desfecho, conversão e acompanhamento, cada um
+          comparado ao mês anterior. Nenhum valor monetário. */}
+      <section className="space-y-4">
+        <PanelHeader
+          title="Leads"
+          sub={`${formatMesRef(dados.periodo)} comparado a ${formatMesRef(dados.periodoAnterior)}. Contagem, percentual e tempo — nunca valor.`}
+        />
+        <HairlineGrid cols={6}>
+          {kpisLeads.map((c) => (
+            <HairlineCell key={c.label} className="gap-2">
+              <p className="t-label text-subtle">{c.label}</p>
+              <p className={`t-figure-sm tabular-nums ${
+                c.tom === 'pos' ? 'text-pos' : c.tom === 'neg' ? 'text-neg' : 'text-fg'
+              }`}>{c.valor}</p>
+              <p className="t-label text-subtle/70">{c.nota}</p>
+            </HairlineCell>
+          ))}
+        </HairlineGrid>
+      </section>
+
+      {/* ── METAS DE PIPELINE ─────────────────────────────────────────────
+          As metas comerciais do período, com a unidade governando a leitura:
+          conversão em %, geração em quantidade. */}
+      {dados.metasPipeline.length > 0 && (
+        <section className="space-y-4">
+          <PanelHeader
+            title="Metas comerciais"
+            sub="Definidas em Metas, apuradas sobre estes mesmos leads. A unidade da meta decide se o alvo é percentual ou quantidade."
+          />
+          <HairlineGrid cols={3}>
+            {dados.metasPipeline.map((m) => {
+              const fmt = (n: number | null) =>
+                n === null ? '—'
+                  : m.unidade === 'PERCENTUAL' ? pct(n, 1) : quantidadeCompacta(n)
+              return (
+                <HairlineCell key={m.tipo} className="gap-2">
+                  <p className="t-label text-subtle">{META_TIPO_LABELS[m.tipo] ?? m.tipo}</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`t-figure-sm tabular-nums ${m.positivo ? 'text-pos' : 'text-fg'}`}>
+                      {fmt(m.realizado)}
+                    </span>
+                    <span className="t-sm text-subtle">de {fmt(m.meta)}</span>
+                  </div>
+                  <MetaBar pct={m.atingimento} />
+                  <p className="t-label text-subtle/70">
+                    {m.atingimento === null
+                      ? 'Sem realizado no período'
+                      : `${m.atingimento.toFixed(0)}% do alvo · ${
+                          m.direcao === 'MENOR_MELHOR' ? 'menor é melhor' : 'maior é melhor'
+                        }`}
+                    {m.gap !== null && m.gap > 0 && ` · faltam ${fmt(m.gap)}`}
+                  </p>
+                </HairlineCell>
+              )
+            })}
+          </HairlineGrid>
+        </section>
+      )}
+
+      {/* ── DISTRIBUIÇÕES ─────────────────────────────────────────────────
+          Por segmento (quem são) e por etapa (onde estão). As duas leem a
+          MESMA lista de leads, então os totais fecham. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel>
+          <PanelHeader title="Leads por segmento"
+            sub="Toda a base, inclusive quem ainda não entrou no Pipeline." />
+          {/* BARRAS, não donut. O `Donut` do financeiro formata em moeda por
+              construção, e usá-lo aqui mostraria "R$ 12,00" para 12 leads. A
+              barra também lê melhor com muitos segmentos. */}
+          {segmentosComLead.length === 0 ? (
+            <div className="mt-5"><EmptyState compact title="Nenhum lead cadastrado"
+              description="A distribuição por segmento aparece quando houver lead na base." /></div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {segmentosComLead.map((f) => (
+                <div key={f.chave}>
+                  <div className="flex justify-between items-baseline mb-1.5 gap-4">
+                    <span className="t-label text-subtle truncate">{f.label}</span>
+                    <span className="t-sm text-muted tabular-nums whitespace-nowrap">
+                      {quantidadeCompacta(f.total)}
+                      {f.percentual !== null && <span className="text-subtle"> · {pct(f.percentual, 1)}</span>}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-accent/70 transition-[width] duration-[380ms] ease-bp"
+                      style={{ width: `${(f.total / maxSegmento) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel>
+          <PanelHeader title="Leads por etapa"
+            sub="Só os cards ABERTOS: um lead ganho na Negociação não é um lead em Negociação." />
+          {L.porEtapa.length === 0 ? (
+            <div className="mt-5"><EmptyState compact title="Nenhuma etapa ativa"
+              description="O funil precisa de etapas ativas para distribuir os leads." /></div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {L.porEtapa.map((f) => (
+                <div key={f.chave}>
+                  <div className="flex justify-between items-baseline mb-1.5">
+                    <span className="t-label text-subtle">{f.label}</span>
+                    <span className="t-sm text-muted tabular-nums">
+                      {f.total}
+                      {f.percentual !== null && <span className="text-subtle"> · {pct(f.percentual, 0)}</span>}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-accent/70 transition-[width] duration-[380ms] ease-bp"
+                      style={{ width: `${(f.total / maxEtapaLeads) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* ── SEGMENTO × ETAPA ──────────────────────────────────────────────
+          Responde "quais segmentos temos em cada etapa" sem virar tabela
+          pesada: uma célula por cruzamento, intensidade pelo volume. Segmento
+          sem nenhum lead aberto não vira linha — seria uma linha de zeros. */}
+      {L.segmentoPorEtapa.length > 0 && (
+        <section className="space-y-4">
+          <PanelHeader title="Segmento × etapa"
+            sub="Cruzamento dos cards abertos. A intensidade da célula é o volume; o número é a contagem." />
+          <Panel padded={false} className="overflow-x-auto">
+            <Table>
+              <THead>
+                <HeadRow>
+                  <Th>Segmento</Th>
+                  {L.etapasDaMatriz.map((nome) => <Th key={nome} align="right">{nome}</Th>)}
+                  <Th align="right">Total</Th>
+                </HeadRow>
+              </THead>
+              <tbody>
+                {L.segmentoPorEtapa.map((linha) => (
+                  <Row key={linha.segmento}>
+                    <Td>{linha.segmentoLabel}</Td>
+                    {linha.porEtapa.map((n, i) => (
+                      <Td key={i} align="right" numeric>
+                        <span className="inline-flex items-center justify-end min-w-[2.5rem] px-2 py-0.5 rounded"
+                          style={{
+                            background: n > 0
+                              ? `color-mix(in srgb, var(--color-accent) ${Math.round((n / maxMatriz) * 60) + 8}%, transparent)`
+                              : 'transparent',
+                          }}>
+                          {n > 0 ? n : <span className="text-subtle">—</span>}
+                        </span>
+                      </Td>
+                    ))}
+                    <Td align="right" numeric>{linha.total}</Td>
+                  </Row>
+                ))}
+              </tbody>
+            </Table>
+          </Panel>
+        </section>
+      )}
+
+      {/* ── KPIs do funil ─────────────────────────────────────────────────
+          A leitura do CARD, que é outra pergunta: acima está a base de leads,
+          aqui está o que já passou por este funil. */}
+      <section className="space-y-4">
+        <PanelHeader title="Cards do funil"
+          sub="Histórico deste funil, incluindo os cards já decididos." />
+        <HairlineGrid cols={6}>
+          {kpis.map((c) => (
+            <HairlineCell key={c.label} className="gap-2">
+              <p className="t-label text-subtle">{c.label}</p>
+              <p className={`t-figure-sm tabular-nums ${
+                c.tom === 'pos' ? 'text-pos' : c.tom === 'neg' ? 'text-neg' : 'text-fg'
+              }`}>{c.valor}</p>
+              <p className="t-label text-subtle/70">{c.nota}</p>
+            </HairlineCell>
+          ))}
+        </HairlineGrid>
+      </section>
 
       {/* ── Distribuição e evolução ───────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -189,7 +488,9 @@ export default function CrmClient() {
                   description="A distribuição aparece quando houver cards registrados." />
               </div>
             ) : (
-              <Donut rotuloTotal="Cards" fatias={fatiasResultado} />
+              // CONTAGEM, não moeda: o donut agora recebe o formatador.
+              <Donut rotuloTotal="Cards" fatias={fatiasResultado}
+                formatar={quantidadeCompacta} rotuloValor="Cards" />
             )}
           </div>
         </Panel>

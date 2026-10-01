@@ -10,8 +10,15 @@ import Topbar from './Topbar'
  * em 20 páginas como `min-h-screen bg-ink p-6`.
  */
 export default function DashboardShell({
-  role, userName, userEmail, children,
-}: { role: string; userName: string; userEmail: string; children: React.ReactNode }) {
+  role, permissoes, userName, userEmail, children,
+}: {
+  role: string
+  /** Chaves restritas, lidas do banco pelo layout. Governam Conselho e Auditoria. */
+  permissoes?: string[] | null
+  userName: string
+  userEmail: string
+  children: React.ReactNode
+}) {
   // O drawer fecha no clique do link (onNavigate) e no overlay — sem efeito.
   const [open, setOpen] = useState(false)
 
@@ -19,6 +26,7 @@ export default function DashboardShell({
     <div className="flex h-screen overflow-hidden bg-ink">
       <Sidebar
         role={role}
+        permissoes={permissoes}
         userName={userName}
         userEmail={userEmail}
         open={open}

@@ -6,6 +6,25 @@ datasource db {
   provider = "postgresql"
 }
 
+/// DEPARTAMENTO do usuario. Define o CONTEXTO de trabalho — e quem recebe as
+/// notificacoes de uma area: os avisos de Contas a Pagar/Receber vao para o
+/// departamento FINANCEIRO, nao para uma lista mantida a mao.
+enum Departamento {
+  FINANCEIRO
+  COMERCIAL
+  COMPLIANCE
+  OPERACOES
+  CONSELHO
+}
+
+/// HIERARQUIA do usuario. Nao concede acesso por si: quem ve o Conselho e a
+/// Auditoria e decidido por chave de permissao explicita, nunca inferido de
+/// ser Diretor.
+enum Hierarquia {
+  DIRETOR
+  OPERADOR
+}
+
 enum Role {
   ADMIN
   OPERACIONAL
@@ -83,6 +102,14 @@ enum MetaTipo {
   MED_PERCENTUAL
   /// Receita tarifaria / TPV, em percentual.
   TAKE_RATE
+
+  /// METAS DE PIPELINE. Quantitativas e percentuais — nunca monetarias: o
+  /// valor comercial de um lead nao esta validado e nao entra em meta.
+  LEADS_GERADOS
+  LEADS_GANHOS
+  LEADS_PERDIDOS
+  CONVERSAO_LEADS
+  ATIVIDADE_ASSISTIDA
 
   // Legado: metas criadas antes da revisao da taxonomia ainda usam estes
   // valores em Production. Mantidos para o client conseguir le-las; nao sao
@@ -198,6 +225,11 @@ enum NotificacaoOrigem {
   FORMULARIO
   CERTIFICADO
   SISTEMA
+  TAREFA
+  FOLLOW_UP
+  CONTA_PAGAR
+  CONTA_RECEBER
+  LANCAMENTO_DIARIO
 }
 
 enum DocumentoCategoria {
@@ -261,16 +293,24 @@ enum PendenciaStatus {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  name       String
-  email      String   @unique
-  password   String
-  role       Role     @default(COMERCIAL)
-  active     Boolean  @default(true)
-  avatar     String?
-  permissoes String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  password     String
+  /// PERFIL TECNICO. Continua sendo a fonte do acesso por modulo. A tela de
+  /// Usuarios apresenta ADMIN como "Admin" e todo o resto como "Colaborador",
+  /// mas a coluna nao foi colapsada: ha usuarios em Production em OPERACIONAL,
+  /// COMERCIAL e GESTOR, e as alcadas de funil referenciam esses valores.
+  role         Role          @default(COMERCIAL)
+  /// Nulo nos usuarios anteriores a esta rodada — nao ha default porque supor
+  /// um departamento erraria o destinatario das notificacoes financeiras.
+  departamento Departamento?
+  hierarquia   Hierarquia?
+  active       Boolean       @default(true)
+  avatar       String?
+  permissoes   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   leads              Lead[]                 @relation("LeadOwner")
   deals              Deal[]                 @relation("DealOwner")
@@ -294,6 +334,9 @@ model User {
   comentariosDeal    DealComentario[]             @relation("DealComentarioAutor")
   lancamentos        LancamentoFinanceiro[]       @relation("LancamentoCriador")
   condicoesHistorico CondicaoComercialHistorico[] @relation("CondicaoHistoricoAutor")
+  followUps          FollowUp[]                   @relation("FollowUpResponsavel")
+
+  @@index([departamento, active])
 }
 
 model Lead {
@@ -411,7 +454,10 @@ model Activity {
   userId String
   user   User    @relation(fields: [userId], references: [id])
   leadId String?
-  lead   Lead?   @relation(fields: [leadId], references: [id])
+  /// CASCADE: a atividade e linha de log SOBRE o lead e nao tem vida propria.
+  /// Sem isto a constraint ficava NO ACTION e apagar um lead ja trabalhado
+  /// estourava violacao de FK — o botao de excluir "nao fazia nada".
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
   dealId String?
   deal   Deal?   @relation(fields: [dealId], references: [id])
 }
@@ -595,6 +641,13 @@ model FollowUp {
   updatedAt         DateTime     @updatedAt
   clienteId         String
   cliente           Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// Quem acompanha. Nulo nos follow-ups anteriores a esta rodada: sem dono
+  /// gravado, inventar um mandaria a notificacao para a pessoa errada.
+  responsavelId     String?
+  responsavel       User?        @relation("FollowUpResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  @@index([responsavelId])
+  @@index([proximoContato])
 }
 
 /// FONTE OFICIAL dos 5 indicadores realizados. Grão: uma data.
@@ -797,6 +850,11 @@ model Notificacao {
   href           String?
   lidaEm         DateTime?
   createdAt      DateTime          @default(now())
+  /// IDEMPOTENCIA DOS LEMBRETES. Identifica o EVENTO, nao a mensagem:
+  /// "tarefa:<id>:D-3:<destinatario>". O unique faz o banco recusar a segunda
+  /// insercao do mesmo lembrete, entao reprocessar o dia nao duplica avisos.
+  /// Nulo nas notificacoes de acao direta, que nao sao reprocessadas.
+  chave          String?           @unique
 
   @@index([destinatarioId, lidaEm])
   @@index([destinatarioId, createdAt])

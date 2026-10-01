@@ -14,6 +14,7 @@ import {
   avaliarMeta, validarValorMeta, PADRAO_POR_TIPO, META_TIPOS,
   META_DIRECOES, META_UNIDADES,
   calcularPacing, avaliarCompleto, acumulaNoMes,
+  ehMetaDePipeline, META_TIPO_LABEL,
 } from '../lib/metas'
 
 /* ── Maior é melhor ──────────────────────────────────────────────────────── */
@@ -319,4 +320,91 @@ test('a unidade determina formatacao, comparacao e projecao do MED', () => {
   // Percentual nao projeta pelo tempo; quantidade projeta.
   assert.equal(pct.pacing.projecao, 1.5)
   assert.ok(qtd.pacing.projecao !== null && Math.abs(qtd.pacing.projecao - 310) < 1e-6)
+})
+
+/* ========================================================================= *
+ * METAS DE PIPELINE
+ * ========================================================================= */
+
+test('os cinco tipos de meta de pipeline sao oferecidos na criacao', () => {
+  for (const t of ['LEADS_GERADOS', 'LEADS_GANHOS', 'LEADS_PERDIDOS',
+                   'CONVERSAO_LEADS', 'ATIVIDADE_ASSISTIDA']) {
+    assert.ok(META_TIPOS.includes(t as never), `${t} nao aparece na criacao`)
+    assert.ok(ehMetaDePipeline(t))
+  }
+})
+
+test('meta de pipeline NUNCA e monetaria', () => {
+  // O valor comercial de um lead nao esta validado e nao vira meta.
+  for (const t of META_TIPOS.filter((x) => ehMetaDePipeline(x))) {
+    assert.notEqual(
+      PADRAO_POR_TIPO[t].unidade, 'VALOR',
+      `${t} nasceu como meta em reais`,
+    )
+  }
+})
+
+test('as metas operacionais nao sao confundidas com as de pipeline', () => {
+  for (const t of ['TPV', 'RECEITA_TARIFARIA', 'MEDS', 'TAKE_RATE',
+                   'SALDO_EM_CONTA', 'TRANSACOES']) {
+    assert.ok(!ehMetaDePipeline(t), `${t} virou meta de pipeline`)
+  }
+})
+
+test('perder MENOS e melhor — a direcao padrao de leads perdidos inverte', () => {
+  assert.equal(PADRAO_POR_TIPO.LEADS_PERDIDOS.direcao, 'MENOR_MELHOR')
+  assert.equal(PADRAO_POR_TIPO.LEADS_GANHOS.direcao, 'MAIOR_MELHOR')
+  assert.equal(PADRAO_POR_TIPO.LEADS_GERADOS.direcao, 'MAIOR_MELHOR')
+})
+
+test('conversao nasce percentual; geracao nasce em quantidade', () => {
+  assert.equal(PADRAO_POR_TIPO.CONVERSAO_LEADS.unidade, 'PERCENTUAL')
+  assert.equal(PADRAO_POR_TIPO.LEADS_GERADOS.unidade, 'QUANTIDADE')
+})
+
+test('meta de conversao em 20%: realizado 25% atinge', () => {
+  const a = avaliarCompleto({
+    tipo: 'CONVERSAO_LEADS', periodo: '2026-10', meta: 20, realizado: 25,
+    direcao: 'MAIOR_MELHOR', unidade: 'PERCENTUAL',
+  }, DIA('2026-10-20'))
+  assert.equal(a.positivo, true)
+  assert.equal(a.gap, 0)
+  // Percentual nao projeta pelo tempo: e uma taxa, nao um acumulado.
+  assert.equal(a.pacing.projecao, 25)
+})
+
+test('atividade assistida aceita as DUAS unidades, como o MED', () => {
+  const pct = avaliarCompleto({
+    tipo: 'ATIVIDADE_ASSISTIDA', periodo: '2026-10', meta: 60, realizado: 45,
+    direcao: 'MAIOR_MELHOR', unidade: 'PERCENTUAL',
+  }, DIA('2026-10-20'))
+  const qtd = avaliarCompleto({
+    tipo: 'ATIVIDADE_ASSISTIDA', periodo: '2026-10', meta: 80, realizado: 45,
+    direcao: 'MAIOR_MELHOR', unidade: 'QUANTIDADE',
+  }, DIA('2026-10-20'))
+
+  assert.equal(pct.unidade, 'PERCENTUAL')
+  assert.equal(qtd.unidade, 'QUANTIDADE')
+  // Quantidade acumula e projeta; percentual nao.
+  assert.equal(pct.pacing.projecao, 45)
+  assert.ok(qtd.pacing.projecao !== null && qtd.pacing.projecao > 45)
+})
+
+test('todo tipo oferecido tem rotulo, e nenhum rotulo diz "MEDs"', () => {
+  for (const t of META_TIPOS) {
+    assert.ok(META_TIPO_LABEL[t], `${t} sem rotulo`)
+  }
+  assert.equal(META_TIPO_LABEL.MEDS, 'MED')
+  for (const t of META_TIPOS) {
+    assert.ok(
+      !/\bMEDs\b/.test(META_TIPO_LABEL[t]),
+      `o rotulo de ${t} voltou a dizer "MEDs": ${META_TIPO_LABEL[t]}`,
+    )
+  }
+})
+
+test('o legado MED_PERCENTUAL continua LEGIVEL, marcado como legado', () => {
+  // Metas antigas gravadas com ele precisam de nome ao serem lidas.
+  assert.ok(META_TIPO_LABEL.MED_PERCENTUAL)
+  assert.ok(/legado/i.test(META_TIPO_LABEL.MED_PERCENTUAL))
 })

@@ -47,7 +47,20 @@ function Vazio({ titulo, descricao }: { titulo: string; descricao: string }) {
  * Valores SEMPRE por extenso, tanto na legenda quanto no tooltip. Nenhuma
  * abreviação de escala em nenhum ponto do sistema.
  */
-export function Donut({ fatias, rotuloTotal }: { fatias: Fatia[]; rotuloTotal: string }) {
+export function Donut({ fatias, rotuloTotal, formatar = moedaCheia, rotuloValor = 'Valor' }: {
+  fatias: Fatia[]
+  rotuloTotal: string
+  /**
+   * Como o valor é escrito. Default moeda, que é o caso do Financeiro.
+   *
+   * Existe porque o donut era moeda por construção: a Visão geral do
+   * Comercial usa a mesma peça para CONTAGEM de cards, e o total aparecia
+   * como "R$ 12,00" para 12 cards — no miolo e no tooltip.
+   */
+  formatar?: (n: number) => string
+  /** Rótulo da linha no tooltip. "Valor" não serve para contagem. */
+  rotuloValor?: string
+}) {
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
 
@@ -91,8 +104,8 @@ export function Donut({ fatias, rotuloTotal }: { fatias: Fatia[]; rotuloTotal: s
                 return (
                   <TooltipCard
                     titulo={fatia.nome}
-                    formatar={moedaCheia}
-                    linhas={[{ nome: 'Valor', cor: cores[i] ?? p.s1, valor: fatia.valor }]}
+                    formatar={formatar}
+                    linhas={[{ nome: rotuloValor, cor: cores[i] ?? p.s1, valor: fatia.valor }]}
                     nota={`${((fatia.valor / total) * 100).toFixed(1)}% do total`}
                   />
                 )
@@ -104,8 +117,8 @@ export function Donut({ fatias, rotuloTotal }: { fatias: Fatia[]; rotuloTotal: s
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <div className="text-center">
             <p className="t-label text-subtle">{rotuloTotal}</p>
-            <p className="t-sm font-semibold text-fg tabular-nums mt-0.5" title={figuraMoeda(total).completo}>
-              {figuraMoeda(total).completo}
+            <p className="t-sm font-semibold text-fg tabular-nums mt-0.5" title={formatar(total)}>
+              {formatar(total)}
             </p>
           </div>
         </div>

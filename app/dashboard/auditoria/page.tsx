@@ -2,11 +2,16 @@ export const dynamic = 'force-dynamic'
 
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { autorizado } from '@/lib/autorizacao'
 import { redirect } from 'next/navigation'
 
 export default async function AuditoriaPage() {
   const session = await getSession()
-  if (!session || session.role !== 'ADMIN') redirect('/dashboard')
+  // AUDITORIA É DE POUCOS. Antes bastava ser ADMIN, e todos os usuários de
+  // Production são ADMIN — o registro de auditoria estava aberto para todos
+  // eles. Agora exige a chave explícita, conferida no banco.
+  if (!session) redirect('/login')
+  if (!(await autorizado(session, 'view_auditoria'))) redirect('/dashboard')
 
   const logs = await prisma.auditoria.findMany({
     include: { user: { select: { name: true, email: true } } },

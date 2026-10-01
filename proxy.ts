@@ -6,7 +6,14 @@ import { checkAccess, firstAvailableRoute } from '@/lib/modules'
 // e com ele a pagina publica `/f/` e a API `/api/formularios/publico/`: manter
 // os prefixos aqui deixaria dois caminhos liberados sem autenticacao para
 // codigo que nao existe mais.
-const PUBLIC_PATHS = ['/login', '/api/auth/login']
+// O CRON precisa chegar SEM COOKIE: a Vercel invoca o endpoint por HTTP, sem
+// sessão. Sem esta entrada, o proxy devolveria 401 antes de a rota conferir o
+// `Authorization: Bearer $CRON_SECRET`, e os lembretes nunca sairiam.
+//
+// Passar pelo proxy não é passar livre: a própria rota exige o segredo (ou uma
+// sessão de ADMIN, para disparo manual) e recusa 401 sem ele. Se CRON_SECRET
+// não estiver configurado, nenhuma requisição anônima é aceita.
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/cron']
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -25,15 +32,19 @@ export function proxy(request: NextRequest) {
       : NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Módulos e funções desligados são bloqueados aqui, não só escondidos no menu.
-  const verdict = checkAccess(pathname, session.role)
+  // Módulos e funções desligados são bloqueados aqui, não só escondidos no
+  // menu. As chaves restritas (Conselho, Auditoria) também passam por aqui,
+  // pela lista do token — primeira barreira. A palavra final é de
+  // `autorizado()`, que lê do banco a cada requisição, porque um token de 7
+  // dias faria uma revogação demorar até uma semana para valer.
+  const verdict = checkAccess(pathname, session.role, session.permissoes ?? null)
   if (verdict !== 'allow') {
     if (isApi) {
       return verdict === 'disabled'
         ? NextResponse.json({ error: 'Função indisponível' }, { status: 404 })
         : NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
-    const fallback = firstAvailableRoute(session.role)
+    const fallback = firstAvailableRoute(session.role, session.permissoes ?? null)
     // Sem nenhuma rota liberada, ou o destino seria a própria página bloqueada:
     // volta ao login em vez de entrar em loop de redirect.
     if (!fallback || fallback === pathname) {

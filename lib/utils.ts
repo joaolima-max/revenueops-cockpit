@@ -133,17 +133,15 @@ export const CLIENTE_STATUS_LABELS: Record<string, string> = {
   ATIVO: 'Ativo', INATIVO: 'Inativo', PROSPECCAO: 'Prospecção', ENCERRADO: 'Encerrado',
 }
 
-export const META_TIPO_LABELS: Record<string, string> = {
-  RECEITA_TARIFARIA: 'Receita Tarifária', SALDO_EM_CONTA: 'Saldo em Conta', MEDS: 'MEDs',
-  TPV: 'TPV', TRANSACOES: 'Transações',
-  // Indicadores percentuais. A unidade fica no rótulo porque é a primeira
-  // coisa que diferencia "MEDs" (quantidade) de "MED %" (proporção).
-  MED_PERCENTUAL: 'MED (% das transações)', TAKE_RATE: 'Take Rate (%)',
-  // Legado: metas criadas antes da revisão da taxonomia.
-  RECEITA: 'Receita (legado)', MRR: 'MRR (legado)', FLOATING: 'Floating (legado)',
-  CLIENTES_ATIVOS: 'Clientes Ativos (legado)', NOVOS_CLIENTES: 'Novos Clientes (legado)',
-  RETENCAO: 'Retenção (legado)',
-}
+/**
+ * REEXPORTA o mapa de `lib/metas.ts`.
+ *
+ * Havia dois mapas de rótulo de meta, e eles divergiram: aqui MED aparecia
+ * como "MEDs" e MED_PERCENTUAL como "MED (% das transações)", sugerindo dois
+ * indicadores onde existe um. Um rótulo só pode ter uma fonte.
+ */
+export { META_TIPO_LABEL as META_TIPO_LABELS } from '@/lib/metas'
+
 
 export const SEGMENTO_LABELS: Record<string, string> = {
   IGAMING: 'iGaming', ECOMMERCE: 'E-commerce', SAAS: 'SaaS', ERP: 'ERP',

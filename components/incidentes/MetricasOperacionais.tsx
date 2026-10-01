@@ -17,8 +17,15 @@ export interface MetricasDTO {
   encerrados: number
   /** Soma do downtime dos ENCERRADOS, em minutos. */
   downtimeTotal: number
-  /** Média do downtime dos encerrados. Null quando nenhum fechou. */
+  /**
+   * MTTR — a média do downtime de TODOS os incidentes, abertos incluídos.
+   *
+   * É literalmente o downtime: um incidente isolado tem MTTR igual à própria
+   * duração. Enquanto há incidente aberto, o número cresce junto com ele.
+   */
   mttr: number | null
+  /** Há incidente aberto? Então o MTTR está correndo, e a tela diz isso. */
+  mttrEmCurso: boolean
   porCriticidade: Array<{ criticidade: Criticidade; total: number }>
   meses: Array<{ rotulo: string; total: number; downtime: number }>
 }
@@ -35,8 +42,10 @@ export interface MetricasDTO {
  * média desses mesmos números. Um incidente isolado tem MTTR igual ao próprio
  * downtime, e todas as telas mostram o mesmo valor.
  *
- * Só os ENCERRADOS entram no acumulado e na média: a duração de um incidente
- * aberto ainda está crescendo, e somá-la faria o número mudar a cada refresh.
+ * ACUMULADO conta só os encerrados — somar uma duração que ainda cresce faria
+ * o total do mês mudar a cada refresh. O MTTR conta TODOS: ele É o downtime, e
+ * um incidente aberto há seis horas já custou seis horas. Tirá-lo da média
+ * faria o MTTR parecer melhor exatamente quando a operação está pior.
  */
 export default function MetricasOperacionais({ m }: { m: MetricasDTO }) {
   if (m.total === 0) {
@@ -75,7 +84,9 @@ export default function MetricasOperacionais({ m }: { m: MetricasDTO }) {
           note={`${m.encerrados} encerrados`}
           valorTexto={formatarDuracao(m.downtimeTotal)} />
         <StatTile label="MTTR" figura={null}
-          note="Média do downtime dos encerrados"
+          note={m.mttrEmCurso
+            ? 'Média do downtime · correndo, há incidente aberto'
+            : 'Média do downtime dos incidentes'}
           valorTexto={m.mttr === null ? '—' : formatarDuracao(m.mttr)} />
       </HairlineGrid>
 

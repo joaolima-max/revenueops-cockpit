@@ -57,10 +57,34 @@ export const ALL_PERMISSIONS = [
   // Compliance
   { key: 'view_compliance',  label: 'Ver Compliance',           group: 'Compliance' },
   { key: 'manage_compliance',label: 'Gerenciar Compliance',     group: 'Compliance' },
+  // Governança — concedidas UMA A UMA, nunca por perfil. Ver PERMISSOES_RESTRITAS.
+  { key: 'view_conselho',    label: 'Ver Conselho Administrativo', group: 'Governança' },
+  { key: 'view_auditoria',   label: 'Ver Auditoria',            group: 'Governança' },
+  { key: 'manage_auditoria', label: 'Administrar Auditoria',     group: 'Governança' },
 ]
 
+/**
+ * CHAVES RESTRITAS — nunca concedidas por perfil, só por atribuição explícita.
+ *
+ * O Conselho Administrativo é dos sócios, e a Auditoria é de poucas pessoas.
+ * Ambos continham dado que não acompanha o cargo: ser ADMIN é poder operar o
+ * sistema, não ser sócio. Por isso `hasPermission` não aplica aqui o atalho de
+ * ADMIN nem o fallback por perfil — a chave precisa estar na lista do usuário.
+ *
+ * Elas também ficam FORA de `DEFAULT_PERMISSIONS`, inclusive do ADMIN: um
+ * default as devolveria pela porta de trás no primeiro usuário sem lista.
+ */
+export const PERMISSOES_RESTRITAS: readonly string[] = [
+  'view_conselho', 'view_auditoria', 'manage_auditoria',
+]
+
+export function permissaoRestrita(key: string): boolean {
+  return PERMISSOES_RESTRITAS.includes(key)
+}
+
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
-  ADMIN: ALL_PERMISSIONS.map(p => p.key),
+  // Tudo MENOS as restritas: ser ADMIN não é ser sócio nem auditor.
+  ADMIN: ALL_PERMISSIONS.map(p => p.key).filter(k => !permissaoRestrita(k)),
   OPERACIONAL: [
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
@@ -88,9 +112,94 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
 }
 
 export function hasPermission(permissoes: string[] | null, key: string, role: string): boolean {
+  // RESTRITAS PRIMEIRO. Sem atalho de ADMIN e sem fallback por perfil: a
+  // chave tem de estar na lista do próprio usuário, ou o acesso não existe.
+  if (permissaoRestrita(key)) return (permissoes ?? []).includes(key)
+
   if (role === 'ADMIN') return true
   if (!permissoes || permissoes.length === 0) {
     return (DEFAULT_PERMISSIONS[role] || []).includes(key)
   }
   return permissoes.includes(key)
+}
+
+/* ========================================================================= *
+ * PERFIL · DEPARTAMENTO · HIERARQUIA
+ *
+ * Três eixos independentes, e nenhum deles concede acesso a Conselho ou
+ * Auditoria — isso é sempre `PERMISSOES_RESTRITAS`.
+ *
+ *   PERFIL       o que o usuário é no sistema: Admin ou Colaborador.
+ *   DEPARTAMENTO o contexto de trabalho — e quem recebe o aviso de uma área.
+ *   HIERARQUIA   Diretor ou Operador.
+ *
+ * PERFIL É DERIVADO DE `role`, NÃO É UMA COLUNA NOVA. A coluna técnica
+ * continua sendo a fonte do acesso por módulo, e há usuários em Production em
+ * OPERACIONAL, COMERCIAL e GESTOR — as alçadas de funil referenciam esses
+ * valores. Colapsá-la em dois perfis apagaria essa granularidade. A tela
+ * apresenta dois perfis; o banco preserva os quatro.
+ * ========================================================================= */
+
+export type Perfil = 'ADMIN' | 'COLABORADOR'
+
+export const DEPARTAMENTOS = [
+  'FINANCEIRO', 'COMERCIAL', 'COMPLIANCE', 'OPERACOES', 'CONSELHO',
+] as const
+export type Departamento = typeof DEPARTAMENTOS[number]
+
+export const DEPARTAMENTO_LABEL: Record<Departamento, string> = {
+  FINANCEIRO: 'Financeiro',
+  COMERCIAL: 'Comercial',
+  COMPLIANCE: 'Compliance',
+  OPERACOES: 'Operações',
+  CONSELHO: 'Conselho',
+}
+
+export const HIERARQUIAS = ['DIRETOR', 'OPERADOR'] as const
+export type Hierarquia = typeof HIERARQUIAS[number]
+
+export const HIERARQUIA_LABEL: Record<Hierarquia, string> = {
+  DIRETOR: 'Diretor',
+  OPERADOR: 'Operador',
+}
+
+export const PERFIL_LABEL: Record<Perfil, string> = {
+  ADMIN: 'Admin',
+  COLABORADOR: 'Colaborador',
+}
+
+/** O perfil apresentado para uma role técnica. */
+export function perfilDe(role: string): Perfil {
+  return role === 'ADMIN' ? 'ADMIN' : 'COLABORADOR'
+}
+
+/**
+ * A role técnica a gravar quando a tela escolhe um perfil.
+ *
+ * Admin é inequívoco. Colaborador NÃO é: existem três roles não-admin, e
+ * escolher ao acaso trocaria as alçadas do usuário. Então:
+ *
+ *   - se a role atual já é de colaborador, ela é PRESERVADA;
+ *   - só quando se está rebaixando um ADMIN é que o departamento decide a
+ *     role, porque é a única pista disponível sobre o trabalho da pessoa.
+ */
+export function roleDoPerfil(
+  perfil: Perfil, departamento: Departamento | null, roleAtual?: string | null,
+): string {
+  if (perfil === 'ADMIN') return 'ADMIN'
+  if (roleAtual && roleAtual !== 'ADMIN') return roleAtual
+  switch (departamento) {
+    case 'COMERCIAL': return 'COMERCIAL'
+    case 'FINANCEIRO': return 'GESTOR'
+    case 'CONSELHO': return 'GESTOR'
+    default: return 'OPERACIONAL'
+  }
+}
+
+/** O departamento responsável por uma origem de notificação. */
+export const DEPARTAMENTO_DA_ORIGEM: Record<string, Departamento> = {
+  CONTA_PAGAR: 'FINANCEIRO',
+  CONTA_RECEBER: 'FINANCEIRO',
+  LANCAMENTO_DIARIO: 'FINANCEIRO',
+  COMPLIANCE: 'COMPLIANCE',
 }

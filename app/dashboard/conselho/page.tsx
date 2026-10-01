@@ -1,8 +1,11 @@
 export const dynamic = 'force-dynamic'
 
+import { redirect } from 'next/navigation'
+import { getSession } from '@/lib/auth'
+import { autorizado } from '@/lib/autorizacao'
 import { formatMesRef } from '@/lib/utils'
 import {
-  kpisDoPeriodo, linhasReceita, indicadoresEstrutura,
+  kpisDoPeriodo, linhasReceita, indicadoresEstrutura, composicaoReceitaConselho,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import {
@@ -17,14 +20,30 @@ import Figure, { Delta, Contexto } from '@/components/ui/Figure'
 import ConselhoEvolucao from '@/components/dashboard/ConselhoEvolucao'
 
 export default async function ConselhoPage() {
+  /**
+   * CONSELHO É DOS SÓCIOS — e esta página não tinha barreira nenhuma.
+   *
+   * O proxy já barra pela lista do token, mas a página não podia depender
+   * disso: um token de 7 dias continuaria abrindo o Conselho por uma semana
+   * depois da revogação. `autorizado` lê do banco, então revogar vale agora.
+   *
+   * Ser ADMIN não basta, de propósito: operar o sistema não é ser sócio.
+   */
+  const session = await getSession()
+  if (!session) redirect('/login')
+  if (!(await autorizado(session, 'view_conselho'))) redirect('/dashboard')
+
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(24)
 
   // MESMA função que o Cockpit e o Financeiro usam para estes três números.
   // Nenhuma consulta equivalente é repetida aqui.
-  const [kpis, receita, estrutura, serie] = await Promise.all([
+  const [kpis, receita, composicao, estrutura, serie] = await Promise.all([
     kpisDoPeriodo(periodo),
     linhasReceita(periodo),
+    // Os SEIS tipos oficiais do Conselho. Transacional é a tarifária — mesma
+    // receita, o nome que o Conselho usa; não são duas linhas.
+    composicaoReceitaConselho(periodo),
     indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
   ])
@@ -59,13 +78,16 @@ export default async function ConselhoPage() {
     { label: 'BaaS ativos', v: estrutura.baasAtivos },
   ]
 
-  const linhas = receita ? ([
-    ['Tarifário', receita.tarifario], ['Float', receita.float],
-    ['Sustentação', receita.sustentacao], ['Setup', receita.setup],
-  ] as const) : []
+  /**
+   * As SEIS linhas do Conselho: Transacional, Setup, Mensalidades,
+   * Sustentação, Serviços e BaaS. A partição é exclusiva — cada real entra em
+   * exatamente uma, e a natureza da categoria classifica antes do vínculo com
+   * o parceiro (um setup cobrado de um BaaS é setup).
+   */
+  const linhas = composicao.linhas.map((l) => [l.label, l.valor] as const)
 
   /** Maior linha de receita — responde "onde está a receita" sem o executivo somar. */
-  const maiorLinha = receita && receita.total > 0
+  const maiorLinha = composicao.total > 0
     ? [...linhas].sort((a, b) => b[1] - a[1])[0]
     : null
 
@@ -144,44 +166,51 @@ export default async function ConselhoPage() {
         <PanelHeader
           title="Onde está a receita"
           sub={maiorLinha
-            ? `${maiorLinha[0]} concentra ${((maiorLinha[1] / receita!.total) * 100).toFixed(1)}% do faturamento do período.`
-            : 'A soma das quatro linhas é o faturamento do período.'}
+            ? `${maiorLinha[0]} concentra ${((maiorLinha[1] / composicao.total) * 100).toFixed(1)}% da receita do período.`
+            : 'A soma das seis linhas é a receita do período.'}
         />
-        {!receita ? (
+        {composicao.total === 0 ? (
           <Panel padded={false}>
             <EmptyState title="Sem dados no período" description="Nenhuma linha de receita apurada para este mês." />
           </Panel>
         ) : (
           <>
             {/* Barra de composição: proporção antes do detalhe. */}
-            {receita.total > 0 && (
-              <div className="flex h-2 rounded-full overflow-hidden gap-px bg-line" role="img"
-                aria-label="Composição proporcional da receita">
-                {linhas.map(([label, valor], i) => (
-                  <span key={label} title={`${label}: ${moedaCheia(valor)}`}
-                    className="transition-opacity duration-[380ms] hover:opacity-80"
-                    style={{
-                      width: `${Math.max((valor / receita.total) * 100, 0)}%`,
-                      background: `color-mix(in srgb, var(--color-accent) ${100 - i * 17}%, transparent)`,
-                    }} />
-                ))}
-              </div>
-            )}
-            <HairlineGrid cols={4}>
+            <div className="flex h-2 rounded-full overflow-hidden gap-px bg-line" role="img"
+              aria-label="Composição proporcional da receita">
+              {linhas.map(([label, valor], i) => (
+                <span key={label} title={`${label}: ${moedaCheia(valor)}`}
+                  className="transition-opacity duration-[380ms] hover:opacity-80"
+                  style={{
+                    width: `${Math.max((valor / composicao.total) * 100, 0)}%`,
+                    background: `color-mix(in srgb, var(--color-accent) ${100 - i * 13}%, transparent)`,
+                  }} />
+              ))}
+            </div>
+            <HairlineGrid cols={3}>
               {linhas.map(([label, valor]) => (
                 <HairlineCell key={label} className="gap-2.5">
                   <p className="t-label text-subtle">{label}</p>
                   <Figure figura={figuraMoeda(valor)} size="sm" />
                   <p className="t-mono text-muted">
-                    {receita.total > 0 ? `${((valor / receita.total) * 100).toFixed(1)}%` : '—'}
+                    {composicao.total > 0 ? `${((valor / composicao.total) * 100).toFixed(1)}%` : '—'}
                   </p>
                 </HairlineCell>
               ))}
             </HairlineGrid>
             <Panel className="flex items-baseline justify-between gap-4 flex-wrap">
-              <span className="t-label text-subtle">Faturamento total do período</span>
-              <Figure figura={figuraMoeda(receita.total)} />
+              <span className="t-label text-subtle">Receita total do período</span>
+              <Figure figura={figuraMoeda(composicao.total)} />
             </Panel>
+            {/* Receita lançada que não cabe nos seis tipos — hoje, Float. Dita
+                em voz alta para que o total não pareça faltar dinheiro. */}
+            {composicao.foraDaComposicao > 0 && (
+              <p className="t-sm text-subtle">
+                Fora da composição:{' '}
+                <span className="tabular-nums text-fg">{moedaCheia(composicao.foraDaComposicao)}</span>{' '}
+                de receita lançada em Float, que não é um dos seis tipos do Conselho.
+              </p>
+            )}
           </>
         )}
       </section>

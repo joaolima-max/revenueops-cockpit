@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { autorizado } from '@/lib/autorizacao'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // Chave restrita: ser ADMIN não libera o registro de auditoria.
+  if (!(await autorizado(session, 'view_auditoria'))) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
 
   const { searchParams } = request.nextUrl
   const entidade = searchParams.get('entidade') || ''

@@ -33,10 +33,14 @@ interface FollowUp {
   picoIntervaloDias: number | null
   ultimoContato: string | null
   proximoContato: string | null
+  responsavelId: string | null
+  responsavel: { id: string; name: string } | null
   cliente: { id: string; nome: string; segmento: string | null; modeloOperacional: string }
 }
 
-interface Props { clientes: Cliente[] }
+interface Usuario { id: string; name: string }
+
+interface Props { clientes: Cliente[]; usuarios: Usuario[]; userId: string }
 
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const DIAS_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
@@ -98,6 +102,10 @@ const emptyForm = {
   clienteId: '', titulo: '', descricao: '', tipo: 'FOLLOW_UP',
   recorrente: false, diaSemana: '1', horaInicio: '', horaFim: '',
   dataInicio: '', dataFim: '', notas: '', picoIntervaloDias: '',
+  // RESPONSÁVEL e DATA PREVISTA. Os dois juntos são o que torna o
+  // acompanhamento cobrável: sem dono não há quem avisar, e sem data não há
+  // quando avisar.
+  responsavelId: '', proximoContato: '',
 }
 
 const emptyPicoForm = {
@@ -227,7 +235,7 @@ function MultiClientSelect({ clientes, selected, onChange }: MultiClientSelectPr
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-export default function FollowUpClient({ clientes }: Props) {
+export default function FollowUpClient({ clientes, usuarios, userId }: Props) {
   const { theme } = useTheme()
   const chartPal = paleta(theme)
 
@@ -279,7 +287,9 @@ export default function FollowUpClient({ clientes }: Props) {
   ) => setPicoForm(p => ({ ...p, [field]: e.target.value }))
 
   function openNew() {
-    setEditingId(null); setForm(emptyForm); setEventoScope('especifico'); setShowModal(true)
+    // O responsável nasce sendo quem cria — o caso comum é o próprio dono.
+    setEditingId(null); setForm({ ...emptyForm, responsavelId: userId })
+    setEventoScope('especifico'); setShowModal(true)
   }
   function openEdit(fu: FollowUp) {
     setEditingId(fu.id)
@@ -293,6 +303,8 @@ export default function FollowUpClient({ clientes }: Props) {
       dataFim: fu.dataFim ? fu.dataFim.slice(0, 16) : '',
       notas: fu.notas || '',
       picoIntervaloDias: fu.picoIntervaloDias != null ? String(fu.picoIntervaloDias) : '',
+      responsavelId: fu.responsavelId ?? '',
+      proximoContato: fu.proximoContato ? fu.proximoContato.slice(0, 10) : '',
     })
     setShowModal(true)
   }
@@ -314,6 +326,8 @@ export default function FollowUpClient({ clientes }: Props) {
       dataFim: (!intervaloPico && !form.recorrente && form.dataFim) ? form.dataFim : null,
       notas: form.notas || null,
       picoIntervaloDias: intervaloPico,
+      responsavelId: form.responsavelId || null,
+      proximoContato: form.proximoContato || null,
     }
     if (editingId) {
       const res = await fetch(`/api/followup/${editingId}`, {
@@ -641,8 +655,13 @@ export default function FollowUpClient({ clientes }: Props) {
                           <span className="text-subtle">
                             Último contato: {fu.ultimoContato ? fmtDateFull(fu.ultimoContato) : '—'}
                           </span>
+                          {/* DATA PREVISTA em destaque: é o que decide se o
+                              follow-up é de hoje, e a cor diz se atrasou. */}
                           <span className={`font-medium ${pcColor}`}>
-                            Próximo follow-up: {fu.proximoContato ? fmtDateFull(fu.proximoContato) : '—'}
+                            Data prevista: {fu.proximoContato ? fmtDateFull(fu.proximoContato) : '—'}
+                          </span>
+                          <span className="text-subtle">
+                            Responsável: {fu.responsavel?.name ?? '—'}
                           </span>
                         </div>
                       </div>
@@ -929,6 +948,30 @@ export default function FollowUpClient({ clientes }: Props) {
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* RESPONSÁVEL E DATA PREVISTA — os dois campos que tornam o
+                  acompanhamento cobrável. Sem dono não há quem avisar; sem
+                  data não há quando. O responsável recebe notificação ao ser
+                  designado, e outra no dia do contato. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl} htmlFor="fu-resp">Responsável</label>
+                  <select id="fu-resp" value={form.responsavelId} onChange={f('responsavelId')} className={inp}>
+                    <option value="">Sem responsável</option>
+                    {usuarios.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl} htmlFor="fu-prev">Data prevista</label>
+                  <input id="fu-prev" type="date" value={form.proximoContato}
+                    onChange={f('proximoContato')} className={inp} />
+                </div>
+              </div>
+              {form.responsavelId && !form.proximoContato && (
+                <p className="t-label text-subtle">
+                  Sem data prevista, o responsável não recebe o aviso do dia.
+                </p>
               )}
 
               <div>

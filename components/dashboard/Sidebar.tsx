@@ -9,6 +9,9 @@ import Logo from '@/components/ui/Logo'
 
 interface SidebarProps {
   role: string
+  /** Chaves restritas do usuário. Sem elas, Conselho e Auditoria não entram
+   *  no menu — ser ADMIN não é suficiente para nenhum dos dois. */
+  permissoes?: string[] | null
   userName: string
   userEmail: string
   /** Drawer aberto em telas < lg. Ignorado no desktop. */
@@ -16,7 +19,7 @@ interface SidebarProps {
   onNavigate: () => void
 }
 
-export default function Sidebar({ role, userName, userEmail, open, onNavigate }: SidebarProps) {
+export default function Sidebar({ role, permissoes, userName, userEmail, open, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -43,7 +46,7 @@ export default function Sidebar({ role, userName, userEmail, open, onNavigate }:
       </div>
 
       <nav className="flex-1 overflow-y-auto py-5">
-        {navigationFor(role).map((section) => (
+        {navigationFor(role, permissoes ?? null).map((section) => (
           <div key={section.key} className="mb-6 last:mb-2">
             <p className="t-label text-subtle/70 px-5 mb-2">{section.label}</p>
             <div className="px-2.5 space-y-px">

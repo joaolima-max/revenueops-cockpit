@@ -120,7 +120,9 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: {
 
   async function criar(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.titulo || !form.responsavelId) return
+    // Prazo obrigatório, como no servidor: tarefa sem data não entra em
+    // nenhum lembrete e nunca cobra ninguém.
+    if (!form.titulo || !form.responsavelId || !form.dueDate) return
     setSalvando(true); setErro('')
     const res = await fetch('/api/tarefas', {
       method: 'POST',
@@ -171,7 +173,7 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: {
     <div className="space-y-8">
       <PageHeader
         title="Tarefas"
-        sub="Atividades do time, com responsável, prioridade e prazo."
+        sub="Atividades do time, com responsável, prioridade e prazo. O responsável é avisado na central de notificações."
         actions={<Button variant="primary" onClick={() => { setErro(''); setModal(true) }}>+ Nova tarefa</Button>}
       />
 
@@ -343,8 +345,8 @@ export default function TarefasClient({ initial, usuarios, clientes, userId }: {
                   </select>
                 </div>
                 <div>
-                  <label className={lbl} htmlFor="tf-prazo">Prazo</label>
-                  <input id="tf-prazo" type="date" value={form.dueDate} className={inp}
+                  <label className={lbl} htmlFor="tf-prazo">Prazo *</label>
+                  <input id="tf-prazo" type="date" required value={form.dueDate} className={inp}
                     onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))} />
                 </div>
                 <div>

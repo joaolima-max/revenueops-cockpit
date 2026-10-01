@@ -18,6 +18,8 @@ import {
 import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 import { Delta } from '@/components/ui/Figure'
+import Candles from '@/components/ui/Candles'
+import type { Vela } from '@/lib/candle'
 
 interface ChartPoint {
   mes: string
@@ -29,12 +31,25 @@ interface ChartPoint {
   qtdMed: number
   percentMed: number
   clientesAtivos: number
+  /** Parceiros ATIVOS no fim do mês, reconstruídos do histórico de `ativo`. */
+  baasAtivos: number
+  whiteLabelsAtivos: number
 }
 
 interface MRRPoint { mes: string; mrr: number }
 
-/** Contagens de parceiros. Não há histórico: são o estado de hoje. */
-interface Parceiros { baasAtivos: number; whiteLabelsAtivos: number }
+/**
+ * Velas já agregadas no SERVIDOR (ver `lib/candle.ts`).
+ *
+ * Vêm prontas porque o insumo é a série DIÁRIA: mandar 365 observações para o
+ * cliente só para ele agregar em 12 velas seria carregar o navegador com dado
+ * que ele não vai mostrar.
+ */
+interface Velas {
+  tpv: Vela[]
+  receita: Vela[]
+  transacoes: Vela[]
+}
 
 /**
  * Cada gráfico daqui tem FONTE REAL. Saíram nesta rodada:
@@ -54,16 +69,27 @@ const CHART_DEFS = [
   { id: 'saldo', title: 'Evolução do Saldo', sub: 'Saldo médio em conta no período' },
   { id: 'med', title: 'Evolução dos MEDs', sub: 'Quantidade e proporção sobre as transações' },
   { id: 'clientes', title: 'Clientes Ativos', sub: 'Fotografia do último dia informado de cada mês' },
-  { id: 'parceiros', title: 'BaaS e White Labels Ativos', sub: 'Parceiros ativos nas condições vigentes' },
+  // O gráfico combinado "BaaS e White Labels Ativos" SAIU. Juntar duas
+  // contagens de naturezas diferentes num quadro só não respondia nenhuma das
+  // duas perguntas: cada tipo de parceiro tem a sua trajetória.
+  { id: 'baas', title: 'Evolução de BaaS Ativos', sub: 'Parceiros BaaS ativos no fim de cada mês' },
+  { id: 'whitelabel', title: 'Evolução de White Labels Ativos', sub: 'White Labels ativos no fim de cada mês' },
   { id: 'takerate', title: 'Receita ÷ TPV', sub: 'Take rate — quanto da movimentação vira receita' },
   { id: 'atividade', title: 'Atividade Operacional', sub: 'Transações, MEDs e clientes ativos lado a lado' },
   { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal' },
+  // VELAS. O corpo é o movimento líquido do mês (abertura → fechamento) e as
+  // sombras são a dispersão dentro dele (mínima → máxima) — o que a linha
+  // média esconde. O OHLC é agregação de observações diárias REAIS, nunca
+  // simulado, e o tooltip declara a janela usada.
+  { id: 'tpvVelas', title: 'TPV — velas mensais', sub: 'Abertura, máxima, mínima e fechamento de cada mês' },
+  { id: 'receitaVelas', title: 'Receita — velas mensais', sub: 'Dispersão da receita tarifária dentro do mês' },
+  { id: 'transacoesVelas', title: 'Transações — velas mensais', sub: 'Dispersão do volume transacional dentro do mês' },
 ]
 
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
 // Chave versionada: a lista de graficos mudou nesta rodada, e uma ordem
 // salva com os ids antigos nao deve sobreviver silenciosamente.
-const LS_KEY = 'dashboard_chart_order_v3'
+const LS_KEY = 'dashboard_chart_order_v4'
 
 const PADRAO_SERIALIZADO = JSON.stringify(DEFAULT_ORDER)
 const EVENTO_ORDEM = 'bp-chart-order'
@@ -155,10 +181,10 @@ function NoSeries({ what }: { what: string }) {
   )
 }
 
-export default function DashboardCharts({ chartData, mrrEvolution, parceiros }: {
+export default function DashboardCharts({ chartData, mrrEvolution, velas }: {
   chartData: ChartPoint[]
   mrrEvolution: MRRPoint[]
-  parceiros: Parceiros
+  velas: Velas
 }) {
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
@@ -355,23 +381,62 @@ export default function DashboardCharts({ chartData, mrrEvolution, parceiros }: 
       </ResponsiveContainer>
     ) : <NoSeries what="Nenhum dia do período informou clientes ativos no lançamento diário." />,
 
-    /* BaaS e White Labels ativos vêm das condições comerciais VIGENTES: o
-       sistema guarda o estado de hoje, não uma série mês a mês. Desenhar uma
-       linha reta de 12 pontos iguais fingiria uma tendência que não existe —
-       então mostramos o número corrente, que é o que de fato se sabe. */
-    parceiros: (
-      <div className="h-[200px] grid sm:grid-cols-2 gap-px bg-line rounded-xl overflow-hidden">
-        {[
-          { label: 'BaaS ativos', valor: parceiros.baasAtivos },
-          { label: 'White Labels ativos', valor: parceiros.whiteLabelsAtivos },
-        ].map((x) => (
-          <div key={x.label} className="bg-surface flex flex-col items-center justify-center gap-2 p-5">
-            <span className="t-label text-subtle">{x.label}</span>
-            <span className="t-figure text-fg tabular-nums">{quantidadeCompacta(x.valor)}</span>
-            <span className="t-label text-subtle/70 text-center">Condições BaaS · estado atual</span>
-          </div>
-        ))}
-      </div>
+    /* BaaS e White Labels, SÉRIE REAL e cada um no seu gráfico.
+       A contagem de cada mês é RECONSTRUÍDA do histórico de `ativo` das
+       condições comerciais (ver `evolucaoParceiros`): o estado de hoje,
+       desfazendo cada transição posterior. Nada é estimado — e por isso agora
+       existe trajetória, não só o número corrente. */
+    baas: hasSeries(data, 'baasAtivos') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <defs>
+            <linearGradient id="baasG" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={p.s1} stopOpacity={0.26} />
+              <stop offset="100%" stopColor={p.s1} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis {...eixo} tickFormatter={eixoQtd} width={56} allowDecimals={false} />
+          <Tooltip cursor={cursorLinha(p)} content={makeTooltip(data, 'mes',
+            [{ key: 'baasAtivos', nome: 'BaaS ativos', cor: p.s1 }], quantidadeCompacta)} />
+          <Area type="monotone" dataKey="baasAtivos" stroke={p.s1} fill="url(#baasG)" {...linha} />
+        </AreaChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhum BaaS ativo no período — ou nenhuma condição BaaS cadastrada." />,
+
+    whitelabel: hasSeries(data, 'whiteLabelsAtivos') ? (
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
+          <defs>
+            <linearGradient id="wlG" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={p.s2} stopOpacity={0.26} />
+              <stop offset="100%" stopColor={p.s2} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...grid} />
+          <XAxis dataKey="mes" {...eixo} />
+          <YAxis {...eixo} tickFormatter={eixoQtd} width={56} allowDecimals={false} />
+          <Tooltip cursor={cursorLinha(p)} content={makeTooltip(data, 'mes',
+            [{ key: 'whiteLabelsAtivos', nome: 'White Labels ativos', cor: p.s2 }], quantidadeCompacta)} />
+          <Area type="monotone" dataKey="whiteLabelsAtivos" stroke={p.s2} fill="url(#wlG)" {...linha} />
+        </AreaChart>
+      </ResponsiveContainer>
+    ) : <NoSeries what="Nenhum White Label ativo no período — ou nenhuma condição cadastrada." />,
+
+    tpvVelas: (
+      <Candles velas={velas.tpv} formatar={moedaCheia}
+        vazio="Nenhum dia do período informou TPV no lançamento diário." />
+    ),
+
+    receitaVelas: (
+      <Candles velas={velas.receita} formatar={moedaCheia}
+        vazio="Nenhum dia do período informou receita tarifária." />
+    ),
+
+    transacoesVelas: (
+      <Candles velas={velas.transacoes} formatar={quantidadeCompacta}
+        vazio="Nenhum dia do período informou transações." />
     ),
 
     atividade: hasSeries(data, 'qtdTransacoes', 'qtdMed', 'clientesAtivos') ? (

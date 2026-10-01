@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { visaoGeralFinanceiro } from '@/lib/financeiro'
 import { periodoAtual, ultimosPeriodos } from '@/lib/periodo'
 import { formatMesRef } from '@/lib/utils'
-import { figuraMoeda, figuraPercentual } from '@/lib/format-financeiro'
+import { figuraMoeda, figuraPercentual, moedaCheia } from '@/lib/format-financeiro'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel, { PanelHeader } from '@/components/ui/Panel'
 import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
@@ -48,10 +48,19 @@ export default async function FinanceiroVisaoGeralPage({
   const parcelasMrr = [
     { label: 'Sustentação BaaS', valor: mrr.sustentacaoBaas, fonte: 'Condições Comerciais · tipo BaaS' },
     { label: 'Sustentação White Label', valor: mrr.sustentacaoWhiteLabel, fonte: 'Condições Comerciais · tipo White Label' },
-    { label: 'API mensal dos parceiros', valor: mrr.apiMensalParceiros, fonte: 'Condições Comerciais · API mensal' },
-    { label: 'Mensalidade de conta ativa', valor: mrr.mensalidadeContaAtiva, fonte: 'Condições Comerciais · conta ativa' },
+    { label: 'API mensal dos parceiros', valor: mrr.apiMensalParceiros, fonte: 'Condições BaaS · API mensal' },
     { label: 'API mensal da carteira', valor: mrr.apiMensalCarteira, fonte: 'Clientes ativos · mensalidade de API' },
   ]
+
+  /**
+   * Fora do total, e dito em voz alta.
+   *
+   * Conta ativa saiu do MRR porque a quantidade de contas oscila com a
+   * operação do parceiro: o recorrente subia e descia sem nenhum contrato ter
+   * mudado. Omitir a linha faria o leitor somar as parcelas, achar diferença
+   * e desconfiar do total — então ela aparece marcada como excluída.
+   */
+  const foraDoMrr = mrr.mensalidadeContaAtiva
 
   const paraFatia = (
     lista: Array<{ id: string; nomeFantasia: string; identificacao: string; total: number; lancamentos: number; lancado: number }>,
@@ -92,12 +101,12 @@ export default async function FinanceiroVisaoGeralPage({
         </Badge>
       )}
 
-      {/* Caixa do mês. Receita | Despesa | Resultado, nessa ordem. */}
+      {/* Caixa do mês: RECEITAS | DESPESAS | INADIMPLÊNCIA | RESULTADO.
+          O Resultado fica à DIREITA porque é a conclusão da linha — as três
+          parcelas que o explicam vêm antes dele, na ordem em que se leem. */}
       <HairlineGrid cols={4}>
-        <StatTile label="Receita" figura={figuraMoeda(resultado.receita)} note="Lançamentos do período" />
-        <StatTile label="Despesa" figura={figuraMoeda(resultado.despesa)} note="Lançamentos do período" />
-        <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
-          note="Receita − Despesa" />
+        <StatTile label="Receitas" figura={figuraMoeda(resultado.receita)} note="Lançamentos do período" />
+        <StatTile label="Despesas" figura={figuraMoeda(resultado.despesa)} note="Lançamentos do período" />
         <StatTile label="Inadimplência"
           figura={figuraMoeda(inadimplencia.valor)}
           note={
@@ -105,6 +114,8 @@ export default async function FinanceiroVisaoGeralPage({
               ? `${inadimplencia.titulos} título${inadimplencia.titulos === 1 ? '' : 's'}`
               : `${figuraPercentual(inadimplencia.percentual, 1).completo} do faturado · ${inadimplencia.titulos} título${inadimplencia.titulos === 1 ? '' : 's'}`
           } />
+        <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
+          note="Receitas − Despesas" />
       </HairlineGrid>
 
       {/* Evolução temporal — a série que responde "como chegamos aqui". */}
@@ -192,9 +203,9 @@ export default async function FinanceiroVisaoGeralPage({
       <section className="space-y-4">
         <PanelHeader
           title="Composição do MRR"
-          sub="Cada parcela tem um campo de origem. Nenhuma mensalidade é contada duas vezes."
+          sub="MRR = Mensalidades + Sustentação. Cada parcela tem um campo de origem, e nenhuma mensalidade é contada duas vezes."
         />
-        <HairlineGrid cols={5}>
+        <HairlineGrid cols={4}>
           {parcelasMrr.map((p) => (
             <HairlineCell key={p.label} className="gap-2.5">
               <p className="t-label text-subtle">{p.label}</p>
@@ -206,6 +217,17 @@ export default async function FinanceiroVisaoGeralPage({
             </HairlineCell>
           ))}
         </HairlineGrid>
+
+        {/* A parcela que saiu, dita em voz alta — senão quem soma as quatro
+            acima e compara com um MRR antigo acha que falta dinheiro. */}
+        {foraDoMrr > 0 && (
+          <p className="t-sm text-subtle">
+            Fora do MRR: <span className="tabular-nums text-fg">{moedaCheia(foraDoMrr)}</span>{' '}
+            de mensalidade de conta ativa. A quantidade de contas oscila com a operação do
+            parceiro, então ela não entra no recorrente — o dado continua no cadastro em
+            Condições BaaS.
+          </p>
+        )}
       </section>
 
       {/* Contas a Pagar — resumo, com a tela completa a um clique. */}

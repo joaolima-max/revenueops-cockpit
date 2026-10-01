@@ -30,7 +30,18 @@ export interface Mrr {
   sustentacaoWhiteLabel: number
   /** Mensalidade de API dos BaaS e White Labels. Campo: CondicaoComercial.apiMensal. */
   apiMensalParceiros: number
-  /** Mensalidade de conta ativa dos parceiros. Campo: CondicaoComercial.mensalidadeContaAtiva. */
+  /**
+   * Mensalidade de conta ativa dos parceiros — FORA DO TOTAL.
+   *
+   * O MRR passou a ser Mensalidades + Sustentação, e componente derivado de
+   * conta ativa não entra: a quantidade de contas oscila com a operação do
+   * parceiro, então embuti-la fazia o recorrente subir e descer sem que
+   * nenhum contrato tivesse mudado.
+   *
+   * O número continua exposto porque a tela precisa poder dizer que ele
+   * existe e está de fora — some-lo em silêncio é o que se quer evitar.
+   * Campo: CondicaoComercial.mensalidadeContaAtiva.
+   */
   mensalidadeContaAtiva: number
   /** Mensalidade de API dos clientes da Carteira. Campo: Cliente.mensalidadeApi (status ATIVO). */
   apiMensalCarteira: number
@@ -62,11 +73,16 @@ export function sustentacaoVigente(
  * MRR pelas condições ATUAIS.
  *
  * REGRA:
- *   MRR = sustentação dos BaaS já vigentes
- *       + sustentação dos White Labels já vigentes
- *       + mensalidades de API dos BaaS/White Labels
- *       + mensalidades de conta ativa dos BaaS/White Labels
- *       + mensalidades de API dos clientes cadastrados na Carteira
+ *   MRR = MENSALIDADES + SUSTENTAÇÃO
+ *
+ *   Mensalidades = API dos BaaS/White Labels + API dos clientes da Carteira
+ *   Sustentação  = dos BaaS e White Labels já vigentes
+ *
+ * CONTA ATIVA NÃO ENTRA. `mensalidadeContaAtiva` fazia parte do total e saiu:
+ * a quantidade de contas de um parceiro oscila com a operação dele, então o
+ * recorrente subia e descia sem nenhum contrato ter mudado — e um MRR que se
+ * move sozinho não serve para comparar mês a mês. O valor continua calculado
+ * e devolvido, marcado como fora do total, para a tela poder dizer isso.
  *
  * DATA DE INÍCIO DA SUSTENTAÇÃO: um parceiro em implantação já está cadastrado
  * e ativo, mas ainda não paga sustentação. `sustentacaoInicio` no futuro mantém
@@ -128,9 +144,18 @@ export async function calcularMrr(periodo?: string): Promise<Mrr> {
     mensalidadeContaAtiva,
     apiMensalCarteira,
     sustentacaoAguardandoInicio,
+    // MENSALIDADES + SUSTENTAÇÃO. `mensalidadeContaAtiva` fica fora.
     total:
-      sustentacaoBaas + sustentacaoWhiteLabel + apiMensalParceiros +
-      mensalidadeContaAtiva + apiMensalCarteira,
+      sustentacaoBaas + sustentacaoWhiteLabel +
+      apiMensalParceiros + apiMensalCarteira,
+  }
+}
+
+/** As duas parcelas do MRR, para a tela mostrar de onde vem o total. */
+export function parcelasDoMrr(m: Mrr): { mensalidades: number; sustentacao: number } {
+  return {
+    mensalidades: m.apiMensalParceiros + m.apiMensalCarteira,
+    sustentacao: m.sustentacaoBaas + m.sustentacaoWhiteLabel,
   }
 }
 
@@ -282,6 +307,84 @@ export async function receitaPorNatureza(periodo: string): Promise<ReceitaPorNat
 }
 
 /* ========================================================================= *
+ * EVOLUÇÃO DE PARCEIROS ATIVOS — BaaS e White Label, mês a mês
+ * ========================================================================= */
+
+export interface PontoParceiros {
+  periodo: string
+  baasAtivos: number
+  whiteLabelsAtivos: number
+}
+
+/**
+ * Quantos BaaS e White Labels estavam ATIVOS no fim de cada período.
+ *
+ * A série é RECONSTRUÍDA, não estimada. `CondicaoComercial` guarda só o estado
+ * de hoje, mas toda mudança de `ativo` é gravada em
+ * `CondicaoComercialHistorico` (campo `ativo`, "Sim" → "Não"). Então o estado
+ * passado sai de: estado atual, desfazendo toda transição posterior à data
+ * consultada — de trás para frente.
+ *
+ * O mesmo vale para `tipo`: um parceiro que mudou de White Label para BaaS
+ * contava na outra coluna antes da mudança, e usar o tipo de hoje reescreveria
+ * o passado.
+ *
+ * Parceiro cadastrado DEPOIS do fim do período não entra: ele não existia.
+ *
+ * Isto não inventa número nenhum — cada contagem é derivada de registros que
+ * existem. O que a série não alcança são mudanças feitas antes de o histórico
+ * passar a ser gravado; para esses meses, o estado reconstruído é o mais
+ * antigo conhecido.
+ */
+export async function evolucaoParceiros(periodos: string[]): Promise<PontoParceiros[]> {
+  const [condicoes, transicoes] = await Promise.all([
+    prisma.condicaoComercial.findMany({
+      select: { id: true, tipo: true, ativo: true, createdAt: true },
+    }),
+    prisma.condicaoComercialHistorico.findMany({
+      where: { campo: { in: ['ativo', 'tipo'] } },
+      select: { condicaoId: true, campo: true, valorAnterior: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ])
+
+  // Estado de hoje, que é o ponto de partida do rebobinar.
+  const estado = new Map(
+    condicoes.map((c) => [c.id, { tipo: c.tipo as string, ativo: c.ativo, criadoEm: c.createdAt }]),
+  )
+
+  return periodos.map((periodo) => {
+    const referencia = fimDoPeriodo(periodo)
+
+    // Rebobina: desfaz toda transição POSTERIOR à referência. As transições
+    // vêm em ordem decrescente, então aplicar `valorAnterior` em sequência
+    // devolve o estado que valia na data.
+    const naData = new Map(
+      [...estado.entries()].map(([id, e]) => [id, { ...e }]),
+    )
+    for (const t of transicoes) {
+      if (t.createdAt.getTime() <= referencia.getTime()) break
+      const e = naData.get(t.condicaoId)
+      if (!e) continue
+      if (t.campo === 'ativo') e.ativo = t.valorAnterior === 'Sim'
+      else if (t.campo === 'tipo' && t.valorAnterior) e.tipo = t.valorAnterior
+    }
+
+    let baasAtivos = 0
+    let whiteLabelsAtivos = 0
+    for (const e of naData.values()) {
+      // Não existia ainda: não conta.
+      if (e.criadoEm.getTime() > referencia.getTime()) continue
+      if (!e.ativo) continue
+      if (e.tipo === 'BAAS') baasAtivos += 1
+      else whiteLabelsAtivos += 1
+    }
+
+    return { periodo, baasAtivos, whiteLabelsAtivos }
+  })
+}
+
+/* ========================================================================= *
  * RECEITA POR PARCEIRO — BaaS e White Label
  * ========================================================================= */
 
@@ -361,8 +464,10 @@ export async function receitaPorParceiro(periodo: string): Promise<ReceitaParcei
       const lanc = porParceiro.get(p.id) ?? { total: 0, sustentacao: 0, linhas: 0 }
       const sust = sustentacaoVigente(p.sustentacaoInicio, referencia) ? (p.sustentacao ?? 0) : 0
       // Sustentação lançada substitui a do cadastro — nunca somam.
-      const recorrente =
-        (lanc.sustentacao > 0 ? 0 : sust) + (p.apiMensal ?? 0) + (p.mensalidadeContaAtiva ?? 0)
+      // Conta ativa fora, pela mesma regra do MRR: o recorrente do parceiro
+      // precisa fechar com o recorrente da empresa, senão as duas telas
+      // discordariam sobre o mesmo contrato.
+      const recorrente = (lanc.sustentacao > 0 ? 0 : sust) + (p.apiMensal ?? 0)
 
       return {
         id: p.id,

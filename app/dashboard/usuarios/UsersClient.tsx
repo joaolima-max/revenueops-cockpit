@@ -1,25 +1,40 @@
 'use client'
 
 import { useState } from 'react'
-import { formatDate, ROLE_LABELS } from '@/lib/utils'
-import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '@/lib/permissions'
+import { formatDate } from '@/lib/utils'
+import {
+  ALL_PERMISSIONS, DEFAULT_PERMISSIONS, PERMISSOES_RESTRITAS,
+  DEPARTAMENTOS, DEPARTAMENTO_LABEL, HIERARQUIAS, HIERARQUIA_LABEL,
+  PERFIL_LABEL, perfilDe, type Perfil,
+} from '@/lib/permissions'
 
 interface User {
   id: string
   name: string
   email: string
+  /** Role TÉCNICA. A tela apresenta o perfil derivado dela. */
   role: string
+  departamento: string | null
+  hierarquia: string | null
   active: boolean
   createdAt: Date
   permissoes?: string | null
 }
 
-const ROLES = ['ADMIN', 'OPERACIONAL', 'COMERCIAL']
+/**
+ * PERFIL — dois valores na tela, quatro roles no banco.
+ *
+ * A coluna `role` não foi colapsada: há usuários em Production em
+ * OPERACIONAL, COMERCIAL e GESTOR, e as alçadas de funil referenciam esses
+ * valores. O servidor PRESERVA a role de quem já é colaborador quando o perfil
+ * continua Colaborador (ver `roleDoPerfil`), então salvar a tela não apaga
+ * granularidade.
+ */
+const PERFIS: Perfil[] = ['ADMIN', 'COLABORADOR']
 
-const ROLE_BADGE: Record<string, string> = {
+const PERFIL_BADGE: Record<string, string> = {
   ADMIN: 'bg-neg/10 text-neg border border-neg/20',
-  OPERACIONAL: 'bg-accent/10 text-accent-soft border border-accent/20',
-  COMERCIAL: 'bg-pos/10 text-pos border border-pos/20',
+  COLABORADOR: 'bg-accent/10 text-accent-soft border border-accent/20',
 }
 
 // Permissions data inlined for client component use
@@ -56,8 +71,13 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', role: 'COMERCIAL', password: '' })
-  const [editForm, setEditForm] = useState<{ role: string }>({ role: 'COMERCIAL' })
+  const [form, setForm] = useState({
+    name: '', email: '', password: '',
+    perfil: 'COLABORADOR' as Perfil, departamento: '', hierarquia: '',
+  })
+  const [editForm, setEditForm] = useState({
+    perfil: 'COLABORADOR' as Perfil, departamento: '', hierarquia: '',
+  })
 
   // Permissions modal state
   const [permModal, setPermModal] = useState<PermModal | null>(null)
@@ -78,7 +98,10 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
         const user = await res.json()
         setUsers([user, ...users])
         setShowModal(false)
-        setForm({ name: '', email: '', role: 'COMERCIAL', password: '' })
+        setForm({
+          name: '', email: '', password: '',
+          perfil: 'COLABORADOR', departamento: '', hierarquia: '',
+        })
       }
     } finally {
       setLoading(false)
@@ -97,11 +120,22 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
     }
   }
 
+  /**
+   * Salva perfil, departamento e hierarquia de uma vez.
+   *
+   * Manda `perfil` e NÃO `role`: o servidor preserva a role técnica de quem já
+   * é colaborador, então salvar a linha não apaga as alçadas de funil da
+   * pessoa. Enviar a role daqui regravaria tudo a cada edição.
+   */
   async function handleEditRole(userId: string) {
     const res = await fetch(`/api/users/${userId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: editForm.role }),
+      body: JSON.stringify({
+        perfil: editForm.perfil,
+        departamento: editForm.departamento || null,
+        hierarquia: editForm.hierarquia || null,
+      }),
     })
     if (res.ok) {
       const updated = await res.json()
@@ -112,7 +146,11 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
 
   function openEdit(user: User) {
     setEditingId(user.id)
-    setEditForm({ role: user.role })
+    setEditForm({
+      perfil: perfilDe(user.role),
+      departamento: user.departamento ?? '',
+      hierarquia: user.hierarquia ?? '',
+    })
   }
 
   function openPermModal(user: User) {
@@ -186,6 +224,8 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               <th className="text-left t-label text-subtle px-4 py-3">Nome</th>
               <th className="text-left t-label text-subtle px-4 py-3">Email</th>
               <th className="text-left t-label text-subtle px-4 py-3">Perfil</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Departamento</th>
+              <th className="text-left t-label text-subtle px-4 py-3">Hierarquia</th>
               <th className="text-left t-label text-subtle px-4 py-3">Status</th>
               <th className="text-left t-label text-subtle px-4 py-3">Criado</th>
               <th className="text-left t-label text-subtle px-4 py-3">Ações</th>
@@ -207,16 +247,19 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-muted">{user.email}</td>
+                {/* PERFIL · DEPARTAMENTO · HIERARQUIA — editados juntos, num
+                    salvamento só: são três eixos da mesma decisão, e três
+                    botões OK na mesma linha seriam três chances de esquecer um. */}
                 <td className="px-4 py-3">
                   {editingId === user.id ? (
                     <div className="flex items-center gap-2">
                       <select
-                        value={editForm.role}
-                        onChange={(e) => setEditForm({ role: e.target.value })}
+                        value={editForm.perfil}
+                        onChange={(e) => setEditForm((p) => ({ ...p, perfil: e.target.value as Perfil }))}
                         className="bp-field text-xs"
                       >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        {PERFIS.map((r) => (
+                          <option key={r} value={r}>{PERFIL_LABEL[r]}</option>
                         ))}
                       </select>
                       <button
@@ -233,8 +276,48 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       </button>
                     </div>
                   ) : (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_BADGE[user.role] ?? 'bg-[var(--bp-hover)] text-muted'}`}>
-                      {ROLE_LABELS[user.role]}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PERFIL_BADGE[perfilDe(user.role)]}`}>
+                      {PERFIL_LABEL[perfilDe(user.role)]}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {editingId === user.id ? (
+                    <select
+                      value={editForm.departamento}
+                      onChange={(e) => setEditForm((p) => ({ ...p, departamento: e.target.value }))}
+                      className="bp-field text-xs"
+                    >
+                      <option value="">Sem departamento</option>
+                      {DEPARTAMENTOS.map((d) => (
+                        <option key={d} value={d}>{DEPARTAMENTO_LABEL[d]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-sm text-muted">
+                      {user.departamento
+                        ? DEPARTAMENTO_LABEL[user.departamento as keyof typeof DEPARTAMENTO_LABEL]
+                        : <span className="text-subtle">—</span>}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {editingId === user.id ? (
+                    <select
+                      value={editForm.hierarquia}
+                      onChange={(e) => setEditForm((p) => ({ ...p, hierarquia: e.target.value }))}
+                      className="bp-field text-xs"
+                    >
+                      <option value="">Sem hierarquia</option>
+                      {HIERARQUIAS.map((h) => (
+                        <option key={h} value={h}>{HIERARQUIA_LABEL[h]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-sm text-muted">
+                      {user.hierarquia
+                        ? HIERARQUIA_LABEL[user.hierarquia as keyof typeof HIERARQUIA_LABEL]
+                        : <span className="text-subtle">—</span>}
                     </span>
                   )}
                 </td>
@@ -324,14 +407,50 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               <div>
                 <label className="bp-field-label">Perfil</label>
                 <select
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  value={form.perfil}
+                  onChange={(e) => setForm({ ...form, perfil: e.target.value as Perfil })}
                   className="bp-field w-full t-body disabled:opacity-40"
                 >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  {PERFIS.map((r) => (
+                    <option key={r} value={r}>{PERFIL_LABEL[r]}</option>
                   ))}
                 </select>
+                <p className="t-label text-subtle mt-1.5">
+                  Admin administra o sistema. Conselho e Auditoria NÃO vêm com o perfil —
+                  são concedidos um a um em Permissões.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="bp-field-label">Departamento</label>
+                  <select
+                    value={form.departamento}
+                    onChange={(e) => setForm({ ...form, departamento: e.target.value })}
+                    className="bp-field w-full t-body disabled:opacity-40"
+                  >
+                    <option value="">Sem departamento</option>
+                    {DEPARTAMENTOS.map((d) => (
+                      <option key={d} value={d}>{DEPARTAMENTO_LABEL[d]}</option>
+                    ))}
+                  </select>
+                  <p className="t-label text-subtle mt-1.5">
+                    Define quem recebe o aviso de cada área — os títulos financeiros vão
+                    para o Financeiro.
+                  </p>
+                </div>
+                <div>
+                  <label className="bp-field-label">Hierarquia</label>
+                  <select
+                    value={form.hierarquia}
+                    onChange={(e) => setForm({ ...form, hierarquia: e.target.value })}
+                    className="bp-field w-full t-body disabled:opacity-40"
+                  >
+                    <option value="">Sem hierarquia</option>
+                    {HIERARQUIAS.map((h) => (
+                      <option key={h} value={h}>{HIERARQUIA_LABEL[h]}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="bp-field-label">
@@ -348,7 +467,13 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => { setShowModal(false); setForm({ name: '', email: '', role: 'COMERCIAL', password: '' }) }}
+                  onClick={() => {
+                    setShowModal(false)
+                    setForm({
+                      name: '', email: '', password: '',
+                      perfil: 'COLABORADOR', departamento: '', hierarquia: '',
+                    })
+                  }}
                   className="flex-1 px-4 py-2 border border-line-2 text-muted hover:text-fg hover:border-line-2 rounded-lg text-sm transition-colors"
                 >
                   Cancelar
@@ -387,13 +512,29 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
 
             <div className="overflow-y-auto flex-1 p-6 space-y-6">
               {permModal.role === 'ADMIN' && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-neg/10 border border-neg/20 rounded-lg">
-                  <svg className="w-4 h-4 text-neg flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="flex items-start gap-2 px-3 py-2 bg-neg/10 border border-neg/20 rounded-lg">
+                  <svg className="w-4 h-4 text-neg flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <p className="text-xs text-neg">Administradores têm todas as permissões por padrão, independente das configurações abaixo.</p>
+                  <p className="text-xs text-neg">
+                    Administradores têm todas as permissões por padrão — <strong>exceto as de
+                    Governança</strong>, marcadas abaixo. Essas precisam ser concedidas uma a uma,
+                    mesmo para Admin.
+                  </p>
                 </div>
               )}
+
+              {/* GOVERNANÇA explicada onde ela é concedida. Sem este aviso, o
+                  administrador marca Admin e não entende por que o Conselho
+                  continua fora do menu da pessoa. */}
+              <div className="flex items-start gap-2 px-3 py-2 bg-surface-2 border border-line rounded-lg">
+                <p className="text-xs text-muted">
+                  <strong className="text-fg">Conselho e Auditoria não acompanham o cargo.</strong>{' '}
+                  Ser Admin é poder operar o sistema, não ser sócio. As chaves de Governança
+                  são conferidas no banco a cada requisição — revogar vale na hora, sem
+                  esperar o próximo login.
+                </p>
+              </div>
 
               {PERM_GROUPS.map(group => {
                 const groupPerms = ALL_PERMISSIONS.filter(p => p.group === group)
@@ -427,6 +568,9 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                       {groupPerms.map(perm => (
                         <label
                           key={perm.key}
+                          title={PERMISSOES_RESTRITAS.includes(perm.key)
+                            ? 'Restrita: só é concedida aqui, nunca pelo perfil.'
+                            : undefined}
                           className="flex items-center gap-2 cursor-pointer group"
                         >
                           <div
@@ -448,6 +592,9 @@ export default function UsersClient({ users: initialUsers }: { users: User[] }) 
                             className="text-sm text-muted group-hover:text-fg transition-colors select-none"
                           >
                             {perm.label}
+                            {PERMISSOES_RESTRITAS.includes(perm.key) && (
+                              <span className="ml-1.5 text-xs text-warn">restrita</span>
+                            )}
                           </span>
                         </label>
                       ))}

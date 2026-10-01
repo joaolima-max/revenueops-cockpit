@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { validarLead } from '@/lib/leads'
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -42,12 +43,20 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const data = await request.json()
+
+  // Empresa e executivo são obrigatórios — conferidos AQUI, não só na tela:
+  // o formulário pode marcar os campos, mas quem garante é quem grava.
+  const erros = validarLead(data)
+  if (erros.length > 0) {
+    return NextResponse.json({ error: erros[0].mensagem, erros }, { status: 400 })
+  }
+
   const lead = await prisma.lead.create({
     data: {
-      name: data.name,
+      name: String(data.name).trim(),
       email: data.email,
       phone: data.phone,
-      company: data.company,
+      company: String(data.company).trim(),
       position: data.position,
       source: data.source,
       notes: data.notes,

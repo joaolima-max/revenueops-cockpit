@@ -50,6 +50,14 @@ export interface Card {
   resultadoEm: string | null
   createdAt: string
   owner: { id: string; name: string }
-  lead: { id: string; name: string; company: string | null; cnpj: string | null } | null
+  /**
+   * O lead que originou o card. `segmento` vem DAQUI e não de `Deal.segmento`:
+   * a cópia no card envelheceria, e corrigir o cadastro do lead deixaria o
+   * card mostrando o segmento antigo.
+   */
+  lead: {
+    id: string; name: string; company: string | null
+    cnpj: string | null; segmento: string | null
+  } | null
   cliente: { id: string; nome: string } | null
 }

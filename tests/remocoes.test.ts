@@ -15,7 +15,9 @@ import {
   MODULES, activeFeatures, navigationFor, checkAccess, isFeatureEnabled,
   firstAvailableRoute,
 } from '../lib/modules'
-import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, hasPermission } from '../lib/permissions'
+import {
+  ALL_PERMISSIONS, DEFAULT_PERMISSIONS, hasPermission, PERMISSOES_RESTRITAS,
+} from '../lib/permissions'
 
 const PERFIS = ['ADMIN', 'GESTOR', 'OPERACIONAL', 'COMERCIAL'] as const
 
@@ -176,15 +178,28 @@ test('a rota antiga de métricas operacionais não é mais oferecida', () => {
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
 
-test('o Financeiro tem exatamente os sete menus da especificação, nessa ordem', () => {
+test('RECEITA / FINANCEIRO tem os nove menus da especificação, nessa ordem', () => {
+  // Metas e Lançamento Diário vieram da antiga seção RECEITA e abrem o
+  // ambiente: o objetivo e o insumo diário que o alimenta. Duas seções
+  // separadas afastavam a meta do financeiro que a realiza.
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
+      'Metas', 'Lançamento Diário',
       'Visão Geral', 'Lançamentos', 'Contas a Receber', 'Contas a Pagar',
       'Categorias', 'Fornecedores', 'Condições BaaS',
     ],
   )
+})
+
+test('a seção RECEITA separada não existe mais', () => {
+  assert.ok(!MODULES.some((m) => m.key === 'receita'))
+  // As FUNÇÕES continuam com as mesmas chaves e rotas: trocá-las invalidaria
+  // permissões gravadas e links salvos sem ganho nenhum.
+  const chaves = activeFeatures().map((f) => f.key)
+  assert.ok(chaves.includes('receita.metas'))
+  assert.ok(chaves.includes('receita.forecast'))
 })
 
 test('Contas a Pagar e Contas a Receber são menus e rotas distintos', () => {
@@ -266,8 +281,16 @@ test('quem perdeu a permissão de documentos não a recupera por padrão', () =>
   }
 })
 
-test('ADMIN recebe o catálogo inteiro, sem sobra nem falta', () => {
-  assert.deepEqual(DEFAULT_PERMISSIONS.ADMIN, ALL_PERMISSIONS.map((p) => p.key))
+test('ADMIN recebe o catálogo inteiro MENOS as restritas', () => {
+  // Ser ADMIN é poder operar o sistema, não ser sócio nem auditor. Um default
+  // com as chaves restritas as devolveria pela porta de trás.
+  assert.deepEqual(
+    DEFAULT_PERMISSIONS.ADMIN,
+    ALL_PERMISSIONS.map((p) => p.key).filter((k) => !PERMISSOES_RESTRITAS.includes(k)),
+  )
+  for (const k of PERMISSOES_RESTRITAS) {
+    assert.ok(!DEFAULT_PERMISSIONS.ADMIN.includes(k), `ADMIN recebeu ${k} por default`)
+  }
 })
 
 test('o menu chama-se "Condições BaaS", nao "Condições Comerciais BaaS"', () => {
@@ -287,10 +310,12 @@ test('Contas a Receber e Contas a Pagar continuam menus distintos', () => {
   assert.ok(rotulos.includes('Contas a Pagar'))
 })
 
-test('o Financeiro mantém exatamente sete menus depois da reorganização', () => {
+test('Metas e Lançamento Diário abrem o ambiente financeiro', () => {
   const rotulos = navigationFor('ADMIN')
     .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
-  assert.equal(rotulos.length, 7)
+  assert.equal(rotulos.length, 9)
+  assert.equal(rotulos[0], 'Metas')
+  assert.equal(rotulos[1], 'Lançamento Diário')
 })
 
 /* ── Permissões: nenhuma chave aponta para o vazio ───────────────────────── */
@@ -320,4 +345,60 @@ test('a chave view_crm sobreviveu à renomeação da tela', () => {
   const crm = ALL_PERMISSIONS.find((p) => p.key === 'view_crm')
   assert.ok(crm, 'a chave gravada nos usuários não pode sumir')
   assert.ok(!crm!.label.includes('CRM'), `rótulo ainda diz CRM: "${crm!.label}"`)
+})
+
+/* ── Navegação final da rodada ───────────────────────────────────────────── */
+
+test('COMERCIAL: Visão geral, Leads, Pipeline, Follow Up — nessa ordem', () => {
+  const comercial = navigationFor('ADMIN').find((s) => s.key === 'comercial')!
+  assert.deepEqual(
+    comercial.items.map((i) => i.label),
+    ['Visão geral', 'Leads', 'Pipeline', 'Follow Up'],
+  )
+})
+
+test('OPERAÇÕES: Tarefas, Incidentes, Compliance — nessa ordem', () => {
+  const operacoes = navigationFor('ADMIN').find((s) => s.key === 'operacoes')!
+  assert.deepEqual(
+    operacoes.items.map((i) => i.label),
+    ['Tarefas', 'Incidentes', 'Compliance'],
+  )
+})
+
+test('"Follow Up" — não "Follow-up", nem "Frequência de Follow-up"', () => {
+  const rotulos = activeFeatures().map((f) => f.label)
+  assert.ok(rotulos.includes('Follow Up'))
+  assert.ok(!rotulos.some((r) => /frequ[êe]ncia/i.test(r)))
+})
+
+test('nenhum menu reintroduz os ambientes removidos', () => {
+  // Relatórios, Documentos, Alertas, Parâmetros, Formulários, Automações e
+  // Métricas Operacionais. Sete nomes que voltam fácil num copiar-e-colar.
+  const proibidos = [
+    /relat[óo]rio/i, /documento/i, /alerta/i, /par[âa]metro/i,
+    /formul[áa]rio/i, /automa[çc][ãa]o/i, /m[ée]tricas/i,
+  ]
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil).flatMap((s) => s.items.map((i) => i.label))
+    for (const padrao of proibidos) {
+      assert.ok(
+        !itens.some((r) => padrao.test(r)),
+        `${padrao} apareceu na sidebar de ${perfil}: ${itens.join(', ')}`,
+      )
+    }
+  }
+})
+
+test('as seções da sidebar saem na ordem da especificação', () => {
+  const secoes = navigationFor('ADMIN').map((s) => s.key)
+  assert.deepEqual(
+    secoes,
+    ['executivo', 'carteira', 'operacoes', 'comercial', 'financeiro', 'admin'],
+  )
+})
+
+test('o ADMIN sem chave de governança vê EXECUTIVO sem Conselho', () => {
+  // A seção não pode desaparecer: o Cockpit continua nela.
+  const executivo = navigationFor('ADMIN', null).find((s) => s.key === 'executivo')!
+  assert.deepEqual(executivo.items.map((i) => i.label), ['Cockpit'])
 })

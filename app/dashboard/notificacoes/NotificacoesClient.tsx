@@ -19,13 +19,30 @@ interface Notificacao {
   createdAt: string
 }
 
+/**
+ * Rótulo e tom de cada origem.
+ *
+ * As origens dos LEMBRETES entram aqui: sem rótulo, a notificação apareceria
+ * com o nome do enum ("CONTA_PAGAR") no lugar do tipo. O tom segue a urgência
+ * — vencimento é `warn`, acompanhamento é `accent`, registro é `neutral`.
+ *
+ * AUTOMACAO e FORMULARIO são de ambientes que saíram do produto, e ficam
+ * porque há notificações GRAVADAS com essas origens: apagar o rótulo deixaria
+ * o histórico mostrando o enum cru.
+ */
 const ORIGEM: Record<string, { label: string; tone: BadgeTone }> = {
   PIPELINE: { label: 'Pipeline', tone: 'accent' },
-  AUTOMACAO: { label: 'Automação', tone: 'accent' },
   COMPLIANCE: { label: 'Compliance', tone: 'warn' },
-  FORMULARIO: { label: 'Formulário', tone: 'neutral' },
   CERTIFICADO: { label: 'Certificado', tone: 'neutral' },
+  TAREFA: { label: 'Tarefa', tone: 'accent' },
+  FOLLOW_UP: { label: 'Follow Up', tone: 'accent' },
+  CONTA_PAGAR: { label: 'Contas a Pagar', tone: 'warn' },
+  CONTA_RECEBER: { label: 'Contas a Receber', tone: 'warn' },
+  LANCAMENTO_DIARIO: { label: 'Lançamento Diário', tone: 'warn' },
   SISTEMA: { label: 'Sistema', tone: 'neutral' },
+  // Histórico de ambientes removidos — legíveis, nunca produzidas.
+  AUTOMACAO: { label: 'Automação', tone: 'neutral' },
+  FORMULARIO: { label: 'Formulário', tone: 'neutral' },
 }
 
 export default function NotificacoesClient() {

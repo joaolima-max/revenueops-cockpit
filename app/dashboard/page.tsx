@@ -3,9 +3,11 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, metasDoPeriodo, indicadoresEstrutura,
+  kpisDoPeriodo, metasDoPeriodo, indicadoresEstrutura, observacoesDiarias,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
+import { evolucaoParceiros } from '@/lib/financeiro'
+import { velas as velasDe } from '@/lib/candle'
 import { formatMesRef } from '@/lib/utils'
 import {
   figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem, variacao,
@@ -26,11 +28,17 @@ export default async function DashboardPage() {
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(12)
 
-  const [kpis, metas, estrutura, serie] = await Promise.all([
+  const [kpis, metas, estrutura, serie, parceiros, diarias] = await Promise.all([
     kpisDoPeriodo(periodo),
     metasDoPeriodo(periodo),
     indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
+    // Série de BaaS e White Labels ativos, RECONSTRUÍDA do histórico de
+    // `ativo` das condições comerciais — não é o número de hoje repetido.
+    evolucaoParceiros(periodos),
+    // Observações DIÁRIAS: o insumo das velas. A série mensal já agregada não
+    // permite montar OHLC — abertura, máxima e mínima somem na média.
+    observacoesDiarias(periodos),
   ])
 
   /** Mês anterior com dado — base honesta para variação. Nada é extrapolado. */
@@ -111,8 +119,26 @@ export default async function DashboardPage() {
       qtdMed: k.qtdMed ?? 0,
       percentMed: k.percentMed ?? 0,
       clientesAtivos: k.clientesAtivos ?? 0,
+      baasAtivos: parceiros[i]?.baasAtivos ?? 0,
+      whiteLabelsAtivos: parceiros[i]?.whiteLabelsAtivos ?? 0,
     }
   })
+
+  /**
+   * VELAS MENSAIS, agregadas AQUI e não no navegador.
+   *
+   * Cada vela é formada pelas observações diárias daquele mês: abertura é o
+   * primeiro dia, fechamento o último, máxima e mínima os extremos. Todo
+   * número é um valor que foi efetivamente lançado em algum dia — a agregação
+   * não inventa OHLC, ela o encontra.
+   *
+   * Dia sem lançamento é descartado, nunca lido como zero.
+   */
+  const velas = {
+    tpv: velasDe(diarias.map((d) => ({ data: d.data, valor: d.tpv }))),
+    receita: velasDe(diarias.map((d) => ({ data: d.data, valor: d.receitaTarifaria }))),
+    transacoes: velasDe(diarias.map((d) => ({ data: d.data, valor: d.qtdTransacoes }))),
+  }
 
   /**
    * Avaliação completa de cada meta — comparação, gap, cumprimento, direção e
@@ -187,10 +213,7 @@ export default async function DashboardPage() {
       <DashboardCharts
         chartData={chartData}
         mrrEvolution={periodos.map((p) => ({ mes: p, mrr: estrutura.mrr.total }))}
-        parceiros={{
-          baasAtivos: estrutura.baasAtivos,
-          whiteLabelsAtivos: estrutura.whiteLabelsAtivos,
-        }}
+        velas={velas}
       />
 
       {/* ACOMPANHAMENTO DE METAS — depois dos gráficos, de propósito.

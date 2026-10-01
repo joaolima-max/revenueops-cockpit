@@ -22,11 +22,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
     }
 
+    /**
+     * As PERMISSÕES entram no token.
+     *
+     * Antes não entravam, e o efeito era silencioso: `session.permissoes` era
+     * sempre `undefined`, então `hasPermission` caía no default do perfil e a
+     * lista configurada na tela de Usuários nunca valia para ninguém que não
+     * fosse ADMIN. O proxy precisa dessa lista para barrar Conselho e
+     * Auditoria antes da página.
+     *
+     * Lista corrompida é ausência de permissão, nunca permissão total.
+     */
+    let permissoes: string[] | undefined
+    if (user.permissoes) {
+      try {
+        const lista = JSON.parse(user.permissoes)
+        if (Array.isArray(lista)) {
+          permissoes = lista.filter((x): x is string => typeof x === 'string')
+        }
+      } catch {
+        permissoes = []
+      }
+    }
+
     const token = signToken({
       userId: user.id,
       email: user.email,
       role: user.role,
       name: user.name,
+      permissoes,
     })
 
     const response = NextResponse.json({
