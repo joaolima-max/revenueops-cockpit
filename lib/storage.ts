@@ -48,13 +48,34 @@ export async function enviarArquivo(chave: string, bytes: ArrayBuffer, mime: str
   if (error) throw new Error(`Falha ao enviar arquivo: ${error.message}`)
 }
 
-/** URL assinada de curta duracao. Padrao de 60s: tempo de clicar, nao de compartilhar. */
-export async function urlAssinada(chave: string, segundos = 60): Promise<string> {
+/**
+ * URL assinada de curta duracao. Padrao de 60s: tempo de clicar, nao de
+ * compartilhar.
+ *
+ * `download` decide se o navegador BAIXA ou ABRE o arquivo.
+ *
+ * Antes era sempre `true`, e o efeito era que NAO DAVA PARA VISUALIZAR nada:
+ * toda foto e todo PDF chegavam como download forcado. Para um comprovante
+ * anexado a um lancamento, o caso comum e abrir e olhar — baixar e a exce��o.
+ * Agora quem chama escolhe, e o default e visualizar.
+ */
+export async function urlAssinada(
+  chave: string, segundos = 60, download = false,
+): Promise<string> {
   const { data, error } = await admin().storage.from(BUCKET).createSignedUrl(chave, segundos, {
-    download: true,
+    download,
   })
   if (error || !data) throw new Error(`Falha ao gerar link: ${error?.message ?? 'sem resposta'}`)
   return data.signedUrl
+}
+
+/** MIMEs que o navegador abre inline. O resto so faz sentido baixar. */
+const VISUALIZAVEIS = [
+  'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+]
+
+export function podeVisualizar(mime: string): boolean {
+  return VISUALIZAVEIS.includes(mime)
 }
 
 /**

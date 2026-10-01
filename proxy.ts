@@ -37,14 +37,18 @@ export function proxy(request: NextRequest) {
   // pela lista do token — primeira barreira. A palavra final é de
   // `autorizado()`, que lê do banco a cada requisição, porque um token de 7
   // dias faria uma revogação demorar até uma semana para valer.
-  const verdict = checkAccess(pathname, session.role, session.permissoes ?? null)
+  const verdict = checkAccess(
+    pathname, session.role, session.permissoes ?? null, session.isPartner,
+  )
   if (verdict !== 'allow') {
     if (isApi) {
       return verdict === 'disabled'
         ? NextResponse.json({ error: 'Função indisponível' }, { status: 404 })
         : NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
-    const fallback = firstAvailableRoute(session.role, session.permissoes ?? null)
+    const fallback = firstAvailableRoute(
+      session.role, session.permissoes ?? null, session.isPartner,
+    )
     // Sem nenhuma rota liberada, ou o destino seria a própria página bloqueada:
     // volta ao login em vez de entrar em loop de redirect.
     if (!fallback || fallback === pathname) {

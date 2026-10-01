@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
-import { autorizado } from '@/lib/autorizacao'
+import { socio } from '@/lib/autorizacao'
 import { formatMesRef } from '@/lib/utils'
 import {
   kpisDoPeriodo, linhasReceita, indicadoresEstrutura, composicaoReceitaConselho,
@@ -21,17 +21,21 @@ import ConselhoEvolucao from '@/components/dashboard/ConselhoEvolucao'
 
 export default async function ConselhoPage() {
   /**
-   * CONSELHO É DOS SÓCIOS — e esta página não tinha barreira nenhuma.
+   * CONSELHO É DOS SÓCIOS.
    *
-   * O proxy já barra pela lista do token, mas a página não podia depender
-   * disso: um token de 7 dias continuaria abrindo o Conselho por uma semana
-   * depois da revogação. `autorizado` lê do banco, então revogar vale agora.
+   * `socio()` lê `User.isPartner` do banco a cada requisição — o proxy já
+   * barrou pela marca do token, mas a página não pode depender dela: um token
+   * de 7 dias continuaria abrindo o Conselho por uma semana depois de alguém
+   * deixar de ser sócio.
    *
-   * Ser ADMIN não basta, de propósito: operar o sistema não é ser sócio.
+   * Ser ADMIN, ser Diretor ou estar no departamento Conselho NÃO basta, de
+   * propósito. Eram três formas de inferir sócio, e cada uma delas dava falso
+   * positivo — além de ter sido assim que o acesso acabou bloqueado para quem
+   * estava configurado no contexto de Conselho mas sem a outra metade marcada.
    */
   const session = await getSession()
   if (!session) redirect('/login')
-  if (!(await autorizado(session, 'view_conselho'))) redirect('/dashboard')
+  if (!(await socio(session))) redirect('/dashboard')
 
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(24)
@@ -83,12 +87,14 @@ export default async function ConselhoPage() {
    * Sustentação, Serviços e BaaS. A partição é exclusiva — cada real entra em
    * exatamente uma, e a natureza da categoria classifica antes do vínculo com
    * o parceiro (um setup cobrado de um BaaS é setup).
+   *
+   * MENSALIDADES não soma: já está embutida no transacional.
    */
-  const linhas = composicao.linhas.map((l) => [l.label, l.valor] as const)
+  const linhasQueSomam = composicao.linhas.filter((l) => l.soma)
 
   /** Maior linha de receita — responde "onde está a receita" sem o executivo somar. */
   const maiorLinha = composicao.total > 0
-    ? [...linhas].sort((a, b) => b[1] - a[1])[0]
+    ? [...linhasQueSomam].sort((a, b) => b.valor - a.valor)[0]
     : null
 
   const evolucao = periodos.map((p, i) => ({
@@ -166,8 +172,8 @@ export default async function ConselhoPage() {
         <PanelHeader
           title="Onde está a receita"
           sub={maiorLinha
-            ? `${maiorLinha[0]} concentra ${((maiorLinha[1] / composicao.total) * 100).toFixed(1)}% da receita do período.`
-            : 'A soma das seis linhas é a receita do período.'}
+            ? `${maiorLinha.label} concentra ${((maiorLinha.valor / composicao.total) * 100).toFixed(1)}% da receita do período.`
+            : 'Transacional, Setup, Sustentação, Serviços e BaaS somam a receita do período.'}
         />
         {composicao.total === 0 ? (
           <Panel padded={false}>
@@ -178,22 +184,28 @@ export default async function ConselhoPage() {
             {/* Barra de composição: proporção antes do detalhe. */}
             <div className="flex h-2 rounded-full overflow-hidden gap-px bg-line" role="img"
               aria-label="Composição proporcional da receita">
-              {linhas.map(([label, valor], i) => (
-                <span key={label} title={`${label}: ${moedaCheia(valor)}`}
+              {/* Só as linhas que SOMAM entram na barra: uma fatia de
+                  Mensalidades faria a proporção passar de 100%. */}
+              {composicao.linhas.filter((l) => l.soma).map((l, i) => (
+                <span key={l.tipo} title={`${l.label}: ${moedaCheia(l.valor)}`}
                   className="transition-opacity duration-[380ms] hover:opacity-80"
                   style={{
-                    width: `${Math.max((valor / composicao.total) * 100, 0)}%`,
-                    background: `color-mix(in srgb, var(--color-accent) ${100 - i * 13}%, transparent)`,
+                    width: `${Math.max((l.valor / composicao.total) * 100, 0)}%`,
+                    background: `color-mix(in srgb, var(--color-accent) ${100 - i * 15}%, transparent)`,
                   }} />
               ))}
             </div>
             <HairlineGrid cols={3}>
-              {linhas.map(([label, valor]) => (
-                <HairlineCell key={label} className="gap-2.5">
-                  <p className="t-label text-subtle">{label}</p>
-                  <Figure figura={figuraMoeda(valor)} size="sm" />
+              {composicao.linhas.map((l) => (
+                <HairlineCell key={l.tipo} className="gap-2.5">
+                  <p className="t-label text-subtle">{l.label}</p>
+                  <Figure figura={figuraMoeda(l.valor)} size="sm" />
                   <p className="t-mono text-muted">
-                    {composicao.total > 0 ? `${((valor / composicao.total) * 100).toFixed(1)}%` : '—'}
+                    {!l.soma
+                      ? 'indicador'
+                      : composicao.total > 0
+                        ? `${((l.valor / composicao.total) * 100).toFixed(1)}%`
+                        : '—'}
                   </p>
                 </HairlineCell>
               ))}
@@ -202,13 +214,19 @@ export default async function ConselhoPage() {
               <span className="t-label text-subtle">Receita total do período</span>
               <Figure figura={figuraMoeda(composicao.total)} />
             </Panel>
-            {/* Receita lançada que não cabe nos seis tipos — hoje, Float. Dita
-                em voz alta para que o total não pareça faltar dinheiro. */}
-            {composicao.foraDaComposicao > 0 && (
+            {/* MENSALIDADES é INDICADOR, não parcela — e isso é dito em voz
+                alta. Elas já estão embutidas na tarifa transacional (é como a
+                Bass Pago cobra hoje), e somá-las ao total contaria o mesmo
+                dinheiro duas vezes. Omitir a linha seria pior: a pergunta
+                "quanto é recorrente" não teria resposta na composição. */}
+            {composicao.mensalidadesIndicador > 0 && (
               <p className="t-sm text-subtle">
-                Fora da composição:{' '}
-                <span className="tabular-nums text-fg">{moedaCheia(composicao.foraDaComposicao)}</span>{' '}
-                de receita lançada em Float, que não é um dos seis tipos do Conselho.
+                <span className="text-fg">Mensalidades de API é indicador</span>, não parcela:{' '}
+                <span className="tabular-nums text-fg">
+                  {moedaCheia(composicao.mensalidadesIndicador)}
+                </span>{' '}
+                já estão embutidos na receita transacional, e por isso ficam fora do total.
+                O número aparece porque é a base da recorrência.
               </p>
             )}
           </>

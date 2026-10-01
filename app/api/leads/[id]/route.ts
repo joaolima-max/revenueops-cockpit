@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
-import { validarLead, bloqueioDeExclusao } from '@/lib/leads'
+import { validarLead } from '@/lib/leads'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -58,22 +58,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 /**
- * EXCLUSÃO DE LEAD — exclusão REAL, não ocultação.
+ * EXCLUSÃO DE LEAD — MOVER PARA A LIXEIRA.
  *
- * Por que isto estava quebrado: `Activity.leadId` e `Deal.leadId` tinham a
- * constraint NO ACTION no banco (o Prisma declara a relação como opcional,
- * mas a FK foi criada sem ação). Apagar um lead que já tivesse qualquer
- * atividade ou card estourava violação de chave estrangeira, a rota devolvia
- * 500 e, para quem clicava, o botão "não fazia nada" — e falhava justamente
- * nos leads já trabalhados, que são os que alguém quer remover.
+ * A regra mudou nesta rodada: excluir um lead não o apaga mais da base.
+ * `deletedAt` e `deletedById` são gravados, o lead sai de toda consulta
+ * normal — lista, busca e seletor do Pipeline — e o histórico fica INTEIRO:
+ * cards, movimentações e comentários continuam existindo e apontando para
+ * ele.
  *
- * A v20 pôs `Activity` em CASCADE: é log SOBRE o lead, sem vida própria.
- * Comentários já cascateavam.
+ * Por que isso é melhor que a exclusão física: o lead participava de cards de
+ * pipeline, e a exclusão física obrigava a escolher entre destruir esse
+ * histórico (cascade) ou recusar a exclusão (restrict). A lixeira não tem de
+ * escolher — o registro sai de circulação e o passado continua legível.
  *
- * CARDS DE PIPELINE continuam bloqueando, de propósito: o card carrega
- * movimentações, comentários e desfecho, e apagá-los por tabela seria destruir
- * histórico sem ninguém ter pedido. Agora a recusa é explícita — 409 com a
- * contagem e o motivo — em vez de um 500 silencioso.
+ * CARD NÃO BLOQUEIA MAIS. A recusa por card existia porque apagar levava o
+ * histórico; mover para a lixeira não leva nada.
+ *
+ * Quem consulta a lixeira são os DIRETORES, por hierarquia — não por perfil.
  */
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -85,21 +86,36 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
 
   const lead = await prisma.lead.findUnique({
     where: { id },
-    select: { id: true, name: true, company: true, _count: { select: { deals: true } } },
+    select: {
+      id: true, name: true, company: true, deletedAt: true,
+      _count: { select: { deals: true } },
+    },
   })
   if (!lead) return NextResponse.json({ error: 'Lead não encontrado' }, { status: 404 })
 
-  const bloqueio = bloqueioDeExclusao(lead._count.deals)
-  if (bloqueio) {
-    return NextResponse.json({ error: bloqueio.mensagem, cards: bloqueio.cards }, { status: 409 })
+  // Já na lixeira: nada a fazer, e dizer isso é melhor que fingir sucesso.
+  if (lead.deletedAt) {
+    return NextResponse.json(
+      { error: 'Este lead já está na lixeira.' }, { status: 409 },
+    )
   }
 
-  await prisma.lead.delete({ where: { id } })
+  await prisma.lead.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedById: session.userId },
+  })
 
   await logAudit(
-    session.userId, 'DELETE', 'Lead', id,
-    `Lead excluído: ${lead.company ?? '—'} · ${lead.name}`,
+    session.userId, 'MOVEU_LEAD_PARA_LIXEIRA', 'Lead', id,
+    `${lead.company ?? '—'} · ${lead.name}`
+    + (lead._count.deals > 0
+      ? ` · ${lead._count.deals} card(s) de pipeline preservados`
+      : ''),
   )
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({
+    success: true,
+    naLixeira: true,
+    cardsPreservados: lead._count.deals,
+  })
 }

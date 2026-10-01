@@ -155,3 +155,67 @@ export function nomeDestinatario(
 ): string {
   return envio.cliente?.nome ?? envio.clienteNomeHistorico ?? 'Cliente nao identificado'
 }
+
+
+/* ========================================================================= *
+ * ORDENAÇÃO E BUSCA
+ * ========================================================================= */
+
+/**
+ * Compara duas identificações de versão NUMERICAMENTE quando elas são números.
+ *
+ * O problema que isto resolve: `identificacao` e um texto, e a ordenacao
+ * alfabetica de "1", "2", "10", "11", "50" produz 1, 10, 11, 2, 50. Uma
+ * versao chamada "2" aparecia depois de "11", e a lista ficava ilegivel
+ * justamente quando havia versoes suficientes para precisar de ordem.
+ *
+ * Identificacoes que NAO sao numeros (p. ex. "2026-A") caem no alfabetico, e
+ * vao depois das numericas — e o alfabetico e o certo para elas.
+ */
+export function compararIdentificacao(a: string, b: string): number {
+  const na = Number(a.trim())
+  const nb = Number(b.trim())
+  const aNum = Number.isFinite(na) && a.trim() !== ''
+  const bNum = Number.isFinite(nb) && b.trim() !== ''
+
+  if (aNum && bNum) return na - nb
+  // Numerica antes de textual: "1" vem antes de "2026-A".
+  if (aNum) return -1
+  if (bNum) return 1
+  return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' })
+}
+
+/** Normaliza para busca: sem acento, sem caixa. */
+function normalizar(v: string): string {
+  return v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+/**
+ * O termo casa com o envio?
+ *
+ * Busca por RAZAO SOCIAL e por NUMERO do certificado. O numero e procurado
+ * dentro do INTERVALO do envio: quem tem o certificado 37 na mao quer saber
+ * para quem ele foi, e o envio que o contem e o que registra "30 a 40" — nao
+ * uma linha com "37".
+ */
+export function envioCasaBusca(
+  envio: {
+    destinatario?: string | null
+    numeroInicial: number
+    numeroFinal: number
+    versaoIdentificacao?: string | null
+  },
+  termo: string,
+): boolean {
+  const t = normalizar(termo.trim())
+  if (!t) return true
+
+  if (envio.destinatario && normalizar(envio.destinatario).includes(t)) return true
+  if (envio.versaoIdentificacao && normalizar(envio.versaoIdentificacao).includes(t)) return true
+
+  // Numero DENTRO do intervalo — e assim que o envio registra a entrega.
+  const n = Number(t)
+  if (Number.isInteger(n) && n >= envio.numeroInicial && n <= envio.numeroFinal) return true
+
+  return false
+}

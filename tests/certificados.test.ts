@@ -6,6 +6,7 @@ import {
   CERTIFICADOS_POR_VERSAO, numerosDaVersao, quantidadeDoTipo, parseIntervalo,
   validarEnvio, proximoIntervalo, rotuloIntervalo,
   validarDestinatario, nomeDestinatario,
+  compararIdentificacao, envioCasaBusca,
 } from '../lib/certificados'
 import { cifrar, decifrar, gerarSenha } from '../lib/crypto-certificado'
 
@@ -173,4 +174,72 @@ test('cadastro tem precedencia sobre o historico', () => {
     nomeDestinatario({ cliente: { nome: 'Atual' }, clienteNomeHistorico: 'Antiga' }),
     'Atual',
   )
+})
+
+/* ========================================================================= *
+ * ORDENAÇÃO NUMÉRICA E BUSCA
+ * ========================================================================= */
+
+test('a ordem e NUMERICA: 1, 2, 3 … 50 — nunca 1, 10, 11, 2', () => {
+  // `identificacao` e texto, e a ordem alfabetica punha a versao "2" depois
+  // de "11" — a lista ficava ilegivel justamente quando havia versoes
+  // suficientes para precisar de ordem.
+  const v = ['1', '10', '11', '2', '50', '3']
+  assert.deepEqual(
+    [...v].sort(compararIdentificacao),
+    ['1', '2', '3', '10', '11', '50'],
+  )
+})
+
+test('identificacao textual vai DEPOIS das numericas, em ordem alfabetica', () => {
+  assert.deepEqual(
+    ['B', '2', '2026-A', '1'].sort(compararIdentificacao),
+    ['1', '2', '2026-A', 'B'],
+  )
+})
+
+test('a busca casa por RAZAO SOCIAL', () => {
+  const envio = {
+    destinatario: 'ACME Pagamentos', numeroInicial: 1, numeroFinal: 50,
+    versaoIdentificacao: '1',
+  }
+  assert.equal(envioCasaBusca(envio, 'acme'), true)
+  assert.equal(envioCasaBusca(envio, 'ACME'), true)
+  assert.equal(envioCasaBusca(envio, 'pagamentos'), true)
+  assert.equal(envioCasaBusca(envio, 'outra empresa'), false)
+})
+
+test('a busca casa o NUMERO DENTRO DO INTERVALO entregue', () => {
+  // Quem tem o certificado 37 na mao quer saber para quem ele foi, e o
+  // registro que o contem diz "30 a 40" — nao existe uma linha com "37".
+  const envio = {
+    destinatario: 'ACME', numeroInicial: 30, numeroFinal: 40,
+    versaoIdentificacao: '1',
+  }
+  assert.equal(envioCasaBusca(envio, '37'), true)
+  assert.equal(envioCasaBusca(envio, '30'), true, 'a borda inicial conta')
+  assert.equal(envioCasaBusca(envio, '40'), true, 'a borda final conta')
+  assert.equal(envioCasaBusca(envio, '29'), false)
+  assert.equal(envioCasaBusca(envio, '41'), false)
+})
+
+test('a busca ignora acento na razao social', () => {
+  const envio = {
+    destinatario: 'Ângulo Serviços', numeroInicial: 1, numeroFinal: 10,
+    versaoIdentificacao: '1',
+  }
+  assert.equal(envioCasaBusca(envio, 'angulo'), true)
+  assert.equal(envioCasaBusca(envio, 'servicos'), true)
+})
+
+test('busca vazia passa tudo', () => {
+  const envio = { destinatario: 'X', numeroInicial: 1, numeroFinal: 2 }
+  assert.equal(envioCasaBusca(envio, ''), true)
+  assert.equal(envioCasaBusca(envio, '   '), true)
+})
+
+test('envio sem destinatario cadastrado nao estoura na busca', () => {
+  const envio = { destinatario: null, numeroInicial: 1, numeroFinal: 2 }
+  assert.equal(envioCasaBusca(envio, 'qualquer'), false)
+  assert.equal(envioCasaBusca(envio, '1'), true, 'o numero ainda casa')
 })

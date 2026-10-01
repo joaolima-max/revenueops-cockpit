@@ -10,11 +10,13 @@ import Topbar from './Topbar'
  * em 20 páginas como `min-h-screen bg-ink p-6`.
  */
 export default function DashboardShell({
-  role, permissoes, userName, userEmail, children,
+  role, permissoes, socio, userName, userEmail, children,
 }: {
   role: string
-  /** Chaves restritas, lidas do banco pelo layout. Governam Conselho e Auditoria. */
+  /** Chaves restritas, lidas do banco pelo layout. Governam a Auditoria. */
   permissoes?: string[] | null
+  /** Sócio. É esta a autorização do Conselho Administrativo. */
+  socio?: boolean
   userName: string
   userEmail: string
   children: React.ReactNode
@@ -27,6 +29,7 @@ export default function DashboardShell({
       <Sidebar
         role={role}
         permissoes={permissoes}
+        socio={socio}
         userName={userName}
         userEmail={userEmail}
         open={open}

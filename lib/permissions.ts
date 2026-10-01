@@ -58,7 +58,12 @@ export const ALL_PERMISSIONS = [
   { key: 'view_compliance',  label: 'Ver Compliance',           group: 'Compliance' },
   { key: 'manage_compliance',label: 'Gerenciar Compliance',     group: 'Compliance' },
   // Governança — concedidas UMA A UMA, nunca por perfil. Ver PERMISSOES_RESTRITAS.
-  { key: 'view_conselho',    label: 'Ver Conselho Administrativo', group: 'Governança' },
+  //
+  // O CONSELHO NÃO ESTÁ AQUI. Ele é governado por `User.isPartner`, uma
+  // coluna própria: ter a chave numa lista E a condição de sócio noutra
+  // coluna criava duas fontes de verdade sobre o mesmo acesso, e foi
+  // exatamente assim que o acesso ficou bloqueado para quem estava
+  // configurado "no contexto de Conselho". Um eixo, um lugar.
   { key: 'view_auditoria',   label: 'Ver Auditoria',            group: 'Governança' },
   { key: 'manage_auditoria', label: 'Administrar Auditoria',     group: 'Governança' },
 ]
@@ -66,16 +71,18 @@ export const ALL_PERMISSIONS = [
 /**
  * CHAVES RESTRITAS — nunca concedidas por perfil, só por atribuição explícita.
  *
- * O Conselho Administrativo é dos sócios, e a Auditoria é de poucas pessoas.
- * Ambos continham dado que não acompanha o cargo: ser ADMIN é poder operar o
- * sistema, não ser sócio. Por isso `hasPermission` não aplica aqui o atalho de
- * ADMIN nem o fallback por perfil — a chave precisa estar na lista do usuário.
+ * A Auditoria é de poucas pessoas, e o acesso a ela não acompanha o cargo:
+ * ser ADMIN é poder operar o sistema, não ser auditor. Por isso
+ * `hasPermission` não aplica aqui o atalho de ADMIN nem o fallback por perfil
+ * — a chave precisa estar na lista do próprio usuário.
  *
  * Elas também ficam FORA de `DEFAULT_PERMISSIONS`, inclusive do ADMIN: um
  * default as devolveria pela porta de trás no primeiro usuário sem lista.
+ *
+ * O CONSELHO não é uma chave: é `User.isPartner` (ver `ehSocio`).
  */
 export const PERMISSOES_RESTRITAS: readonly string[] = [
-  'view_conselho', 'view_auditoria', 'manage_auditoria',
+  'view_auditoria', 'manage_auditoria',
 ]
 
 export function permissaoRestrita(key: string): boolean {
@@ -202,4 +209,58 @@ export const DEPARTAMENTO_DA_ORIGEM: Record<string, Departamento> = {
   CONTA_RECEBER: 'FINANCEIRO',
   LANCAMENTO_DIARIO: 'FINANCEIRO',
   COMPLIANCE: 'COMPLIANCE',
+}
+
+/* ========================================================================= *
+ * SÓCIO — a autorização do Conselho Administrativo
+ * ========================================================================= */
+
+/**
+ * O Conselho Administrativo é dos SÓCIOS.
+ *
+ * Por que uma coluna e não uma chave de permissão: ser sócio não é uma
+ * autorização que se concede e revoga como "ver tarefas" — é um fato sobre a
+ * pessoa. E manter as duas coisas (uma flag de sócio E uma chave na lista)
+ * criava duas fontes de verdade sobre o mesmo acesso: o usuário aparecia
+ * configurado no contexto de Conselho e continuava bloqueado, porque a outra
+ * metade não tinha sido marcada.
+ *
+ * NENHUM outro eixo implica em sócio, de propósito:
+ *
+ *   - PERFIL Admin        → administra o sistema;
+ *   - HIERARQUIA Diretor  → está no topo da hierarquia;
+ *   - DEPARTAMENTO Conselho → trabalha com o conselho;
+ *
+ * e nada disso é ser dono da empresa. Inferir de qualquer um dos três daria
+ * falso positivo — é justamente o que esta função existe para impedir.
+ */
+export function ehSocio(u: { isPartner?: boolean | null } | null | undefined): boolean {
+  return !!u?.isPartner
+}
+
+/**
+ * A LIXEIRA DE LEADS é de DIRETORES.
+ *
+ * Hierarquia, não perfil: um Diretor Colaborador vê a lixeira, e um Admin
+ * Operador não. São eixos independentes — a hierarquia diz quem responde pela
+ * área, e é quem responde que precisa poder auditar o que foi descartado.
+ */
+export function podeVerLixeira(
+  u: { hierarquia?: string | null } | null | undefined,
+): boolean {
+  return u?.hierarquia === 'DIRETOR'
+}
+
+/**
+ * GESTOR DE CONTA é responsabilidade pela conta — e nada além disso.
+ *
+ * Não é Diretor, não é sócio, não é Admin. Um Operador Colaborador pode ser
+ * gestor; um Diretor pode não ser. Por isso a elegibilidade é só "usuário
+ * ativo": qualquer filtro por hierarquia ou perfil aqui transformaria uma
+ * atribuição operacional numa questão de cargo.
+ */
+export function podeSerGestorDeConta(
+  u: { active?: boolean | null } | null | undefined,
+): boolean {
+  return !!u?.active
 }

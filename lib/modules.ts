@@ -57,6 +57,14 @@ export interface Feature {
    * `autorizado()`, que lê do banco a cada requisição.
    */
   permissao?: string
+  /**
+   * Função que exige ser SÓCIO. Hoje, só o Conselho Administrativo.
+   *
+   * Não é `permissao` porque ser sócio não é uma chave que se concede e
+   * revoga: é um fato sobre a pessoa, gravado em `User.isPartner`. Manter as
+   * duas coisas criava duas fontes de verdade sobre o mesmo acesso.
+   */
+  socio?: boolean
 }
 
 export interface Module {
@@ -84,16 +92,20 @@ export const MODULES: Module[] = [
     enabled: true,
     features: [
       { key: 'cockpit', label: 'Cockpit', route: '/dashboard', api: ['/api/dashboard'], enabled: true, exact: true },
-      // CONSELHO É DOS SÓCIOS. `permissao` e não `roles`: ser ADMIN é poder
-      // operar o sistema, não ser sócio. Sem a chave gravada no usuário, o
-      // menu não aparece e a rota não abre — nem por URL direta.
+      // CONSELHO É DOS SÓCIOS — `socio`, não `roles` nem `permissao`.
+      //
+      // Ser ADMIN é operar o sistema; ser Diretor é estar no topo da
+      // hierarquia; estar no departamento Conselho é trabalhar com o conselho.
+      // Nenhuma das três é ser dono da empresa, e inferir de qualquer uma
+      // delas daria falso positivo.
+      //
+      // `/api/conselho` ainda não existe — a página lê direto do servidor. O
+      // prefixo fica registrado de propósito: no dia em que uma API do
+      // Conselho nascer, ela já estará restrita, em vez de depender de alguém
+      // lembrar de restringi-la.
       {
         key: 'conselho', label: 'Conselho', route: '/dashboard/conselho',
-        // `/api/conselho` ainda não existe — a página lê direto do servidor.
-        // O prefixo fica registrado de propósito: no dia em que uma API do
-        // Conselho nascer, ela já estará restrita, em vez de depender de
-        // alguém lembrar de restringi-la.
-        api: ['/api/conselho'], enabled: true, permissao: 'view_conselho',
+        api: ['/api/conselho'], enabled: true, socio: true,
       },
     ],
   },
@@ -133,6 +145,16 @@ export const MODULES: Module[] = [
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline/board', '/api/pipeline/cards'], enabled: true },
       { key: 'comercial.followup', label: 'Follow Up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
+      // LIXEIRA DE LEADS — registrada e OCULTA, como os Funis. Não é um
+      // ambiente: é a consulta do que foi descartado, e quem a vê são os
+      // DIRETORES. A restrição por hierarquia não cabe em `roles` (que é
+      // perfil técnico), então a página e a API conferem `diretor()` — este
+      // registro existe para que a rota não fique aberta por omissão.
+      {
+        key: 'comercial.lixeira', label: 'Lixeira de Leads',
+        route: '/dashboard/leads/lixeira', api: ['/api/leads/lixeira'],
+        enabled: true, oculto: true,
+      },
       // FUNIS NÃO É MENU. A administração de funis é área interna do Pipeline,
       // em `/dashboard/pipeline/funis`. O registro permanece — `oculto` tira
       // da sidebar sem tirar do controle de acesso, e é ele que mantém a rota
@@ -145,15 +167,27 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    key: 'financeiro',
-    label: 'RECEITA / FINANCEIRO',
+    key: 'receita',
+    label: 'RECEITA',
     enabled: true,
     features: [
-      // ORDEM: Metas e Lançamento Diário primeiro — o objetivo e o insumo
-      // diário que o alimenta. Antes moravam numa seção RECEITA separada, o
-      // que afastava a meta do financeiro que a realiza.
+      // RECEITA é separada de FINANCEIRO, de propósito. Receita é o que a
+      // operação PRODUZ — o objetivo, o insumo diário e o faturamento dos
+      // parceiros. Financeiro é o que se FAZ com isso: caixa, títulos,
+      // categorias, fornecedores. Misturar as duas fazia a meta aparecer no
+      // meio das contas a pagar.
       { key: 'receita.metas', label: 'Metas', route: '/dashboard/metas', api: ['/api/metas'], enabled: true },
       { key: 'receita.forecast', label: 'Lançamento Diário', route: '/dashboard/forecast', api: ['/api/forecast'], enabled: true },
+      // Lançamento BaaS mora aqui porque é lançamento de RECEITA operacional:
+      // tarifa o volume do parceiro e produz o faturamento do período.
+      { key: 'receita.baas', label: 'Lançamento BaaS', route: '/dashboard/lancamento-baas', api: ['/api/lancamento-baas'], enabled: true },
+    ],
+  },
+  {
+    key: 'financeiro',
+    label: 'FINANCEIRO',
+    enabled: true,
+    features: [
       // `exact` na Visão Geral pelo mesmo motivo do Cockpit: ela mora na raiz
       // do ambiente, e sem isso casaria por prefixo com todos os menus abaixo.
       { key: 'financeiro.visao', label: 'Visão Geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
@@ -164,7 +198,10 @@ export const MODULES: Module[] = [
       { key: 'financeiro.pagar', label: 'Contas a Pagar', route: '/dashboard/financeiro/contas-pagar', api: ['/api/financeiro/contas-pagar'], enabled: true },
       { key: 'financeiro.categorias', label: 'Categorias', route: '/dashboard/financeiro/categorias', api: ['/api/financeiro/categorias'], enabled: true },
       { key: 'financeiro.fornecedores', label: 'Fornecedores', route: '/dashboard/financeiro/fornecedores', api: ['/api/financeiro/fornecedores'], enabled: true },
-      { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },
+      { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', // `/produtos` não precisa de entrada própria: `checkAccess` casa por
+      // prefixo, então o pai já protege a sub-rota. Listar os dois faria um
+      // engolir o outro na resolução por rota mais específica.
+      api: ['/api/financeiro/condicoes-baas'], enabled: true },
     ],
   },
   {
@@ -223,11 +260,20 @@ function permissaoConcedida(feature: Feature, permissoes?: string[] | null): boo
   return !!permissoes && permissoes.includes(feature.permissao)
 }
 
-/** Passa pelos dois filtros: perfil E chave restrita. */
-function liberada(
-  feature: ResolvedFeature, role?: string, permissoes?: string[] | null,
-): boolean {
-  return roleAllowed(feature, role) && permissaoConcedida(feature, permissoes)
+/**
+ * Quem está pedindo. Além do perfil técnico, carrega as chaves restritas e a
+ * condição de sócio — os três eixos que podem barrar uma função.
+ */
+export interface Contexto {
+  role?: string
+  permissoes?: string[] | null
+  socio?: boolean
+}
+
+/** Passa pelos três filtros: perfil, chave restrita e sócio. */
+function liberada(feature: ResolvedFeature, ctx: Contexto): boolean {
+  if (feature.socio && !ctx.socio) return false
+  return roleAllowed(feature, ctx.role) && permissaoConcedida(feature, ctx.permissoes)
 }
 
 /**
@@ -243,14 +289,15 @@ export function isFeatureEnabled(key: string): boolean {
  * que o perfil pode ver. Seções que ficam vazias são omitidas.
  */
 export function navigationFor(
-  role: string, permissoes?: string[] | null,
+  role: string, permissoes?: string[] | null, socio?: boolean,
 ): Array<{ key: string; label: string; items: ResolvedFeature[] }> {
+  const ctx: Contexto = { role, permissoes, socio }
   return MODULES.filter((m) => m.enabled)
     .map((m) => ({
       key: m.key,
       label: m.label,
       items: activeFeatures().filter(
-        (f) => f.moduleKey === m.key && !f.oculto && liberada(f, role, permissoes),
+        (f) => f.moduleKey === m.key && !f.oculto && liberada(f, ctx),
       ),
     }))
     .filter((section) => section.items.length > 0)
@@ -262,12 +309,14 @@ export function navigationFor(
  * desligado, caso em que redirecionar para `/dashboard` criaria um loop.
  */
 export function firstAvailableRoute(
-  role?: string, permissoes?: string[] | null,
+  role?: string, permissoes?: string[] | null, socio?: boolean,
 ): string | null {
   // Destino de fallback precisa ser uma tela de menu — mandar o usuário para
   // uma área interna seria levá-lo a um lugar sem caminho de volta. E nunca
   // para uma tela restrita: cair no Conselho sem ter a chave devolveria 403.
-  const feature = activeFeatures().find((f) => !f.oculto && liberada(f, role, permissoes))
+  const feature = activeFeatures().find(
+    (f) => !f.oculto && liberada(f, { role, permissoes, socio }),
+  )
   return feature?.route ?? null
 }
 
@@ -282,7 +331,7 @@ export type AccessVerdict = 'allow' | 'disabled' | 'forbidden'
  * que rotas novas não fiquem inacessíveis por esquecimento.
  */
 export function checkAccess(
-  pathname: string, role?: string, permissoes?: string[] | null,
+  pathname: string, role?: string, permissoes?: string[] | null, socio?: boolean,
 ): AccessVerdict {
   if (ALWAYS_ON.some((p) => pathname === p || pathname.startsWith(p + '/'))) return 'allow'
 
@@ -307,5 +356,5 @@ export function checkAccess(
    * do Pipeline anularia a restrição de ADMIN da administração de funis.
    */
   const maisEspecifica = active.reduce((a, b) => (b.route.length > a.route.length ? b : a))
-  return liberada(maisEspecifica, role, permissoes) ? 'allow' : 'forbidden'
+  return liberada(maisEspecifica, { role, permissoes, socio }) ? 'allow' : 'forbidden'
 }

@@ -1,14 +1,12 @@
 /**
  * LEADS — obrigatoriedades e exclusão.
  *
- * O botão de excluir não funcionava, e a causa não era a UI: `Activity.leadId`
- * e `Deal.leadId` estavam NO ACTION no banco, então apagar um lead já
- * trabalhado estourava violação de FK, a rota devolvia 500 e, para quem
- * clicava, nada acontecia.
+ * EXCLUIR VIROU MOVER PARA A LIXEIRA.
  *
- * A v20 pôs `Activity` em CASCADE (é log sobre o lead). Os CARDS continuam
- * bloqueando de propósito: apagá-los junto destruiria histórico de pipeline.
- * O que mudou é que a recusa passou a ser explícita.
+ * A exclusão física obrigava a escolher entre destruir o histórico de
+ * pipeline (cascade) ou recusar a exclusão (restrict) — e a constraint
+ * `NO ACTION` do banco fazia a escolha virar um 500 silencioso. A lixeira não
+ * tem de escolher: o lead sai de circulação e o passado continua legível.
  *
  *   npm test
  */
@@ -16,7 +14,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  validarLead, bloqueioDeExclusao, CAMPOS_OBRIGATORIOS_LEAD,
+  validarLead, CAMPOS_OBRIGATORIOS_LEAD,
+  naLixeira, FILTRO_ATIVOS, descarteTexto,
 } from '../lib/leads'
 
 /* ========================================================================= *
@@ -67,36 +66,42 @@ test('valor que nao e string nao satisfaz a obrigatoriedade', () => {
 })
 
 /* ========================================================================= *
- * EXCLUSÃO
+ * LIXEIRA
  * ========================================================================= */
 
-test('lead sem card EXCLUI — e o caso do lead duplicado ou errado', () => {
-  assert.equal(bloqueioDeExclusao(0), null)
+test('o filtro de ativos e o que esconde a lixeira', () => {
+  // Uma consulta sem este filtro devolve leads descartados — e e um erro
+  // silencioso: a lista simplesmente volta a mostrar o que foi excluido.
+  assert.deepEqual({ ...FILTRO_ATIVOS }, { deletedAt: null })
 })
 
-test('lead COM card e bloqueado, e a recusa diz quantos', () => {
-  // Apagar o card junto levaria movimentacoes, comentarios e desfecho — e
-  // ninguem pediu para destruir historico de pipeline.
-  const b = bloqueioDeExclusao(3)
-  assert.ok(b)
-  assert.equal(b!.cards, 3)
-  assert.ok(b!.mensagem.includes('3'))
-  assert.ok(/pipeline/i.test(b!.mensagem), 'a mensagem precisa dizer o motivo')
+test('naLixeira distingue descartado de ativo', () => {
+  assert.equal(naLixeira({ deletedAt: null }), false)
+  assert.equal(naLixeira({ deletedAt: undefined }), false)
+  assert.equal(naLixeira({}), false)
+  assert.equal(naLixeira({ deletedAt: new Date('2026-10-01T12:00:00Z') }), true)
+  // String ISO tambem conta: e como o lead chega do JSON da API.
+  assert.equal(naLixeira({ deletedAt: '2026-10-01T12:00:00Z' }), true)
 })
 
-test('a recusa explica o que fazer, nao so que falhou', () => {
-  const b = bloqueioDeExclusao(1)!
-  assert.ok(
-    /remova|transfira/i.test(b.mensagem),
-    'sem caminho de saida, o usuario fica preso na mesma recusa',
-  )
+test('o descarte diz QUANDO e POR QUEM', () => {
+  // E a razao de a lixeira existir: um Diretor precisa saber quem descartou.
+  const t = descarteTexto({
+    deletedAt: '2026-10-01T12:00:00Z',
+    deletedBy: { name: 'João Lima' },
+  })
+  assert.ok(t.includes('João Lima'), t)
+  assert.ok(t.includes('2026') || t.includes('01/10'), t)
 })
 
-test('a mensagem concorda em numero — um card, nao "1 cards"', () => {
-  const um = bloqueioDeExclusao(1)!.mensagem
-  assert.ok(um.includes('1 card '), um)
-  assert.ok(!um.includes('cards'), um)
+test('lead ativo nao tem texto de descarte', () => {
+  assert.equal(descarteTexto({ deletedAt: null }), '—')
+})
 
-  const varios = bloqueioDeExclusao(2)!.mensagem
-  assert.ok(varios.includes('2 cards'), varios)
+test('descarte sem autor registrado ainda mostra a data', () => {
+  // `deletedById` e SET NULL: se o usuario que excluiu for removido, a data
+  // sobrevive. Perder a data junto seria perder o fato.
+  const t = descarteTexto({ deletedAt: '2026-10-01T12:00:00Z', deletedBy: null })
+  assert.notEqual(t, '—')
+  assert.ok(!t.includes('undefined'), t)
 })

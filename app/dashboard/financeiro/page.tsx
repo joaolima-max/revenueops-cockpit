@@ -48,8 +48,8 @@ export default async function FinanceiroVisaoGeralPage({
   const parcelasMrr = [
     { label: 'Sustentação BaaS', valor: mrr.sustentacaoBaas, fonte: 'Condições Comerciais · tipo BaaS' },
     { label: 'Sustentação White Label', valor: mrr.sustentacaoWhiteLabel, fonte: 'Condições Comerciais · tipo White Label' },
-    { label: 'API mensal dos parceiros', valor: mrr.apiMensalParceiros, fonte: 'Condições BaaS · API mensal' },
-    { label: 'API mensal da carteira', valor: mrr.apiMensalCarteira, fonte: 'Clientes ativos · mensalidade de API' },
+    { label: 'Mensalidades de API BaaS + WL', valor: mrr.apiMensalParceiros, fonte: 'Condições BaaS · API mensal' },
+    { label: 'Mensalidades de API da carteira', valor: mrr.apiMensalCarteira, fonte: 'Clientes ativos · mensalidade de API' },
   ]
 
   /**
@@ -203,7 +203,7 @@ export default async function FinanceiroVisaoGeralPage({
       <section className="space-y-4">
         <PanelHeader
           title="Composição do MRR"
-          sub="MRR = Mensalidades + Sustentação. Cada parcela tem um campo de origem, e nenhuma mensalidade é contada duas vezes."
+          sub="MRR = Mensalidades + Sustentação. É métrica de RECORRÊNCIA, não receita realizada: as mensalidades já estão embutidas na tarifa transacional e não se somam a ela."
         />
         <HairlineGrid cols={4}>
           {parcelasMrr.map((p) => (
@@ -228,6 +228,17 @@ export default async function FinanceiroVisaoGeralPage({
             Condições BaaS.
           </p>
         )}
+
+        {/* RECEITA REALIZADA × MRR são coisas diferentes, e confundi-las é o
+            erro que esta nota existe para impedir: somar o MRR à receita do
+            período contaria as mensalidades duas vezes, porque elas já estão
+            dentro da tarifa transacional. */}
+        <p className="t-sm text-subtle">
+          <span className="text-fg">MRR não se soma à receita realizada.</span>{' '}
+          As mensalidades de API são apuradas junto com a tarifa transacional, então
+          já estão contadas em Receitas acima. O MRR mede a recorrência contratada —
+          é referência, não uma segunda entrada de caixa.
+        </p>
       </section>
 
       {/* Contas a Pagar — resumo, com a tela completa a um clique. */}

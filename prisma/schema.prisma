@@ -306,6 +306,14 @@ model User {
   /// um departamento erraria o destinatario das notificacoes financeiras.
   departamento Departamento?
   hierarquia   Hierarquia?
+  /// SOCIO. Eixo PROPRIO, independente de perfil, departamento e hierarquia.
+  ///
+  /// Ser ADMIN e poder operar o sistema; ser Diretor e estar no topo da
+  /// hierarquia; estar no departamento CONSELHO e trabalhar com o conselho.
+  /// Nenhuma das tres coisas e ser socio — e so socio entra no Conselho
+  /// Administrativo. Sem coluna propria, a autorizacao teria de ser inferida
+  /// de um desses tres, e qualquer um deles daria falso positivo.
+  isPartner    Boolean       @default(false)
   active       Boolean       @default(true)
   avatar       String?
   permissoes   String?
@@ -331,6 +339,8 @@ model User {
   pendencias         PendenciaCompliance[]        @relation("PendenciaResponsavel")
   pendenciaEventos   PendenciaEvento[]
   comentariosLead    LeadComentario[]
+  leadsExcluidos     Lead[]                       @relation("LeadExcluidoPor")
+  lancamentosBaas    LancamentoBaas[]             @relation("LancamentoBaasCriador")
   comentariosDeal    DealComentario[]             @relation("DealComentarioAutor")
   lancamentos        LancamentoFinanceiro[]       @relation("LancamentoCriador")
   condicoesHistorico CondicaoComercialHistorico[] @relation("CondicaoHistoricoAutor")
@@ -357,11 +367,30 @@ model Lead {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  ownerId     String
-  owner       User             @relation("LeadOwner", fields: [ownerId], references: [id])
-  deals       Deal[]
-  activities  Activity[]
-  comentarios LeadComentario[]
+  /// LIXEIRA. Excluir um lead passou a significar MOVER PARA A LIXEIRA: o
+  /// registro sai das consultas normais e o historico fica inteiro —
+  /// movimentacoes, comentarios e cards continuam existindo e apontando para
+  /// ele. Apagar fisicamente destruia esse historico.
+  deletedAt   DateTime?
+  deletedById String?
+  deletedBy   User?     @relation("LeadExcluidoPor", fields: [deletedById], references: [id], onDelete: SetNull)
+
+  ownerId             String
+  owner               User               @relation("LeadOwner", fields: [ownerId], references: [id])
+  deals               Deal[]
+  activities          Activity[]
+  comentarios         LeadComentario[]
+  /// SEGMENTO pela entidade. Preenchido a partir desta rodada; quando nulo,
+  /// vale a coluna `segmento` (enum) dos registros anteriores. Os dois
+  /// convivem porque converter a coluna enum reescreveria historico.
+  segmentoComercial   SegmentoComercial? @relation(fields: [segmentoComercialId], references: [id])
+  segmentoComercialId String?
+
+  /// Toda consulta normal filtra `deletedAt: null`. Sem o indice, cada
+  /// listagem varreria a tabela inteira para descartar os excluidos.
+  @@index([deletedAt])
+  @@index([deletedAt, createdAt])
+  @@index([segmentoComercialId])
 }
 
 /// Comentario de Lead com autor e data/hora. Separado de `Lead.notes`, que e o
@@ -424,11 +453,17 @@ model Deal {
   clienteId String?
   cliente   Cliente?       @relation(fields: [clienteId], references: [id])
 
-  movimentacoes PipelineMovimentacao[]
-  comentarios   DealComentario[]
+  movimentacoes       PipelineMovimentacao[]
+  comentarios         DealComentario[]
+  /// SEGMENTO pela entidade. Preenchido a partir desta rodada; quando nulo,
+  /// vale a coluna `segmento` (enum) dos registros anteriores. Os dois
+  /// convivem porque converter a coluna enum reescreveria historico.
+  segmentoComercial   SegmentoComercial?     @relation(fields: [segmentoComercialId], references: [id])
+  segmentoComercialId String?
 
   @@index([funilId, etapaId])
   @@index([resultado])
+  @@index([segmentoComercialId])
 }
 
 /// Anotacao do card, com autor e data/hora. Mesma mecanica de LeadComentario:
@@ -485,27 +520,42 @@ model Cliente {
   dataFechamento    DateTime?
   dataEncerramento  DateTime?
   mensalidadeApi    Float?
+  /// Numero da conta do cliente no parceiro. OPCIONAL e nunca gerado
+  /// automaticamente: inventar um numero de conta criaria um identificador
+  /// que nao existe em lugar nenhum. E a chave que o Lancamento BaaS usa para
+  /// achar a conta.
+  numeroConta       String?
   notas             String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  ownerId           String
-  owner             User                  @relation(fields: [ownerId], references: [id])
+  ownerId             String
+  owner               User                  @relation(fields: [ownerId], references: [id])
   /// Gestor responsavel pela carteira. Nulo nos clientes anteriores a v12.
   /// NAO substitui `ownerId`, que segue como vinculo legado.
-  gestorId          String?
-  gestor            User?                 @relation("ClienteGestor", fields: [gestorId], references: [id])
-  tarefas           Tarefa[]
-  contasReceber     ContaReceber[]
-  followUps         FollowUp[]
-  volumetrias       VolumetriaMinima[]
-  deals             Deal[]
-  documentos        Documento[]
-  diasMovimento     ClienteDiaMovimento[]
-  enviosCertificado CertificadoEnvio[]
-  pendencias        PendenciaCompliance[]
+  gestorId            String?
+  gestor              User?                 @relation("ClienteGestor", fields: [gestorId], references: [id])
+  tarefas             Tarefa[]
+  contasReceber       ContaReceber[]
+  followUps           FollowUp[]
+  volumetrias         VolumetriaMinima[]
+  deals               Deal[]
+  documentos          Documento[]
+  diasMovimento       ClienteDiaMovimento[]
+  enviosCertificado   CertificadoEnvio[]
+  pendencias          PendenciaCompliance[]
+  /// SEGMENTO pela entidade. Preenchido a partir desta rodada; quando nulo,
+  /// vale a coluna `segmento` (enum) dos registros anteriores. Os dois
+  /// convivem porque converter a coluna enum reescreveria historico.
+  segmentoComercial   SegmentoComercial?    @relation(fields: [segmentoComercialId], references: [id])
+  segmentoComercialId String?
 
   @@index([gestorId])
+  @@index([segmentoComercialId])
+  /// ATIVOS primeiro e em ordem alfabetica, depois INATIVOS idem — a
+  /// ordenacao padrao da Carteira. O indice existe para que isso funcione
+  /// junto com paginacao, em vez de ordenar em memoria uma pagina de cada vez.
+  @@index([status, nome])
 }
 
 /// META = somente o ESPERADO. O realizado nunca e gravado aqui: vem de
@@ -602,21 +652,22 @@ model Auditoria {
 }
 
 model ContaReceber {
-  id          String             @id @default(cuid())
-  descricao   String
-  tipo        String
-  valor       Float
-  parcela     Int?
-  totalParcel Int?
-  dataVenc    DateTime
-  dataFatura  DateTime?
-  dataPago    DateTime?
-  status      ContaReceberStatus @default(PENDENTE)
-  notas       String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  clienteId   String
-  cliente     Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  id             String             @id @default(cuid())
+  descricao      String
+  tipo           String
+  valor          Float
+  parcela        Int?
+  totalParcel    Int?
+  dataVenc       DateTime
+  dataFatura     DateTime?
+  dataPago       DateTime?
+  status         ContaReceberStatus @default(PENDENTE)
+  notas          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  clienteId      String
+  cliente        Cliente            @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lancamentoBaas LancamentoBaas?
 }
 
 model FollowUp {
@@ -1178,6 +1229,12 @@ model LancamentoFinanceiro {
 
   anexos LancamentoAnexo[]
 
+  /// Origem BaaS. Duas relacoes porque um Lancamento BaaS gera DOIS
+  /// lancamentos financeiros: a receita devida a Bass Pago e a despesa do
+  /// valor residual devido ao cliente.
+  baasReceita    LancamentoBaas? @relation("LancamentoBaasReceita")
+  baasContaPagar LancamentoBaas? @relation("LancamentoBaasContaPagar")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1238,8 +1295,10 @@ model CondicaoComercial {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  historico   CondicaoComercialHistorico[]
-  lancamentos LancamentoFinanceiro[]
+  historico       CondicaoComercialHistorico[]
+  lancamentos     LancamentoFinanceiro[]
+  produtos        CondicaoProduto[]
+  lancamentosBaas LancamentoBaas[]
 
   @@index([tipo, ativo])
 }
@@ -1259,4 +1318,145 @@ model CondicaoComercialHistorico {
   createdAt     DateTime          @default(now())
 
   @@index([condicaoId, createdAt])
+}
+
+/// SEGMENTO como ENTIDADE, nao mais so um enum fechado.
+///
+/// O enum `Segmento` continua existindo e continua gravado nas colunas
+/// antigas de Cliente, Lead e Deal: converter as tres de uma vez obrigaria a
+/// reescrever historico, e um enum nao se apaga sem reescrever os dados que o
+/// usam. Entao os dois convivem — `segmentoId` e a fonte quando preenchido, e
+/// a coluna enum e a retaguarda para os registros anteriores.
+///
+/// A tabela nasce SEMEADA com os valores do enum, para que nada mude de
+/// significado no dia da migration.
+model SegmentoComercial {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  /// Chave estavel. Nos semeados, e o proprio valor do enum antigo
+  /// (CRYPTO_EXCHANGES), o que permite casar os registros legados.
+  slug      String   @unique
+  /// Inativo sai dos seletores mas NAO apaga o vinculo de quem ja o usa:
+  /// preservar o historico vale mais que limpar a lista.
+  ativo     Boolean  @default(true)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientes Cliente[]
+  leads    Lead[]
+  deals    Deal[]
+
+  @@index([ativo, ordem])
+}
+
+/// PRODUTO TARIFADO de uma condicao BaaS/White Label.
+///
+/// Antes as tarifas eram colunas fixas (`pix`, `kyc`). Isso impedia cadastrar
+/// qualquer produto novo sem migration, e o Lancamento BaaS precisa listar
+/// TODOS os produtos do parceiro — nao dois.
+///
+/// As colunas `pix` e `kyc` de CondicaoComercial ficam: ha dados nelas, e a
+/// migration as semeia como produtos. Elas deixam de ser a fonte.
+model CondicaoProduto {
+  id         String            @id @default(cuid())
+  condicaoId String
+  condicao   CondicaoComercial @relation(fields: [condicaoId], references: [id], onDelete: Cascade)
+  nome       String
+  /// Preco unitario por transacao. Sempre em reais.
+  preco      Float
+  ativo      Boolean           @default(true)
+  ordem      Int               @default(0)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([condicaoId, nome])
+  @@index([condicaoId, ativo, ordem])
+}
+
+/// LANCAMENTO BAAS — o volume mensal de um parceiro, tarifado.
+///
+/// A conta: saldo informado, menos as tarifas (preco x volume de cada
+/// produto), resulta no saldo remanescente; sobre ele incide o overprice, e o
+/// que resta e o valor residual devido ao cliente.
+///
+/// IDEMPOTENCIA: cada lancamento gera NO MAXIMO um lancamento financeiro, um
+/// titulo a receber e um titulo a pagar, amarrados por FK unica. Editar
+/// atualiza esses tres; nunca cria um segundo conjunto.
+model LancamentoBaas {
+  id         String            @id @default(cuid())
+  condicaoId String
+  condicao   CondicaoComercial @relation(fields: [condicaoId], references: [id], onDelete: Restrict)
+
+  /// Conta a que o lancamento se refere. Fotografada do cadastro no momento
+  /// do lancamento — se a identificacao do parceiro mudar depois, o
+  /// lancamento continua dizendo a qual conta se referia.
+  numeroConta       String
+  periodoInicio     DateTime @db.Date
+  periodoFim        DateTime @db.Date
+  /// Saldo da conta informado pelo colaborador. Nao e derivado de nada.
+  saldoInicial      Float
+  /// Soma de (preco x volume) de todos os produtos. Derivado, gravado para
+  /// que a lista nao precise recalcular linha a linha.
+  totalTarifas      Float
+  saldoRemanescente Float
+  /// Percentual vigente no momento do lancamento — SNAPSHOT, como os precos.
+  overpricePercent  Float?
+  overpriceValor    Float    @default(0)
+  /// Saldo remanescente menos o overprice.
+  valorCliente      Float
+
+  status     StatusLancamentoBaas @default(RASCUNHO)
+  observacao String?
+
+  /// Os tres registros gerados. Nulos enquanto RASCUNHO.
+  lancamentoId   String?               @unique
+  lancamento     LancamentoFinanceiro? @relation("LancamentoBaasReceita", fields: [lancamentoId], references: [id], onDelete: SetNull)
+  contaReceberId String?               @unique
+  contaReceber   ContaReceber?         @relation(fields: [contaReceberId], references: [id], onDelete: SetNull)
+  contaPagarId   String?               @unique
+  contaPagar     LancamentoFinanceiro? @relation("LancamentoBaasContaPagar", fields: [contaPagarId], references: [id], onDelete: SetNull)
+
+  criadoPorId String
+  criadoPor   User     @relation("LancamentoBaasCriador", fields: [criadoPorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  itens LancamentoBaasItem[]
+
+  /// Um parceiro nao lanca o MESMO periodo duas vezes.
+  @@unique([condicaoId, periodoInicio, periodoFim])
+  @@index([condicaoId, periodoInicio])
+  @@index([status])
+}
+
+/// SNAPSHOT do produto no lancamento.
+///
+/// Guarda nome, preco E volume. O preco e copiado de propósito: se a tarifa
+/// do PIX passar de R$ 0,10 para R$ 0,15, o lancamento de setembro continua
+/// valendo R$ 0,10. Apontar para `CondicaoProduto` e ler o preco de la
+/// reescreveria o historico a cada reajuste.
+model LancamentoBaasItem {
+  id               String         @id @default(cuid())
+  lancamentoBaasId String
+  lancamentoBaas   LancamentoBaas @relation(fields: [lancamentoBaasId], references: [id], onDelete: Cascade)
+  /// Produto de origem, quando ainda existe. Informativo: o calculo usa o
+  /// snapshot abaixo.
+  produtoId        String?
+  nome             String
+  preco            Float
+  volume           Int
+  total            Float
+  ordem            Int            @default(0)
+
+  @@index([lancamentoBaasId, ordem])
+}
+
+enum StatusLancamentoBaas {
+  /// Editavel, sem titulos gerados.
+  RASCUNHO
+  /// Titulos gerados. Editar recalcula e ATUALIZA os titulos.
+  LANCADO
+  /// Encerrado. Nao se edita mais: ha liquidacao envolvida.
+  FECHADO
 }

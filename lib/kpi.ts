@@ -208,17 +208,44 @@ export const TIPO_RECEITA_LABEL: Record<TipoReceitaConselho, string> = {
   BAAS: 'BaaS',
 }
 
+/**
+ * Os tipos que SOMAM no total da receita realizada.
+ *
+ * MENSALIDADES fica fora: ela já está embutida na tarifa transacional (é como
+ * a Bass Pago cobra hoje), e somá-la contaria o mesmo dinheiro duas vezes. A
+ * linha continua aparecendo como indicador de recorrência.
+ *
+ * FLOAT entra: é receita realizada e não está dentro de nenhuma outra linha.
+ */
+export const TIPOS_QUE_SOMAM: readonly TipoReceitaConselho[] = [
+  'TRANSACIONAL', 'SETUP', 'SUSTENTACAO', 'SERVICOS', 'BAAS',
+]
+
+export function somaNoTotal(tipo: TipoReceitaConselho): boolean {
+  return TIPOS_QUE_SOMAM.includes(tipo)
+}
+
 export interface ComposicaoReceita {
-  linhas: Array<{ tipo: TipoReceitaConselho; label: string; valor: number }>
+  linhas: Array<{
+    tipo: TipoReceitaConselho
+    label: string
+    valor: number
+    /**
+     * A linha entra no total? `false` só em MENSALIDADES, que já está dentro
+     * da tarifa transacional. A tela precisa saber para não somar à mão e
+     * para poder dizer ao leitor por que a soma não fecha com as linhas.
+     */
+    soma: boolean
+  }>
+  /** Soma apenas dos tipos que somam — nunca inclui Mensalidades. */
   total: number
   /**
-   * Receita lançada que não cabe em nenhum dos seis tipos — hoje, Float.
+   * Mensalidades de API, como INDICADOR de recorrência.
    *
-   * Existe para que o total não minta: se uma receita lançada simplesmente
-   * desaparecesse da composição, quem somasse as linhas e comparasse com o
-   * faturamento acharia diferença e desconfiaria das duas telas.
+   * Fora do total de propósito. É a mesma parcela que compõe o MRR, e já está
+   * embutida na receita tarifária: somá-la aqui duplicaria o dinheiro.
    */
-  foraDaComposicao: number
+  mensalidadesIndicador: number
 }
 
 /**
@@ -228,12 +255,28 @@ export interface ComposicaoReceita {
  * nome que o Conselho usa. Mostrar "Tarifária" ao lado de "Transacional"
  * duplicaria o mesmo dinheiro na composição.
  *
- * A PARTIÇÃO É EXCLUSIVA — cada real entra em exatamente uma linha. A regra,
- * aplicada em ordem sobre os lançamentos de receita do período:
+ * ── A REGRA QUE ESTA FUNÇÃO EXISTE PARA CUMPRIR ─────────────────────────
+ *
+ * AS MENSALIDADES DE API JÁ ESTÃO DENTRO DA TARIFA TRANSACIONAL. É assim que
+ * a Bass Pago cobra hoje: a mensalidade é apurada junto com o transacional, e
+ * o que chega ao Lançamento Diário como `receitaTarifaria` já a contém.
+ *
+ * Por isso a linha "Mensalidades" é um INDICADOR, e NÃO é somada ao total:
+ * somá-la contaria o mesmo dinheiro duas vezes. O número aparece porque a
+ * recorrência precisa ser visível — é a base do MRR —, mas entra marcado como
+ * fora da soma.
+ *
+ * Omitir a linha seria pior: o executivo pergunta quanto é recorrente, e a
+ * resposta não estaria em lugar nenhum da composição.
+ *
+ * ── A PARTIÇÃO ──────────────────────────────────────────────────────────
+ *
+ * Cada real dos LANÇAMENTOS entra em exatamente uma linha. A regra, aplicada
+ * em ordem sobre os lançamentos de receita do período:
  *
  *   1. categoria com natureza SETUP        → Setup
  *   2. categoria com natureza SUSTENTACAO  → Sustentação
- *   3. categoria com natureza FLOAT        → fora da composição
+ *   3. categoria com natureza FLOAT        → Float
  *   4. vinculado a uma condição BaaS       → BaaS
  *   5. o que sobra                         → Serviços
  *
@@ -241,10 +284,8 @@ export interface ComposicaoReceita {
  * de um BaaS é setup, não "receita de BaaS". Sem essa ordem, a mesma linha
  * contaria nas duas.
  *
- * Fora dos lançamentos, duas linhas vêm de fonte própria:
- *   TRANSACIONAL  do Lançamento Diário (`receitaTarifaria`), a fonte oficial;
- *   MENSALIDADES  do cadastro (API mensal de parceiros + da carteira), que é
- *                 a mesma parcela do MRR — nunca lançada como receita.
+ * TRANSACIONAL vem de fonte própria — o Lançamento Diário, que é a fonte
+ * oficial de `receitaTarifaria`.
  *
  * SUSTENTAÇÃO tem derivação: sem lançamento no período, entra a sustentação
  * vigente das condições. Nunca as duas, que é onde a dupla contagem apareceria.
@@ -279,13 +320,13 @@ export async function composicaoReceitaConselho(periodo: string): Promise<Compos
   let sustentacaoLancada = 0
   let baas = 0
   let servicos = 0
-  let fora = 0
+  let floatLancado = 0
 
   for (const l of lancamentos) {
     const n = l.categoria.natureza
     if (n === 'SETUP') { setup += l.valor; continue }
     if (n === 'SUSTENTACAO') { sustentacaoLancada += l.valor; continue }
-    if (n === 'FLOAT') { fora += l.valor; continue }
+    if (n === 'FLOAT') { floatLancado += l.valor; continue }
     if (l.condicaoId && tipoDaCondicao.get(l.condicaoId) === 'BAAS') { baas += l.valor; continue }
     servicos += l.valor
   }
@@ -295,23 +336,33 @@ export async function composicaoReceitaConselho(periodo: string): Promise<Compos
     0,
   )
 
+  const mensalidades = mrr.apiMensalParceiros + mrr.apiMensalCarteira
+
   const valores: Record<TipoReceitaConselho, number> = {
     TRANSACIONAL: kpis.receitaTarifaria ?? 0,
     SETUP: setup,
-    MENSALIDADES: mrr.apiMensalParceiros + mrr.apiMensalCarteira,
+    // INDICADOR, não parcela: já está embutida no transacional acima.
+    MENSALIDADES: mensalidades,
     SUSTENTACAO: sustentacaoLancada > 0 ? sustentacaoLancada : sustentacaoCadastro,
-    SERVICOS: servicos,
+    // Serviços recebe o Float junto: as duas são receita realizada que não
+    // pertence a nenhuma das outras linhas, e o Conselho tem seis tipos —
+    // criar um sétimo para o Float contrariaria a lista oficial.
+    SERVICOS: servicos + floatLancado,
     BAAS: baas,
   }
 
   const linhas = TIPOS_RECEITA_CONSELHO.map((t) => ({
-    tipo: t, label: TIPO_RECEITA_LABEL[t], valor: valores[t],
+    tipo: t,
+    label: TIPO_RECEITA_LABEL[t],
+    valor: valores[t],
+    soma: somaNoTotal(t),
   }))
 
   return {
     linhas,
-    total: linhas.reduce((a, l) => a + l.valor, 0),
-    foraDaComposicao: fora,
+    // Só o que soma. Mensalidades fica de fora para não contar duas vezes.
+    total: linhas.filter((l) => l.soma).reduce((a, l) => a + l.valor, 0),
+    mensalidadesIndicador: mensalidades,
   }
 }
 

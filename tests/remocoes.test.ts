@@ -178,28 +178,42 @@ test('a rota antiga de métricas operacionais não é mais oferecida', () => {
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
 
-test('RECEITA / FINANCEIRO tem os nove menus da especificação, nessa ordem', () => {
-  // Metas e Lançamento Diário vieram da antiga seção RECEITA e abrem o
-  // ambiente: o objetivo e o insumo diário que o alimenta. Duas seções
-  // separadas afastavam a meta do financeiro que a realiza.
+test('RECEITA tem Metas, Lançamento Diário e Lançamento BaaS, nessa ordem', () => {
+  // RECEITA é o que a operação PRODUZ — o objetivo, o insumo diário e o
+  // faturamento dos parceiros. FINANCEIRO é o que se faz com isso. Misturar
+  // as duas fazia a meta aparecer no meio das contas a pagar.
+  const receita = MODULES.find((m) => m.key === 'receita')!
+  assert.deepEqual(
+    receita.features.filter((f) => f.enabled).map((f) => f.label),
+    ['Metas', 'Lançamento Diário', 'Lançamento BaaS'],
+  )
+})
+
+test('FINANCEIRO tem os sete menus da especificação, nessa ordem', () => {
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
-      'Metas', 'Lançamento Diário',
       'Visão Geral', 'Lançamentos', 'Contas a Receber', 'Contas a Pagar',
       'Categorias', 'Fornecedores', 'Condições BaaS',
     ],
   )
 })
 
-test('a seção RECEITA separada não existe mais', () => {
-  assert.ok(!MODULES.some((m) => m.key === 'receita'))
-  // As FUNÇÕES continuam com as mesmas chaves e rotas: trocá-las invalidaria
-  // permissões gravadas e links salvos sem ganho nenhum.
-  const chaves = activeFeatures().map((f) => f.key)
-  assert.ok(chaves.includes('receita.metas'))
-  assert.ok(chaves.includes('receita.forecast'))
+test('Metas e Lançamento Diário NÃO estão em Financeiro', () => {
+  const financeiro = MODULES.find((m) => m.key === 'financeiro')!
+  const rotulos = financeiro.features.map((f) => f.label)
+  assert.ok(!rotulos.includes('Metas'))
+  assert.ok(!rotulos.includes('Lançamento Diário'))
+
+  // As CHAVES e ROTAS das funções não mudaram ao voltarem para RECEITA:
+  // trocá-las invalidaria permissões gravadas e links salvos.
+  const metas = activeFeatures().find((f) => f.key === 'receita.metas')!
+  const diario = activeFeatures().find((f) => f.key === 'receita.forecast')!
+  assert.equal(metas.route, '/dashboard/metas')
+  assert.equal(diario.route, '/dashboard/forecast')
+  assert.equal(metas.moduleKey, 'receita')
+  assert.equal(diario.moduleKey, 'receita')
 })
 
 test('Contas a Pagar e Contas a Receber são menus e rotas distintos', () => {
@@ -228,15 +242,40 @@ test('a Visão Geral não engole os menus abaixo dela', () => {
   assert.deepEqual(daRota('/dashboard/financeiro/condicoes-baas'), ['financeiro.condicoes'])
 })
 
-test('cada menu financeiro tem um prefixo de API só seu', () => {
-  const apis = activeFeatures()
-    .filter((f) => f.moduleKey === 'financeiro')
-    .flatMap((f) => f.api ?? [])
-  assert.equal(new Set(apis).size, apis.length, 'há prefixo de API repetido no Financeiro')
-  // Nenhum pode ser prefixo de outro, senão volta o problema do casamento.
-  for (const a of apis) {
-    for (const b of apis) {
-      if (a !== b) assert.ok(!b.startsWith(a + '/'), `${a} engole ${b}`)
+test('nenhuma FUNÇÃO engole o prefixo de API de outra', () => {
+  // O risco real: duas funções diferentes cujos prefixos se contêm. Aí a
+  // resolução por rota mais específica decide qual permissão vale, e a
+  // resposta deixa de ser óbvia. Sub-rotas da MESMA função são esperadas —
+  // `checkAccess` casa por prefixo, e o pai protege o filho.
+  const porFuncao = activeFeatures().map((f) => ({ key: f.key, apis: f.api ?? [] }))
+
+  const todas = porFuncao.flatMap((f) => f.apis)
+  assert.equal(new Set(todas).size, todas.length, 'há prefixo de API repetido entre funções')
+
+  /**
+   * Prefixo aninhado é PERMITIDO — mas só quando quem o reivindica é a função
+   * de ROTA MAIS LONGA, que é justamente quem `checkAccess` escolhe.
+   *
+   * É o caso da Lixeira sob Leads e dos Funis sob o Pipeline: a sub-rota
+   * pertence à função mais específica, e por isso a permissão que vale é a
+   * dela. O que seria bug é o contrário — a função mais GENÉRICA reivindicar
+   * o caminho mais profundo, porque aí a resolução escolheria a específica e
+   * ignoraria a permissão que o autor pensou estar aplicando.
+   */
+  const comRota = activeFeatures().map((f) => ({ key: f.key, route: f.route, apis: f.api ?? [] }))
+
+  for (const a of comRota) {
+    for (const b of comRota) {
+      if (a.key === b.key) continue
+      for (const pa of a.apis) {
+        for (const pb of b.apis) {
+          if (!pb.startsWith(pa + '/')) continue
+          assert.ok(
+            b.route.length > a.route.length,
+            `${b.key} (${pb}) aninha sob ${a.key} (${pa}), mas não é a função mais específica`,
+          )
+        }
+      }
     }
   }
 })
@@ -310,12 +349,17 @@ test('Contas a Receber e Contas a Pagar continuam menus distintos', () => {
   assert.ok(rotulos.includes('Contas a Pagar'))
 })
 
-test('Metas e Lançamento Diário abrem o ambiente financeiro', () => {
-  const rotulos = navigationFor('ADMIN')
-    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
-  assert.equal(rotulos.length, 9)
-  assert.equal(rotulos[0], 'Metas')
-  assert.equal(rotulos[1], 'Lançamento Diário')
+test('RECEITA e FINANCEIRO são seções SEPARADAS na sidebar', () => {
+  const nav = navigationFor('ADMIN')
+  const receita = nav.find((s) => s.key === 'receita')!
+  const financeiro = nav.find((s) => s.key === 'financeiro')!
+
+  assert.equal(receita.label, 'RECEITA')
+  assert.equal(financeiro.label, 'FINANCEIRO')
+  assert.equal(receita.items.length, 3)
+  assert.equal(financeiro.items.length, 7)
+  // RECEITA vem ANTES: é o que produz o que o Financeiro administra.
+  assert.ok(nav.indexOf(receita) < nav.indexOf(financeiro))
 })
 
 /* ── Permissões: nenhuma chave aponta para o vazio ───────────────────────── */
@@ -393,7 +437,7 @@ test('as seções da sidebar saem na ordem da especificação', () => {
   const secoes = navigationFor('ADMIN').map((s) => s.key)
   assert.deepEqual(
     secoes,
-    ['executivo', 'carteira', 'operacoes', 'comercial', 'financeiro', 'admin'],
+    ['executivo', 'carteira', 'operacoes', 'comercial', 'receita', 'financeiro', 'admin'],
   )
 })
 

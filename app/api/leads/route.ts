@@ -13,7 +13,15 @@ export async function GET(request: NextRequest) {
   const canal = searchParams.get('canal')
   const segmento = searchParams.get('segmento')
 
-  const where: Record<string, unknown> = {}
+  /**
+   * A LIXEIRA É INVISÍVEL AQUI.
+   *
+   * `deletedAt: null` é o primeiro filtro de toda consulta normal de lead: um
+   * lead na lixeira não aparece na lista, não aparece na busca e não pode ser
+   * escolhido para um card novo. Quem o encontra é a Lixeira, que é dos
+   * Diretores.
+   */
+  const where: Record<string, unknown> = { deletedAt: null }
   if (status) where.status = status
   if (canal) where.canal = canal
   if (segmento) where.segmento = segmento

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import PageHeader from '@/components/dashboard/PageHeader'
 import Panel, { PanelHeader } from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
@@ -8,7 +8,10 @@ import Badge, { type BadgeTone } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td } from '@/components/ui/DataTable'
 import { formatDateTime } from '@/lib/utils'
-import { CERTIFICADOS_POR_VERSAO, ENVIO_TIPO_LABELS, quantidadeDoTipo, type EnvioTipo } from '@/lib/certificados'
+import {
+  CERTIFICADOS_POR_VERSAO, ENVIO_TIPO_LABELS, quantidadeDoTipo,
+  compararIdentificacao, envioCasaBusca, type EnvioTipo,
+} from '@/lib/certificados'
 
 interface Versao {
   id: string
@@ -86,6 +89,8 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
   const [senhaRevelada, setSenhaRevelada] = useState<{ referencia: string; copiada: boolean } | null>(null)
+  /** Busca por razão social e por NÚMERO do certificado. */
+  const [busca, setBusca] = useState('')
 
   useEffect(() => {
     let vivo = true
@@ -182,6 +187,29 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
   const lbl = 'block t-label text-subtle mb-1.5'
 
   const versoesComEstoque = versoes.filter((v) => v.disponiveis > 0 && v.status !== 'CANCELADA')
+
+  /**
+   * ORDEM NUMÉRICA de verdade.
+   *
+   * A identificação é texto, e a ordem alfabética produzia 1, 10, 11, 2, 50 —
+   * a versão "2" aparecia depois de "11", e a lista ficava ilegível
+   * justamente quando havia versões suficientes para precisar de ordem.
+   */
+  const versoesOrdenadas = useMemo(
+    () => [...versoes].sort((a, b) => compararIdentificacao(a.identificacao, b.identificacao)),
+    [versoes],
+  )
+
+  /** Busca por razão social, número do certificado ou identificação da versão. */
+  const enviosVisiveis = useMemo(
+    () => envios.filter((e) => envioCasaBusca({
+      destinatario: e.destinatario,
+      numeroInicial: e.numeroInicial,
+      numeroFinal: e.numeroFinal,
+      versaoIdentificacao: e.versao.identificacao,
+    }, busca)),
+    [envios, busca],
+  )
   const totalEstoque = versoes.reduce((s, v) => s + v.disponiveis, 0)
 
   return (
@@ -221,7 +249,7 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
         </div>
       </Panel>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap items-center">
         {(['envios', 'versoes'] as const).map((a) => (
           <button key={a} onClick={() => setAba(a)}
             className={`px-3.5 py-2 rounded-lg t-sm font-medium border transition-colors duration-[180ms] ${
@@ -230,13 +258,29 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
             {a === 'envios' ? 'Envios' : 'Versões'}
           </button>
         ))}
+
+        {/* BUSCA por razão social e por NÚMERO do certificado.
+            O número é procurado DENTRO do intervalo do envio: quem tem o
+            certificado 37 na mão quer saber para quem ele foi, e o registro
+            que o contém diz "30 a 40" — não existe uma linha com "37". */}
+        {aba === 'envios' && (
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar razão social ou número do certificado…"
+            className="bp-field flex-1 min-w-[16rem]"
+          />
+        )}
       </div>
 
       {carregando ? <p className="t-sm text-subtle">Carregando...</p> : aba === 'envios' ? (
-        envios.length === 0 ? (
+        enviosVisiveis.length === 0 ? (
           <Panel padded={false}>
-            <EmptyState title="Nenhum envio registrado"
-              description="Selecione o cliente, a versão e o intervalo para registrar a entrega de certificados." />
+            <EmptyState
+              title={busca ? 'Nenhum envio corresponde à busca' : 'Nenhum envio registrado'}
+              description={busca
+                ? `Nada encontrado para "${busca}". A busca cobre razão social, identificação da versão e número do certificado dentro do intervalo entregue.`
+                : 'Selecione o cliente, a versão e o intervalo para registrar a entrega de certificados.'} />
           </Panel>
         ) : (
           <TableShell>
@@ -246,7 +290,7 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
                 <Th align="right">Qtd.</Th><Th>Enviado</Th><Th align="right">Ações</Th>
               </HeadRow></THead>
               <tbody>
-                {envios.map((e) => (
+                {enviosVisiveis.map((e) => (
                   <Row key={e.id} className={e.status === 'CANCELADO' ? 'opacity-60' : undefined}>
                     <Td className="text-fg font-medium">
                       {e.destinatario}
@@ -292,7 +336,7 @@ export default function CertificadosClient({ podeGerenciar, podeRevelar }: {
                 <Th>Criada</Th><Th align="right">Ações</Th>
               </HeadRow></THead>
               <tbody>
-                {versoes.map((v) => {
+                {versoesOrdenadas.map((v) => {
                   const s = STATUS_VERSAO[v.status] ?? STATUS_VERSAO.ATIVA
                   return (
                     <Row key={v.id}>

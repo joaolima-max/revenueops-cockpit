@@ -44,38 +44,40 @@ export function validarLead(e: EntradaLead): ErroValidacao[] {
 export const CAMPOS_OBRIGATORIOS_LEAD = ['company', 'name'] as const
 
 /* ========================================================================= *
- * EXCLUSÃO
+ * LIXEIRA
  * ========================================================================= */
 
-export interface Bloqueio {
-  /** Quantos cards de pipeline impedem a exclusão. */
-  cards: number
-  mensagem: string
+/**
+ * Excluir um lead passou a significar MOVER PARA A LIXEIRA.
+ *
+ * `bloqueioDeExclusao` saiu junto com a exclusão física. Ele existia para
+ * recusar a exclusão de um lead com cards, porque apagar levaria o histórico
+ * de pipeline — movimentações, comentários, desfecho. A lixeira não leva nada:
+ * o registro sai de circulação e o passado continua legível, então não há mais
+ * o que bloquear.
+ *
+ * O que a lixeira garante, e o que estas funções descrevem.
+ */
+
+/** O lead está na lixeira? */
+export function naLixeira(lead: { deletedAt?: Date | string | null }): boolean {
+  return !!lead.deletedAt
 }
 
 /**
- * A exclusão do lead está bloqueada?
+ * O filtro que TODA consulta normal de lead precisa carregar.
  *
- * COMENTÁRIOS E ATIVIDADES não bloqueiam: são registros SOBRE o lead, sem
- * vida própria, e o banco os apaga em cascata junto com ele.
- *
- * CARDS DE PIPELINE bloqueiam. O card carrega histórico — movimentações,
- * comentários, desfecho — e apagá-lo junto com o lead destruiria esse
- * histórico sem ninguém ter pedido. Também não serve deixar o card órfão com
- * `leadId` nulo: desde a v17 todo card nasce de um lead existente, e um card
- * sem lead é um registro que a própria tela não sabe explicar.
- *
- * Então a exclusão é recusada com a razão e a contagem, e quem decide o que
- * fazer com o histórico é a pessoa — removendo ou transferindo os cards antes.
+ * Exportado como objeto para que o esquecimento fique visível: uma consulta
+ * sem `...FILTRO_ATIVOS` devolve leads da lixeira, e é um erro silencioso —
+ * a lista simplesmente volta a mostrar o que foi descartado.
  */
-export function bloqueioDeExclusao(cards: number): Bloqueio | null {
-  if (cards === 0) return null
-  return {
-    cards,
-    mensagem:
-      `Este lead tem ${cards} card${cards === 1 ? '' : 's'} no Pipeline. ` +
-      `Excluir o lead apagaria o histórico desse${cards === 1 ? '' : 's'} card${cards === 1 ? '' : 's'} ` +
-      `— movimentações, comentários e desfecho. Remova ou transfira ` +
-      `${cards === 1 ? 'o card' : 'os cards'} antes de excluir o lead.`,
-  }
+export const FILTRO_ATIVOS = { deletedAt: null } as const
+
+/** Texto de quem e quando descartou, para a Lixeira mostrar. */
+export function descarteTexto(
+  lead: { deletedAt?: Date | string | null; deletedBy?: { name: string } | null },
+): string {
+  if (!lead.deletedAt) return '—'
+  const quando = new Date(lead.deletedAt).toLocaleString('pt-BR', { timeZone: 'UTC' })
+  return lead.deletedBy ? `${quando} por ${lead.deletedBy.name}` : quando
 }

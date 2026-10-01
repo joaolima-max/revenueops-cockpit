@@ -86,8 +86,19 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
    * nenhuma. Agora só sai da página quando a exclusão aconteceu de fato, e a
    * recusa aparece com o motivo (o 409 explica quantos cards bloqueiam).
    */
+  /**
+   * Excluir virou MOVER PARA A LIXEIRA.
+   *
+   * O texto da confirmação diz isso: "não pode ser desfeita" era verdade na
+   * exclusão física e deixou de ser — a ação é reversível por um Diretor, e
+   * prometer o contrário faria o usuário hesitar sem motivo.
+   */
   async function handleDelete() {
-    if (!confirm(`Excluir o lead ${lead.company ? `${lead.company} · ` : ''}${lead.name}? Esta ação não pode ser desfeita.`)) return
+    if (!confirm(
+      `Mover para a lixeira: ${lead.company ? `${lead.company} · ` : ''}${lead.name}?\n\n`
+      + 'O lead sai da lista, da busca e do seletor do Pipeline. O histórico é '
+      + 'preservado, e um Diretor pode restaurá-lo pela Lixeira de Leads.',
+    )) return
 
     setErroExclusao(null)
     setExcluindo(true)
@@ -134,7 +145,7 @@ export default function LeadDetailClient({ lead: initial, role }: { lead: Lead; 
               disabled={excluindo}
               className="px-4 py-2 bg-neg/10 text-neg border border-neg/25 rounded-lg text-sm hover:bg-neg/10 disabled:opacity-50"
             >
-              {excluindo ? 'Excluindo…' : 'Excluir'}
+              {excluindo ? 'Movendo…' : 'Mover para a lixeira'}
             </button>
           )}
         </div>

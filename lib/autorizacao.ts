@@ -16,23 +16,68 @@
 
 import { prisma } from '@/lib/prisma'
 import type { TokenPayload } from '@/lib/auth'
-import { hasPermission, permissaoRestrita } from '@/lib/permissions'
+import { hasPermission, permissaoRestrita, ehSocio, podeVerLixeira } from '@/lib/permissions'
 
-/** As permissões GRAVADAS do usuário, ou null se ele não existe ou está inativo. */
-export async function permissoesDoBanco(userId: string): Promise<string[] | null> {
-  const u = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { active: true, permissoes: true },
-  })
-  if (!u || !u.active) return null
-  if (!u.permissoes) return []
+/**
+ * O que o banco diz sobre o usuário AGORA: sócio, hierarquia e permissões.
+ *
+ * Uma consulta por verificação, por chave primária, numa tabela pequena. É o
+ * preço de poder revogar na hora — e é por isso que o Conselho não depende do
+ * token, que viveria sete dias desatualizado.
+ */
+export interface EstadoDoUsuario {
+  isPartner: boolean
+  hierarquia: string | null
+  departamento: string | null
+  permissoes: string[]
+}
+
+function listaDe(bruto: string | null): string[] {
+  if (!bruto) return []
   try {
-    const lista = JSON.parse(u.permissoes)
+    const lista = JSON.parse(bruto)
     return Array.isArray(lista) ? lista.filter((x): x is string => typeof x === 'string') : []
   } catch {
     // Lista corrompida é ausência de permissão, nunca permissão total.
     return []
   }
+}
+
+export async function estadoDoUsuario(userId: string): Promise<EstadoDoUsuario | null> {
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      active: true, permissoes: true, isPartner: true,
+      hierarquia: true, departamento: true,
+    },
+  })
+  if (!u || !u.active) return null
+  return {
+    isPartner: u.isPartner,
+    hierarquia: u.hierarquia,
+    departamento: u.departamento,
+    permissoes: listaDe(u.permissoes),
+  }
+}
+
+/** O usuário da sessão é SÓCIO? É esta a autorização do Conselho. */
+export async function socio(session: TokenPayload | null): Promise<boolean> {
+  if (!session) return false
+  const e = await estadoDoUsuario(session.userId)
+  return ehSocio(e)
+}
+
+/** O usuário da sessão é DIRETOR? É esta a autorização da Lixeira de Leads. */
+export async function diretor(session: TokenPayload | null): Promise<boolean> {
+  if (!session) return false
+  const e = await estadoDoUsuario(session.userId)
+  return podeVerLixeira(e)
+}
+
+/** As permissões GRAVADAS do usuário, ou null se ele não existe ou está inativo. */
+export async function permissoesDoBanco(userId: string): Promise<string[] | null> {
+  const e = await estadoDoUsuario(userId)
+  return e?.permissoes ?? null
 }
 
 /**

@@ -10,7 +10,32 @@ import StatTile from '@/components/ui/StatTile'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import { figuraMoeda } from '@/lib/format-financeiro'
 import { formatDate, formatMesRef } from '@/lib/utils'
-import { validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO } from '@/lib/arquivos'
+import {
+  validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO, TAMANHO_MAX,
+} from '@/lib/arquivos'
+
+/** MIMEs que o navegador abre inline — o resto só faz sentido baixar. */
+const VISUALIZAVEIS = [
+  'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+]
+
+/** Tipo em linguagem de gente: "PDF", "Imagem JPEG". */
+function rotuloTipo(mime: string): string {
+  if (mime === 'application/pdf') return 'PDF'
+  if (mime.startsWith('image/')) return `Imagem ${mime.slice(6).toUpperCase()}`
+  if (mime.includes('spreadsheet') || mime.includes('excel')) return 'Planilha'
+  if (mime.includes('word')) return 'Documento'
+  if (mime === 'text/csv') return 'CSV'
+  return mime || 'arquivo'
+}
+
+/** Tamanho com a unidade que o número pede: 840 KB, 2,4 MB. */
+function tamanhoLegivel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(0)} KB`
+  return `${(kb / 1024).toFixed(1).replace('.', ',')} MB`
+}
 
 type Tipo = 'RECEITA' | 'DESPESA'
 type Periodicidade = 'UNICA' | 'RECORRENTE' | 'PARCELADA'
@@ -115,6 +140,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   const [anexosDe, setAnexosDe] = useState<Lancamento | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [erroAnexo, setErroAnexo] = useState('')
+  /** Nome do arquivo em upload — o progresso que o fetch não dá. */
+  const [nomeEnviando, setNomeEnviando] = useState('')
 
   // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
   // `.then`, e `vivo` evita escrever em componente já desmontado.
@@ -284,6 +311,7 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
     if (problema) { setErroAnexo(problema); e.target.value = ''; return }
 
     setEnviando(true)
+    setNomeEnviando(arquivo.name)
     const fd = new FormData()
     fd.append('arquivo', arquivo)
     const res = await fetch(`/api/financeiro/lancamentos/${anexosDe.id}/anexos`, {
@@ -301,12 +329,27 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       }
     }
     setEnviando(false)
+    setNomeEnviando('')
     e.target.value = ''
   }
 
-  async function baixar(lancamentoId: string, anexoId: string) {
-    const res = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/anexos/${anexoId}`)
-    if (!res.ok) { setErroAnexo('Não foi possível gerar o link.'); return }
+  /**
+   * Abre ou baixa o anexo.
+   *
+   * `baixar=false` ABRE o arquivo numa aba: o caso comum de um comprovante é
+   * olhar, não guardar. A URL assinada vinha sempre com `download: true`, e o
+   * efeito era que nenhuma foto e nenhum PDF podiam ser visualizados.
+   */
+  async function abrirAnexo(lancamentoId: string, anexoId: string, baixar: boolean) {
+    setErroAnexo('')
+    const res = await fetch(
+      `/api/financeiro/lancamentos/${lancamentoId}/anexos/${anexoId}${baixar ? '?download=1' : ''}`,
+    )
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setErroAnexo(d.error ?? 'Não foi possível gerar o link do arquivo.')
+      return
+    }
     const d = await res.json()
     window.open(d.url, '_blank', 'noopener')
   }
@@ -697,12 +740,21 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
               ) : (
                 <ul className="divide-y divide-line">
                   {anexosDe.anexos.map((a) => (
-                    <li key={a.id} className="py-2.5 flex items-center gap-3">
-                      <span className="t-sm text-fg flex-1 bp-truncate">{a.documento.nome}</span>
-                      <span className="t-mono text-subtle">
-                        {(a.documento.tamanho / 1024).toFixed(0)} KB
+                    <li key={a.id} className="py-2.5 flex items-center gap-3 flex-wrap">
+                      <span className="min-w-0 flex-1">
+                        <span className="block t-sm text-fg bp-truncate">{a.documento.nome}</span>
+                        {/* TIPO e TAMANHO: o que o usuário precisa para saber
+                            se é o arquivo certo antes de abrir. */}
+                        <span className="block t-label text-subtle">
+                          {rotuloTipo(a.documento.mime)} · {tamanhoLegivel(a.documento.tamanho)}
+                        </span>
                       </span>
-                      <Button size="sm" onClick={() => baixar(anexosDe.id, a.id)}>Baixar</Button>
+                      {VISUALIZAVEIS.includes(a.documento.mime) && (
+                        <Button size="sm" onClick={() => abrirAnexo(anexosDe.id, a.id, false)}>
+                          Visualizar
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => abrirAnexo(anexosDe.id, a.id, true)}>Baixar</Button>
                       {podeGerenciar && (
                         <Button size="sm" variant="danger" onClick={() => removerAnexo(anexosDe.id, a)}>
                           Remover
@@ -716,14 +768,23 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
               {podeGerenciar && (
                 <div className="pt-2">
                   <label className={lbl} htmlFor="l-arquivo">Anexar arquivo</label>
+                  {/* `accept` filtra o seletor do sistema pelos formatos que o
+                      servidor aceita — sem isso o usuário escolhe um .mov e
+                      descobre a recusa depois do upload inteiro. */}
                   <input id="l-arquivo" type="file" disabled={enviando || cheio} onChange={anexar}
+                    accept={EXTENSOES_ACEITAS.map((e) => `.${e}`).join(',')}
                     className="t-sm text-muted disabled:opacity-40" />
                   <p className="t-label text-subtle mt-1.5">
                     {cheio
                       ? `Limite de ${MAX_ANEXOS_LANCAMENTO} anexos atingido. Remova um arquivo para enviar outro.`
-                      : `Aceitos: ${EXTENSOES_ACEITAS.join(', ')}. Máximo de ${MAX_ANEXOS_LANCAMENTO} por lançamento.`}
-                    {enviando && ' Enviando…'}
+                      : `Fotos (JPG, PNG, WEBP) e PDF, entre outros: ${EXTENSOES_ACEITAS.join(', ')}. `
+                        + `Máximo de ${MAX_ANEXOS_LANCAMENTO} por lançamento, até ${(TAMANHO_MAX / 1024 / 1024).toFixed(0)} MB cada.`}
                   </p>
+                  {enviando && (
+                    <p className="t-sm text-accent-soft mt-1.5" role="status">
+                      Enviando {nomeEnviando}…
+                    </p>
+                  )}
                 </div>
               )}
             </div>

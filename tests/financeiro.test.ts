@@ -19,6 +19,11 @@ import {
 // O limite de anexos mora em lib/arquivos.ts: a tela de Lancamentos precisa
 // dele no navegador, e lib/financeiro.ts importa Prisma.
 import { limiteAnexosAtingido, MAX_ANEXOS_LANCAMENTO } from '../lib/arquivos'
+// `lib/kpi.ts` tambem importa Prisma; aqui so entram as constantes e a regra
+// de soma, que sao puras.
+import {
+  somaNoTotal, TIPOS_QUE_SOMAM, TIPOS_RECEITA_CONSELHO, TIPO_RECEITA_LABEL,
+} from '../lib/kpi'
 
 /**
  * A mesma soma que `calcularMrr` faz, sobre parcelas já carregadas.
@@ -280,4 +285,45 @@ test('o quinto anexo é recusado, com explicação', () => {
 test('o total materializado de um parcelado é a soma das parcelas', () => {
   const linhas = expandirLancamento('PARCELADA', D('2026-01-10'), 250, { totalParcelas: 12 })
   assert.equal(linhas.reduce((a, l) => a + l.valor, 0), 3_000)
+})
+
+/* ========================================================================= *
+ * RECEITA REALIZADA × MRR — a dupla contagem
+ * ========================================================================= */
+
+test('MENSALIDADES nao soma no total da receita do Conselho', () => {
+  // As mensalidades de API ja estao embutidas na tarifa transacional — e
+  // assim que a Bass Pago cobra hoje. Soma-las contaria o mesmo dinheiro
+  // duas vezes. A linha continua aparecendo como indicador de recorrencia.
+  assert.equal(somaNoTotal('MENSALIDADES'), false)
+})
+
+test('as outras cinco linhas SOMAM', () => {
+  for (const t of ['TRANSACIONAL', 'SETUP', 'SUSTENTACAO', 'SERVICOS', 'BAAS'] as const) {
+    assert.equal(somaNoTotal(t), true, `${t} deveria somar`)
+  }
+})
+
+test('os seis tipos do Conselho, com os rotulos da especificacao', () => {
+  assert.deepEqual(
+    TIPOS_RECEITA_CONSELHO.map((t) => TIPO_RECEITA_LABEL[t]),
+    ['Transacional', 'Setup', 'Mensalidades', 'Sustentação', 'Serviços', 'BaaS'],
+  )
+})
+
+test('TARIFARIA nao aparece como tipo separado — Transacional E a tarifaria', () => {
+  // Mostrar as duas duplicaria o mesmo dinheiro na composicao.
+  for (const t of TIPOS_RECEITA_CONSELHO) {
+    assert.ok(
+      !/tarif/i.test(TIPO_RECEITA_LABEL[t]),
+      `${t} aparece como "${TIPO_RECEITA_LABEL[t]}" ao lado de Transacional`,
+    )
+  }
+})
+
+test('TIPOS_QUE_SOMAM e subconjunto proprio dos seis tipos', () => {
+  assert.equal(TIPOS_QUE_SOMAM.length, TIPOS_RECEITA_CONSELHO.length - 1)
+  for (const t of TIPOS_QUE_SOMAM) {
+    assert.ok(TIPOS_RECEITA_CONSELHO.includes(t))
+  }
 })

@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatDate, LEAD_STATUS_LABELS, SEGMENTO_CRM_LABELS, CANAL_LABELS, cn } from '@/lib/utils'
@@ -27,7 +29,9 @@ const FUNNEL_TEXT: Record<string, string> = {
   NEGOCIACAO: 'text-accent-soft', GANHO: 'text-pos', PERDIDO: 'text-neg',
 }
 
-export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) {
+export default function LeadsClient(
+  { leads: initialLeads, ehDiretor = false }: { leads: Lead[]; ehDiretor?: boolean },
+) {
   const router = useRouter()
   const [leads, setLeads] = useState(initialLeads)
   const [search, setSearch] = useState('')
@@ -75,7 +79,16 @@ export default function LeadsClient({ leads: initialLeads }: { leads: Lead[] }) 
       <PageHeader
         title="Leads"
         sub={`${filtered.length} leads · ${ganhos} ganhos`}
-        actions={<Button variant="primary" onClick={() => setShowModal(true)}>Novo lead</Button>}
+        actions={
+          <span className="inline-flex items-center gap-2">
+            {/* A entrada da LIXEIRA só aparece para DIRETORES. Mostrar o link
+                e barrar na página seria oferecer uma porta fechada. */}
+            {ehDiretor && (
+              <Link href="/dashboard/leads/lixeira"><Button>Lixeira</Button></Link>
+            )}
+            <Button variant="primary" onClick={() => setShowModal(true)}>Novo lead</Button>
+          </span>
+        }
       />
 
       <Panel padded={false}>

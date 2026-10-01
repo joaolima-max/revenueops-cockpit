@@ -13,34 +13,47 @@ import {
   MODELO_OPERACIONAL_LABELS,
   SEGMENTO_CRM_LABELS,
 } from '@/lib/utils'
-import MovimentoDias from '@/components/carteira/MovimentoDias'
-import { serieDoCliente, type EstadoDia } from '@/lib/carteira'
+import { STATUS_CLIENTE, STATUS_CLIENTE_LABEL } from '@/lib/clientes'
+import GerenciarSegmentos from '@/components/carteira/GerenciarSegmentos'
 
 /**
- * CADASTRO COMERCIAL ENXUTO (§2).
+ * CARTEIRA DE CLIENTES.
  *
- * São oito campos: nome, CNPJ, modelo operacional, e-mail, telefone,
- * segmento, data de fechamento e mensalidade de API. Saíram os campos de
- * expectativa financeira, o Score de Risco e a caixa de marcação "Operações".
+ * Campos do cadastro: nome, CNPJ, modelo operacional, e-mail, telefone,
+ * segmento, data de fechamento, mensalidade de API, número da conta, gestor
+ * de conta e status. Saíram os campos de expectativa financeira e o Score de
+ * Risco; as condições de BaaS/White Label moram em CondicaoComercial.
  *
- * Saiu também a criação de segmento/operação personalizados, que gravava o
- * valor dentro de `notas` e fazia a mesma informação existir em dois lugares.
- * O segmento agora é sempre a taxonomia comercial de SEGMENTO_CRM_LABELS.
+ * O BLOCO "ÚLTIMOS 5 DIAS" SAIU. Era uma grade de marcação manual dentro da
+ * listagem: o gestor marcava à mão se o cliente movimentou, e o dado não
+ * alimentava nenhum indicador — TPV e transações vêm do Lançamento Diário, que
+ * é geral. Uma coluna de caixas de marcação no meio da carteira competia com a
+ * informação que a tela existe para dar.
+ *
+ * O SEGMENTO vem da ENTIDADE (`segmentoComercial`). O enum antigo continua na
+ * coluna `segmento` dos registros anteriores, e é a retaguarda da leitura.
  */
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null
   telefone: string | null
   modeloOperacional: string; status: string
   segmento: string | null
+  segmentoComercialId: string | null
+  segmentoComercial: { id: string; nome: string; slug: string } | null
+  numeroConta: string | null
   mensalidadeApi: number | null; dataFechamento: string | null
   notas: string | null
   owner: { name: string }
   gestor: { id: string; name: string } | null
 }
 
+interface Segmento { id: string; nome: string; ativo: boolean }
+interface Usuario { id: string; name: string }
+
 const emptyForm = {
   nome: '', cnpj: '', email: '', telefone: '', modeloOperacional: 'API',
-  segmento: '', mensalidadeApi: '', dataFechamento: '', notas: '',
+  segmentoComercialId: '', mensalidadeApi: '', dataFechamento: '', notas: '',
+  numeroConta: '', gestorId: '', status: 'ATIVO',
 }
 
 /** Os três modelos operacionais do produto. */
@@ -48,18 +61,20 @@ const MODELOS = ['API', 'BAAS', 'WHITE_LABEL'] as const
 
 export default function CarteiraClient() {
   const [clientes, setClientes] = useState<Cliente[]>([])
-  // Indicador operacional dos ultimos 5 dias. Carregado a parte para nao
-  // atrasar a lista de clientes, que e o conteudo principal da tela.
-  const [dias, setDias] = useState<string[]>([])
-  const [movimentos, setMovimentos] = useState<Array<{ clienteId: string; data: string; movimentou: boolean }>>([])
+  const [segmentos, setSegmentos] = useState<Segmento[]>([])
+  const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [modeloFilter, setModeloFilter] = useState('')
   const [segFilter, setSegFilter] = useState('')
-  const [showModal, setShowModal] = useState(false)
+  const [gestorFilter, setGestorFilter] = useState('')
+  /** null = fechado · 'novo' = criação · Cliente = edição daquele cliente. */
+  const [modal, setModal] = useState<'novo' | Cliente | null>(null)
   const [saving, setSaving] = useState(false)
+  const [erro, setErro] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [gerenciandoSegmentos, setGerenciandoSegmentos] = useState(false)
 
   const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -71,12 +86,13 @@ export default function CarteiraClient() {
     if (search) p.set('search', search)
     if (statusFilter) p.set('status', statusFilter)
     if (modeloFilter) p.set('modelo', modeloFilter)
-    if (segFilter) p.set('segmento', segFilter)
+    if (segFilter) p.set('segmentoId', segFilter)
+    if (gestorFilter) p.set('gestorId', gestorFilter)
     const res = await fetch(`/api/clientes?${p}`)
     if (!res.ok) return null
     const data = await res.json()
     return (data.clientes ?? []) as Cliente[]
-  }, [search, statusFilter, modeloFilter, segFilter])
+  }, [search, statusFilter, modeloFilter, segFilter, gestorFilter])
 
   const aplicarClientes = useCallback((lista: Cliente[] | null) => {
     if (lista) setClientes(lista)
@@ -88,29 +104,21 @@ export default function CarteiraClient() {
     [buscarClientes, aplicarClientes],
   )
 
+  // Segmentos e usuários: o que os seletores do formulário precisam. Uma
+  // chamada só, no primeiro render — não mudam a cada filtro.
   useEffect(() => {
     let vivo = true
-    fetch('/api/clientes/movimento?dias=5')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!vivo || !d) return
-        setDias(d.dias ?? [])
-        setMovimentos(d.registros ?? [])
-      })
-      .catch(() => {})
+    Promise.all([
+      fetch('/api/segmentos').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/users').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([seg, usr]) => {
+      if (!vivo) return
+      if (seg) setSegmentos(seg.segmentos ?? [])
+      // Gestor de conta é qualquer usuário ATIVO — não é cargo.
+      if (Array.isArray(usr)) setUsuarios(usr.filter((u: { active: boolean }) => u.active))
+    })
     return () => { vivo = false }
   }, [])
-
-  async function marcarDia(clienteId: string, data: string, movimentou: boolean) {
-    setMovimentos((p) => [
-      ...p.filter((m) => !(m.clienteId === clienteId && m.data === data)),
-      { clienteId, data, movimentou },
-    ])
-    await fetch('/api/clientes/movimento', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clienteId, data, movimentou }),
-    }).catch(() => {})
-  }
 
   useEffect(() => {
     let vivo = true
@@ -119,24 +127,61 @@ export default function CarteiraClient() {
   }, [buscarClientes, aplicarClientes])
 
   function resetModal() {
-    setShowModal(false)
+    setModal(null)
     setForm(emptyForm)
+    setErro('')
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+  function abrirNovo() {
+    setForm(emptyForm); setErro(''); setModal('novo')
+  }
 
-    const res = await fetch('/api/clientes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        segmento: form.segmento || null,
-        mensalidadeApi: form.mensalidadeApi ? parseFloat(form.mensalidadeApi) : null,
-        dataFechamento: form.dataFechamento || null,
-        notas: form.notas || null,
-      }),
+  /** A EDIÇÃO que faltava: a tela só criava cliente. */
+  function abrirEdicao(c: Cliente) {
+    setForm({
+      nome: c.nome,
+      cnpj: c.cnpj ?? '',
+      email: c.email ?? '',
+      telefone: c.telefone ?? '',
+      modeloOperacional: c.modeloOperacional,
+      segmentoComercialId: c.segmentoComercialId ?? '',
+      mensalidadeApi: c.mensalidadeApi != null ? String(c.mensalidadeApi) : '',
+      dataFechamento: c.dataFechamento ? c.dataFechamento.slice(0, 10) : '',
+      notas: c.notas ?? '',
+      numeroConta: c.numeroConta ?? '',
+      gestorId: c.gestor?.id ?? '',
+      status: c.status === 'INATIVO' ? 'INATIVO' : 'ATIVO',
     })
+    setErro(''); setModal(c)
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setErro('')
+
+    const editando = modal !== 'novo' && modal !== null
+    const corpo = {
+      ...form,
+      segmentoComercialId: form.segmentoComercialId || null,
+      gestorId: form.gestorId || null,
+      numeroConta: form.numeroConta || null,
+      mensalidadeApi: form.mensalidadeApi ? parseFloat(form.mensalidadeApi) : null,
+      dataFechamento: form.dataFechamento || null,
+      notas: form.notas || null,
+    }
+
+    const res = await fetch(
+      editando ? `/api/clientes/${(modal as Cliente).id}` : '/api/clientes',
+      {
+        method: editando ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+      },
+    )
     if (res.ok) { resetModal(); fetchClientes() }
+    else {
+      const d = await res.json().catch(() => ({}))
+      setErro(d.error ?? 'Não foi possível salvar o cliente.')
+    }
     setSaving(false)
   }
 
@@ -150,7 +195,9 @@ export default function CarteiraClient() {
   const lbl = 'bp-field-label'
 
   const STATUS_TONE: Record<string, BadgeTone> = {
-    ATIVO: 'pos', PROSPECCAO: 'accent', INATIVO: 'neutral', ENCERRADO: 'neutral',
+    ATIVO: 'pos', INATIVO: 'neutral',
+    // Legados: legíveis, nunca graváveis pela tela.
+    PROSPECCAO: 'accent', ENCERRADO: 'neutral', STANDBY: 'neutral',
   }
   const filtro = 'bp-field w-auto'
 
@@ -159,7 +206,14 @@ export default function CarteiraClient() {
       <PageHeader
         title="Carteira de Clientes"
         sub={`${ativos} ativos · Mensalidades de API ${formatCurrency(mensalidades)}`}
-        actions={<Button variant="primary" onClick={() => setShowModal(true)}>Novo cliente</Button>}
+        actions={
+          <span className="inline-flex items-center gap-2">
+            {/* Mesmo padrão de "Gerenciar funis" no Pipeline: a taxonomia é
+                configuração da Carteira, não um ambiente próprio. */}
+            <Button onClick={() => setGerenciandoSegmentos(true)}>Gerenciar segmentos</Button>
+            <Button variant="primary" onClick={abrirNovo}>Novo cliente</Button>
+          </span>
+        }
       />
 
       {/* Filtros numa barra única, em vez de quatro campos soltos. */}
@@ -170,18 +224,26 @@ export default function CarteiraClient() {
             onChange={e => setSearch(e.target.value)}
             className={`${filtro} flex-1 min-w-[12rem]`}
           />
+          {/* STATUS: Ativo e Inativo. Os legados do enum não são oferecidos
+              como filtro — só sobrevivem nos registros que já os têm. */}
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={filtro}>
             <option value="">Todos os status</option>
-            <option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option>
-            <option value="PROSPECCAO">Prospecção</option><option value="ENCERRADO">Encerrado</option>
+            {STATUS_CLIENTE.map(v => (
+              <option key={v} value={v}>{STATUS_CLIENTE_LABEL[v]}</option>
+            ))}
           </select>
           <select value={modeloFilter} onChange={e => setModeloFilter(e.target.value)} className={filtro}>
             <option value="">Todos os modelos</option>
             {MODELOS.map(m => <option key={m} value={m}>{MODELO_OPERACIONAL_LABELS[m]}</option>)}
           </select>
+          {/* Segmentos da ENTIDADE, não de um mapa fixo no código. */}
           <select value={segFilter} onChange={e => setSegFilter(e.target.value)} className={filtro}>
             <option value="">Todos os segmentos</option>
-            {Object.entries(SEGMENTO_CRM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {segmentos.map(sg => <option key={sg.id} value={sg.id}>{sg.nome}</option>)}
+          </select>
+          <select value={gestorFilter} onChange={e => setGestorFilter(e.target.value)} className={filtro}>
+            <option value="">Todos os gestores</option>
+            {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
       </Panel>
@@ -191,19 +253,20 @@ export default function CarteiraClient() {
           <THead>
             <HeadRow>
               <Th>Cliente</Th>
+              <Th>Conta</Th>
               <Th>Segmento</Th>
               <Th>Modelo</Th>
               <Th>Status</Th>
               <Th align="right">Mensalidade API</Th>
               <Th>Gestor</Th>
-              <Th>Últimos 5 dias</Th>
+              <Th align="right">Ações</Th>
             </HeadRow>
           </THead>
           <tbody>
             {loading ? (
-              <EmptyRow colSpan={7}>Carregando…</EmptyRow>
+              <EmptyRow colSpan={8}>Carregando…</EmptyRow>
             ) : clientes.length === 0 ? (
-              <EmptyRow colSpan={7}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
+              <EmptyRow colSpan={8}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
             ) : clientes.map(c => (
               <Row key={c.id}>
                 <Td className="pl-5">
@@ -212,11 +275,19 @@ export default function CarteiraClient() {
                     {c.cnpj && <span className="block t-mono text-subtle mt-1">{c.cnpj}</span>}
                   </Link>
                 </Td>
-                {/* Segmento e modelo são categorias, não status: tom neutro. */}
+                {/* NÚMERO DA CONTA — opcional, e é a chave que o Lançamento
+                    BaaS usa para achar o cliente de um título. */}
+                <Td className="t-mono text-muted">
+                  {c.numeroConta ?? <span className="text-subtle">—</span>}
+                </Td>
+                {/* Segmento e modelo são categorias, não status: tom neutro.
+                    O nome vem da entidade, com retaguarda no enum antigo. */}
                 <Td>
-                  {c.segmento
-                    ? <Badge>{SEGMENTO_CRM_LABELS[c.segmento] ?? c.segmento}</Badge>
-                    : <span className="text-subtle">—</span>}
+                  {c.segmentoComercial
+                    ? <Badge>{c.segmentoComercial.nome}</Badge>
+                    : c.segmento
+                      ? <Badge>{SEGMENTO_CRM_LABELS[c.segmento] ?? c.segmento}</Badge>
+                      : <span className="text-subtle">—</span>}
                 </Td>
                 <Td><Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge></Td>
                 <Td><Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{CLIENTE_STATUS_LABELS[c.status]}</Badge></Td>
@@ -226,12 +297,8 @@ export default function CarteiraClient() {
                 <Td className="text-subtle">
                   {c.gestor?.name ?? <span className="text-subtle">{c.owner.name}</span>}
                 </Td>
-                <Td>
-                  {dias.length > 0
-                    ? <MovimentoDias
-                        serie={serieDoCliente(c.id, movimentos, dias) as Array<{ data: string; estado: EstadoDia }>}
-                        onToggle={(data, proximo) => marcarDia(c.id, data, proximo)} />
-                    : <span className="text-subtle">—</span>}
+                <Td align="right">
+                  <Button size="sm" onClick={() => abrirEdicao(c)}>Editar</Button>
                 </Td>
               </Row>
             ))}
@@ -239,14 +306,32 @@ export default function CarteiraClient() {
         </Table>
       </TableShell>
 
-      {showModal && (
+      {gerenciandoSegmentos && (
+        <GerenciarSegmentos onFechar={() => {
+          setGerenciandoSegmentos(false)
+          // Recarrega os seletores: um segmento criado agora precisa aparecer.
+          setSegmentos([]); setSearch((v) => v)
+          fetch('/api/segmentos').then((r) => (r.ok ? r.json() : null))
+            .then((d) => { if (d) setSegmentos(d.segmentos ?? []) })
+            .catch(() => {})
+        }} />
+      )}
+
+      {modal && (
         <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && resetModal()}>
           <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-line">
-              <h2 className="t-h2 text-fg">Novo Cliente</h2>
+              <h2 className="t-h2 text-fg">
+                {modal === 'novo' ? 'Novo Cliente' : `Editar — ${(modal as Cliente).nome}`}
+              </h2>
               <button onClick={resetModal} className="text-subtle hover:text-fg">✕</button>
             </div>
-            <form onSubmit={handleCreate} className="p-5 space-y-4">
+            <form onSubmit={handleSave} className="p-5 space-y-4">
+              {erro && (
+                <div className="rounded-lg border border-neg/25 bg-neg/10 px-3 py-2">
+                  <p className="t-sm text-neg">{erro}</p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2"><label className={lbl}>Nome *</label><input required value={form.nome} onChange={f('nome')} className={input} /></div>
                 <div><label className={lbl}>CNPJ</label><input value={form.cnpj} onChange={f('cnpj')} placeholder="00.000.000/0001-00" className={input} /></div>
@@ -260,13 +345,37 @@ export default function CarteiraClient() {
                 <div><label className={lbl}>Telefone</label><input value={form.telefone} onChange={f('telefone')} className={input} /></div>
                 <div>
                   <label className={lbl}>Segmento</label>
-                  <select value={form.segmento} onChange={f('segmento')} className={input}>
+                  <select value={form.segmentoComercialId} onChange={f('segmentoComercialId')} className={input}>
                     <option value="">Selecione</option>
-                    {Object.entries(SEGMENTO_CRM_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    {segmentos.map(sg => <option key={sg.id} value={sg.id}>{sg.nome}</option>)}
                   </select>
                 </div>
                 <div><label className={lbl}>Data de Fechamento</label><input type="date" value={form.dataFechamento} onChange={f('dataFechamento')} className={input} /></div>
-                <div className="col-span-2">
+                <div>
+                  {/* OPCIONAL e nunca gerado: inventar um número criaria um
+                      identificador que não existe em lugar nenhum. */}
+                  <label className={lbl}>Número da conta</label>
+                  <input value={form.numeroConta} onChange={f('numeroConta')}
+                    placeholder="Opcional" className={input} />
+                </div>
+                <div>
+                  <label className={lbl}>Status</label>
+                  <select value={form.status} onChange={f('status')} className={input}>
+                    {STATUS_CLIENTE.map(v => (
+                      <option key={v} value={v}>{STATUS_CLIENTE_LABEL[v]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  {/* GESTOR DE CONTA é responsabilidade pela conta — qualquer
+                      usuário ativo é elegível. Não é Diretor, não é sócio. */}
+                  <label className={lbl}>Gestor de conta</label>
+                  <select value={form.gestorId} onChange={f('gestorId')} className={input}>
+                    <option value="">Sem gestor</option>
+                    {usuarios.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className={lbl}>Mensalidade de API (R$)</label>
                   <input type="number" step="0.01" min="0" value={form.mensalidadeApi} onChange={f('mensalidadeApi')} className={input} />
                 </div>

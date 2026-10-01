@@ -16,7 +16,13 @@ export default async function PipelinePage() {
    * pista, não a primeira.
    */
   const leads = await prisma.lead.findMany({
-    select: { id: true, name: true, company: true, cnpj: true, segmento: true },
+    // LEAD NA LIXEIRA NÃO ENTRA EM CARD NOVO. Ele continua existindo nos
+    // cards antigos — o histórico é preservado —, mas não é oferecido aqui.
+    where: { deletedAt: null },
+    select: {
+      id: true, name: true, company: true, cnpj: true, segmento: true,
+      segmentoComercial: { select: { id: true, nome: true, slug: true } },
+    },
     orderBy: [{ company: 'asc' }, { name: 'asc' }],
   })
 

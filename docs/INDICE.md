@@ -1,6 +1,19 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V21.md`](./RODADA-V21.md)** — a rodada mais recente:
+> **Comece por [`RODADA-V22.md`](./RODADA-V22.md)** — a rodada mais recente:
+> **RECEITA** volta a ser seção própria (Metas, Lançamento Diário e o novo
+> **Lançamento BaaS**), separada de FINANCEIRO; nasce o **Lançamento BaaS**,
+> que tarifa o volume do parceiro e gera lançamento, título a receber e título
+> a pagar de forma idempotente, com **snapshot de tarifas**; o **Conselho**
+> passa a ser governado por **`isPartner`** (sócio) e o acesso de João Lima foi
+> corrigido; excluir um Lead virou **mover para a Lixeira**, restrita a
+> **Diretores**; **Segmentos** viraram entidade com CRUD; Clientes ganham
+> **edição**, número da conta, gestor e ordenação ATIVOS→INATIVOS; as
+> **Mensalidades deixam de somar** na receita (já estão na tarifa transacional);
+> e o **anexo** passou a poder ser visualizado — antes todo arquivo vinha como
+> download forçado.
+>
+> Antes dela, [`RODADA-V21.md`](./RODADA-V21.md):
 > **Conselho e Auditoria** passam a exigir chave explícita (ser ADMIN não
 > basta, e a conferência é no banco a cada requisição); Usuários ganham
 > **Departamento** e **Hierarquia**; nasce o **motor de lembretes** (tarefas,

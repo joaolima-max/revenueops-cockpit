@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       role: user.role,
       name: user.name,
       permissoes,
+      isPartner: user.isPartner,
     })
 
     const response = NextResponse.json({

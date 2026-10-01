@@ -9,6 +9,12 @@ export interface TokenPayload {
   role: string
   name: string
   permissoes?: string[]
+  /**
+   * SOCIO. Primeira barreira do Conselho, no proxy. A palavra final e de
+   * `socio()`, que le do banco: um token de 7 dias faria a revogacao de um
+   * socio demorar uma semana para valer.
+   */
+  isPartner?: boolean
 }
 
 export function signToken(payload: TokenPayload): string {
