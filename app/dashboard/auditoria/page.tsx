@@ -36,8 +36,13 @@ export default async function AuditoriaPage() {
           { label: 'Hoje', value: String(logs.filter(l => new Date(l.createdAt).toDateString() === new Date().toDateString()).length), color: 'text-accent-soft' },
         ].map(k => (
           <div key={k.label} className="bg-surface border border-line rounded-xl p-4">
-            <p className="text-subtle text-xs mb-1">{k.label}</p>
-            <p className={`text-xl font-bold tnum ${k.color}`}>{k.value}</p>
+            {/* TOKENS, não tamanho e peso crus.
+                `text-xl font-bold` renderizava na família do CORPO (Inter),
+                enquanto todo KPI do sistema usa a de DISPLAY (Inter Tight)
+                via `t-figure-sm` — era a mesma tela com dois números de
+                famílias diferentes. `t-label` faz o mesmo pelo rótulo. */}
+            <p className="t-label text-subtle mb-1">{k.label}</p>
+            <p className={`t-figure-sm ${k.color}`}>{k.value}</p>
           </div>
         ))}
       </div>
@@ -66,7 +71,7 @@ export default async function AuditoriaPage() {
                   }`}>{log.acao}</span>
                 </td>
                 <td className="px-4 py-2.5 text-muted">{log.entidade}</td>
-                <td className="px-4 py-2.5 text-subtle text-xs font-mono">{log.entidadeId?.substring(0, 8) || '—'}</td>
+                <td className="px-4 py-2.5 text-subtle t-mono">{log.entidadeId?.substring(0, 8) || '—'}</td>
                 <td className="px-4 py-2.5 text-subtle text-xs max-w-xs truncate">{log.detalhes || '—'}</td>
               </tr>
             ))}

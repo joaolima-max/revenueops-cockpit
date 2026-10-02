@@ -129,7 +129,7 @@ export default function PerfilPage() {
         {/* Avatar + basic info */}
         <div className="bg-surface border border-line rounded-xl p-6 flex items-center gap-4">
           <div
-            className="bg-accent text-on-accent w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 text-2xl font-bold"
+            className="bg-accent text-on-accent w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 t-figure-sm"
           >
             {initial}
           </div>

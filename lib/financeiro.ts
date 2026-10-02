@@ -200,29 +200,83 @@ export interface ResultadoPeriodo {
   despesa: number
   /** Receita − Despesa. Negativo quando a despesa supera a receita. */
   resultado: number
+  /**
+   * Repasse aos parceiros BaaS/White Label no período — EXCLUÍDO da despesa
+   * acima. Devolvido para que a tela possa declarar o número em vez de
+   * esconder a regra.
+   */
+  repasseBaas: number
 }
+
+/**
+ * O FILTRO QUE TIRA O REPASSE BAAS DA DESPESA.
+ *
+ * `baasContaPagar` é a relação inversa de `LancamentoBaas.contaPagar`: só o
+ * lançamento de despesa gerado por um Lançamento BaaS a tem preenchida.
+ *
+ * Identificar pelo VÍNCULO, e não pelo nome da categoria, é deliberado — uma
+ * categoria pode ser renomeada na tela de Categorias (e foi, nesta rodada:
+ * "Repasse a Cliente BaaS" virou "BaaS"), e um filtro por nome quebraria em
+ * silêncio, voltando a subtrair o repasse do Resultado sem ninguém notar.
+ * A FK não se renomeia.
+ */
+const SEM_REPASSE_BAAS = { baasContaPagar: null } as const
 
 /**
  * Receita, Despesa e Resultado de um mês "YYYY-MM".
  *
  * CANCELADO fica fora: é lançamento que não aconteceu. PENDENTE entra, porque
  * a tela de Lançamentos é de competência (a data do lançamento), não de caixa.
+ *
+ * ── A RECEITA BAAS É CONTADA UMA VEZ SÓ ─────────────────────────────────
+ *
+ * O Lançamento BaaS produz TRÊS registros, e só UM deles é receita aqui: o
+ * `LancamentoFinanceiro` de tipo RECEITA. O título a receber (`ContaReceber`)
+ * é o mesmo dinheiro visto como cobrança, numa tabela diferente — e esta
+ * função nem olha para ela. Por isso a tarifa BaaS entra no total exatamente
+ * uma vez, sem precisar de nenhuma lógica de deduplicação: há uma única
+ * origem, e é esta.
+ *
+ * ── O REPASSE AO PARCEIRO NÃO É DESPESA DESTE PAINEL ────────────────────
+ *
+ * O residual devido ao BaaS/White Label existe como lançamento de despesa
+ * porque é assim que Contas a Pagar o controla — e lá ele precisa continuar
+ * aparecendo, para ser pago. Mas ele NÃO reduz o Resultado: o saldo da conta
+ * do parceiro nunca foi receita da Bass Pago, e devolvê-lo não é um custo
+ * nosso. Somá-lo como despesa subtrairia do resultado um dinheiro que nunca
+ * entrou nele.
+ *
+ * O número é devolvido em `repasseBaas` para a tela poder dizer isso em voz
+ * alta, em vez de simplesmente omitir um valor que existe em Contas a Pagar.
  */
 export async function resultadoDoPeriodo(periodo: string): Promise<ResultadoPeriodo> {
   const { inicio, fim } = intervaloMes(periodo)
+  const janela = { data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' as const } }
 
-  const porTipo = await prisma.lancamentoFinanceiro.groupBy({
-    by: ['tipo'],
-    where: { data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' } },
-    _sum: { valor: true },
-  })
+  const [porTipo, repasse] = await Promise.all([
+    prisma.lancamentoFinanceiro.groupBy({
+      by: ['tipo'],
+      where: { ...janela, ...SEM_REPASSE_BAAS },
+      _sum: { valor: true },
+    }),
+    // O que foi EXCLUÍDO, para a tela poder declarar.
+    prisma.lancamentoFinanceiro.aggregate({
+      where: { ...janela, tipo: 'DESPESA', baasContaPagar: { isNot: null } },
+      _sum: { valor: true },
+    }),
+  ])
 
   const soma = (tipo: 'RECEITA' | 'DESPESA') =>
     porTipo.find((p) => p.tipo === tipo)?._sum.valor ?? 0
 
   const receita = soma('RECEITA')
   const despesa = soma('DESPESA')
-  return { receita, despesa, resultado: receita - despesa }
+  return {
+    receita,
+    despesa,
+    resultado: receita - despesa,
+    repasseBaas: repasse._sum.valor ?? 0,
+  }
 }
 
 export interface GastoCategoria {
@@ -231,13 +285,26 @@ export interface GastoCategoria {
   total: number
 }
 
-/** Gasto por categoria no período. Só despesas, maior primeiro. */
+/**
+ * Gasto por categoria no período. Só despesas, maior primeiro.
+ *
+ * O REPASSE BAAS FICA FORA, pela mesma razão e com o mesmo filtro do
+ * Resultado: este quadro é a DECOMPOSIÇÃO da despesa do período, e se ele
+ * incluísse o repasse as fatias somariam mais que o total de Despesas
+ * mostrado dois tiles ao lado. Um gráfico que não fecha com o seu próprio
+ * KPI é pior que um gráfico ausente.
+ *
+ * Em Contas a Pagar o repasse continua aparecendo — é lá que ele é pago.
+ */
 export async function gastoPorCategoria(periodo: string): Promise<GastoCategoria[]> {
   const { inicio, fim } = intervaloMes(periodo)
 
   const grupos = await prisma.lancamentoFinanceiro.groupBy({
     by: ['categoriaId'],
-    where: { tipo: 'DESPESA', data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' } },
+    where: {
+      tipo: 'DESPESA', data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' },
+      ...SEM_REPASSE_BAAS,
+    },
     _sum: { valor: true },
   })
   if (grupos.length === 0) return []
@@ -850,7 +917,13 @@ export async function evolucaoFinanceira(periodos: string[]): Promise<PontoEvolu
   const fim = intervaloMes(periodos[periodos.length - 1]).fim
 
   const linhas = await prisma.lancamentoFinanceiro.findMany({
-    where: { data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' } },
+    // MESMA regra do KPI: o repasse ao parceiro fica fora da despesa. Sem
+    // isto, o gráfico de 12 meses contaria uma despesa que o indicador
+    // "Resultado" logo acima não conta — e os dois discordariam na mesma tela.
+    where: {
+      data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' },
+      ...SEM_REPASSE_BAAS,
+    },
     select: { tipo: true, valor: true, data: true },
   })
 

@@ -455,18 +455,18 @@ export interface ObservacaoDiaria {
   tpv: number
   receitaTarifaria: number
   qtdTransacoes: number
+  qtdMed: number
 }
 
 /**
  * A série DIÁRIA do Lançamento Diário, dentro de uma janela de períodos.
  *
- * É o insumo das velas: o OHLC de um mês é formado pelas observações dos dias
- * daquele mês (ver `lib/candle.ts`). Com a série mensal já agregada não dá
- * para montar vela — abertura, máxima, mínima e fechamento desapareceram na
- * média.
+ * Alimenta a "Evolução Atividade Operacional Diária" do Cockpit: TPV, receita,
+ * transações e MED, dia a dia, do jeito que foram lançados.
  *
- * Só dias EXISTENTES entram. Dia sem lançamento não vira zero: zero puxaria a
- * mínima da vela e inventaria uma queda que não houve.
+ * Só dias EXISTENTES entram. Dia sem lançamento NÃO vira zero — zero seria
+ * afirmar que o dia teve movimento nenhum, quando o que houve foi ausência de
+ * lançamento. São coisas diferentes, e o gráfico não deve confundi-las.
  */
 export async function observacoesDiarias(periodos: string[]): Promise<ObservacaoDiaria[]> {
   if (periodos.length === 0) return []
@@ -477,11 +477,59 @@ export async function observacoesDiarias(periodos: string[]): Promise<Observacao
 
   const dias = await prisma.lancamentoDiario.findMany({
     where: { data: { gte: inicio, lt: fim } },
-    select: { data: true, tpv: true, receitaTarifaria: true, qtdTransacoes: true },
+    select: {
+      data: true, tpv: true, receitaTarifaria: true,
+      qtdTransacoes: true, qtdMed: true,
+    },
     orderBy: { data: 'asc' },
   })
 
   return dias
+}
+
+export interface AtividadeDiaria {
+  /** "dd/mm" — o rótulo do eixo. O ano está no subtítulo do gráfico. */
+  rotulo: string
+  /** ISO curto, para o tooltip dizer a data completa. */
+  dia: string
+  tpv: number
+  receita: number
+  transacoes: number
+  med: number
+  /** MED sobre transações, em pontos percentuais. Null quando não houve
+   *  transação no dia — dividir por zero daria 0%, que é outra afirmação. */
+  medPercentual: number | null
+}
+
+/**
+ * ATIVIDADE OPERACIONAL DIÁRIA — os últimos `dias` dias LANÇADOS.
+ *
+ * Conta dias com lançamento, não dias de calendário: a janela é "os últimos 90
+ * registros", e não "os últimos 90 dias corridos, com buracos". Um fim de
+ * semana sem operação não deve consumir espaço do gráfico nem virar um vale
+ * que ninguém viveu.
+ *
+ * MED vem nas DUAS unidades. O indicador é um só (ver `realizadoPorTipo`), e é
+ * a unidade que decide a leitura: a linha do gráfico usa o percentual, que é
+ * como a operação lê MED, e o tooltip mostra também a quantidade — sem que
+ * nenhuma das duas seja recalculada em dois lugares.
+ */
+export async function atividadeOperacionalDiaria(
+  periodos: string[], dias = 90,
+): Promise<AtividadeDiaria[]> {
+  const obs = await observacoesDiarias(periodos)
+
+  return obs.slice(-dias).map((d) => ({
+    rotulo: d.data.toLocaleDateString('pt-BR', {
+      day: '2-digit', month: '2-digit', timeZone: 'UTC',
+    }),
+    dia: d.data.toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+    tpv: d.tpv,
+    receita: d.receitaTarifaria,
+    transacoes: d.qtdTransacoes,
+    med: d.qtdMed,
+    medPercentual: d.qtdTransacoes > 0 ? (d.qtdMed / d.qtdTransacoes) * 100 : null,
+  }))
 }
 
 /* ========================================================================= *
@@ -524,22 +572,28 @@ export async function realizadoPipeline(periodo: string): Promise<RealizadoPipel
     await Promise.all([
       prisma.lead.count({ where: { createdAt: noPeriodo } }),
       prisma.lead.count(),
+      // CARD EXCLUÍDO FICA FORA DE TODOS OS TRÊS. Um card que saiu do
+      // Pipeline não ganhou nem perdeu nada, e não está sendo assistido por
+      // ninguém — contá-lo faria o indicador descrever um quadro que não
+      // existe mais.
       prisma.deal.count({
         where: {
           resultado: 'GANHO',
+          deletedAt: null,
           OR: [{ resultadoEm: noPeriodo }, { resultadoEm: null, closedAt: noPeriodo }],
         },
       }),
       prisma.deal.count({
         where: {
           resultado: 'PERDIDO',
+          deletedAt: null,
           OR: [{ resultadoEm: noPeriodo }, { resultadoEm: null, closedAt: noPeriodo }],
         },
       }),
       // Leads DISTINTOS com card aberto e responsável: um lead com dois cards
       // abertos é um lead assistido, não dois.
       prisma.deal.findMany({
-        where: { resultado: 'EM_ANDAMENTO', leadId: { not: null } },
+        where: { resultado: 'EM_ANDAMENTO', leadId: { not: null }, deletedAt: null },
         select: { leadId: true, clienteId: true },
         distinct: ['leadId'],
       }),

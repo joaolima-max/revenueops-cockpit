@@ -57,7 +57,10 @@ export async function GET(request: NextRequest) {
     await Promise.all([
     prisma.pipelineEtapa.findMany({ where: { funilId: funil.id }, orderBy: { ordem: 'asc' } }),
     prisma.deal.findMany({
-      where: { funilId: funil.id },
+      // Card excluído sai dos KPIs e das distribuições: ele não está mais no
+      // Pipeline, e contá-lo faria a leitura comercial descrever um quadro
+      // que ninguém vê.
+      where: { funilId: funil.id, deletedAt: null },
       select: {
         id: true, ownerId: true, funilId: true, etapaId: true,
         resultado: true, createdAt: true, resultadoEm: true, closedAt: true,
@@ -65,7 +68,11 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.pipelineMovimentacao.findMany({
-      where: { funilDestinoId: funil.id },
+      // A movimentação do card EXCLUÍDO fica fora dos indicadores. Ela
+      // continua gravada — é o histórico da exclusão —, mas tempo médio por
+      // etapa e conversão descrevem o funil ATUAL, e um card que saiu do
+      // quadro não faz parte dele.
+      where: { funilDestinoId: funil.id, deal: { deletedAt: null } },
       select: {
         dealId: true, tipo: true, funilOrigemId: true, etapaOrigemId: true,
         funilDestinoId: true, etapaDestinoId: true, createdAt: true,
@@ -76,7 +83,10 @@ export async function GET(request: NextRequest) {
     // Transferências que SAÍRAM deste funil — o `where` acima traz as que
     // entraram, então a saída precisa da própria consulta.
     prisma.pipelineMovimentacao.findMany({
-      where: { funilOrigemId: funil.id, tipo: 'TRANSFERENCIA_FUNIL' },
+      where: {
+        funilOrigemId: funil.id, tipo: 'TRANSFERENCIA_FUNIL',
+        deal: { deletedAt: null },
+      },
       select: {
         dealId: true, tipo: true, funilOrigemId: true, etapaOrigemId: true,
         funilDestinoId: true, etapaDestinoId: true, createdAt: true,
@@ -86,7 +96,10 @@ export async function GET(request: NextRequest) {
       select: {
         id: true, segmento: true, createdAt: true,
         deals: {
-          where: { funilId: funil.id },
+          // Sem o filtro, um lead cujo único card foi excluído continuaria
+          // aparecendo na distribuição por etapa — numa etapa que ele já não
+          // ocupa.
+          where: { funilId: funil.id, deletedAt: null },
           select: {
             etapaId: true, resultado: true, ownerId: true, clienteId: true,
             createdAt: true,

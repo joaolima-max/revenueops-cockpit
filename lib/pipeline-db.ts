@@ -71,6 +71,12 @@ export async function acessoAoCard(session: SessaoMinima, dealId: string) {
     select: {
       id: true, ownerId: true, funilId: true, etapaId: true, clienteId: true,
       title: true, resultado: true,
+      // Quem opera o card precisa saber se ele ainda está no quadro. O card
+      // excluído continua sendo ENCONTRADO aqui de propósito: a rota de
+      // exclusão precisa dele para ser idempotente, e as demais o recusam
+      // explicitamente — um 404 esconderia a diferença entre "não existe" e
+      // "foi excluído".
+      deletedAt: true,
     },
   })
   if (!deal) return null
@@ -85,6 +91,26 @@ export async function acessoAoCard(session: SessaoMinima, dealId: string) {
   if (acesso.apenasProprios && deal.ownerId !== session.userId) return null
   return { deal, acesso }
 }
+
+/**
+ * O CARD FOI EXCLUÍDO? Então não se opera mais sobre ele.
+ *
+ * Mover, mudar resultado, transferir de funil ou comentar um card que saiu do
+ * quadro gravaria histórico sobre algo que ninguém enxerga. A mensagem diz o
+ * que aconteceu em vez de devolver 404: "não existe" e "foi excluído" são
+ * situações diferentes, e confundi-las manda a pessoa procurar um bug que não
+ * existe.
+ *
+ * A exclusão em si NÃO usa esta guarda — ela trata o card já excluído como
+ * sucesso, para ser idempotente.
+ */
+export function cardExcluido(deal: { deletedAt?: Date | null }): boolean {
+  return !!deal.deletedAt
+}
+
+export const ERRO_CARD_EXCLUIDO =
+  'Este card foi excluído do Pipeline. O lead continua em Leads — '
+  + 'crie um card novo para ele, se o negócio voltou.'
 
 /**
  * O que o card do quadro carrega.
@@ -115,7 +141,8 @@ export async function registrarMovimentacao(
   tx: Prisma.TransactionClient,
   m: {
     dealId: string
-    tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL' | 'MUDANCA_RESULTADO'
+    tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL'
+      | 'MUDANCA_RESULTADO' | 'EXCLUSAO_CARD'
     funilOrigemId: string | null
     etapaOrigemId: string | null
     funilDestinoId: string

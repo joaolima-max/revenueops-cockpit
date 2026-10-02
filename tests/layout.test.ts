@@ -16,9 +16,28 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
+/** Raiz do repositório — os testes rodam a partir dela. */
+const RAIZ = process.cwd()
+
+/**
+ * O arquivo SEM as linhas de comentário.
+ *
+ * Existe porque os comentários deste projeto registram o que foi REMOVIDO e
+ * por quê — e um teste que varre o arquivo inteiro por substring acusa a
+ * própria explicação como se fosse o código voltando.
+ */
+const semComentarios = (txt: string) =>
+  txt
+    // Blocos saem INTEIROS. Filtrar linha por linha deixava passar as linhas
+    // do meio de um `{/* … */}` de tres linhas — e e justamente la que os
+    // comentarios citam o rotulo ou a classe que foi removida.
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
 
 const LANCAMENTOS = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
 const PIPELINE = ler('app/dashboard/pipeline/PipelineClient.tsx')
@@ -118,7 +137,9 @@ test('a linha do card nao quebra: flex com min-w-0, sem wrap', () => {
 
 test('o segmento da Carteira trunca com o mesmo tratamento', () => {
   assert.ok(CARTEIRA.includes('<Badge truncar title={c.segmentoComercial.nome}>'))
-  assert.ok(CARTEIRA.includes('<Td className="max-w-0">'))
+  // A celula ganhou o fio separador nesta rodada; o `max-w-0` que faz a
+  // truncagem funcionar dentro da tabela continua ali.
+  assert.ok(CARTEIRA.includes('className="max-w-0 border-l border-line pl-4"'))
 })
 
 /* ========================================================================= *
@@ -149,13 +170,17 @@ test('as acoes e o status continuam na tabela', () => {
 test('MODELO vem antes de SEGMENTO, e os dois tem largura propria', () => {
   // Estavam colados: segmento e texto cadastrado, de largura imprevisivel, e
   // sem teto encostava no modelo — que e um badge curto e fixo.
-  const iModelo = CARTEIRA.indexOf('>Modelo<')
+  //
+  // O cabecalho deixou de abreviar: "Modelo" nao dizia modelo de que, e ao
+  // lado de "Segmento" as duas liam como categorias intercambiaveis.
+  const iModelo = CARTEIRA.indexOf('>Modelo operacional<')
   const iSegmento = CARTEIRA.indexOf('>Segmento<')
   assert.ok(iModelo > 0 && iSegmento > 0, 'uma das colunas desapareceu')
   assert.ok(iModelo < iSegmento, 'Modelo deveria vir antes de Segmento')
 
-  assert.ok(CARTEIRA.includes('className="w-[7.5rem]">Modelo'))
-  assert.ok(CARTEIRA.includes('className="w-[10rem]">Segmento'))
+  // Largura suficiente para o rotulo por extenso, sem quebrar.
+  assert.ok(CARTEIRA.includes('className="w-[10.5rem] whitespace-nowrap">Modelo operacional'))
+  assert.ok(CARTEIRA.includes('border-l border-line">Segmento'))
 })
 
 test('ha RESPIRO entre o badge do modelo e o do segmento', () => {
@@ -163,7 +188,9 @@ test('ha RESPIRO entre o badge do modelo e o do segmento', () => {
 })
 
 test('a Carteira preserva as colunas que a tela existe para dar', () => {
-  for (const col of ['Cliente', 'Conta', 'Modelo', 'Segmento', 'Status', 'Gestor', 'Ações']) {
+  for (const col of [
+    'Cliente', 'Conta', 'Modelo operacional', 'Segmento', 'Status', 'Gestor', 'Ações',
+  ]) {
     assert.ok(CARTEIRA.includes(`>${col}<`), `a coluna ${col} desapareceu`)
   }
 })
@@ -207,51 +234,71 @@ test('o azul e um TOKEN, e por isso funciona em Light e em Dark', () => {
 })
 
 /* ========================================================================= *
- * COCKPIT — velas simplificadas
+ * COCKPIT — NENHUMA VELA, NENHUMA META
  * ========================================================================= */
 
-/** Só o corpo da função do tooltip — comentários do arquivo não contam. */
-function corpoDoTooltip(): string {
-  const C = ler('components/ui/Candles.tsx')
-  const ini = C.indexOf('function Dica(')
-  const fim = C.indexOf('return (\n    <ResponsiveContainer')
-  assert.ok(ini > 0 && fim > ini, 'a função do tooltip mudou de forma')
-  return C.slice(ini, fim)
+/** Todo arquivo de código do produto. A varredura precisa ser exaustiva. */
+function todosOsFontes(): string[] {
+  const dirs = ['app', 'components', 'lib']
+  const out: string[] = []
+  const anda = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const caminho = `${d}/${e.name}`
+      if (e.isDirectory()) anda(caminho)
+      else if (/\.tsx?$/.test(e.name)) out.push(caminho)
+    }
+  }
+  for (const d of dirs) anda(resolve(RAIZ, d))
+  return out
 }
 
-test('o tooltip da vela mostra PERIODO e OHLC — e nada mais', () => {
-  const t = corpoDoTooltip()
-  for (const r of ['Abertura', 'Máxima', 'Mínima', 'Fechamento']) {
-    assert.ok(t.includes(`rotulo="${r}"`), `${r} saiu do tooltip`)
+test('os arquivos de vela foram REMOVIDOS do projeto', () => {
+  for (const f of [
+    'components/ui/Candles.tsx',
+    'lib/candle.ts',
+    'tests/candle.test.ts',
+  ]) {
+    assert.ok(!existsSync(resolve(RAIZ, f)), `${f} ainda existe`)
   }
-  assert.ok(t.includes('periodo'), 'o periodo saiu do tooltip')
-
-  // O que saiu: contagem de observacoes, variacao percentual e a nota sobre
-  // vela sem dispersao. Cada uma era verdadeira e nenhuma era a pergunta.
-  assert.ok(!t.includes('observaç'), 'a contagem de observacoes voltou ao tooltip')
-  assert.ok(!t.includes('% no período'), 'a variacao percentual voltou ao tooltip')
-  assert.ok(!t.includes('velaDegenerada'), 'a nota de vela sem dispersao voltou')
 })
 
-test('o calculo de variacao saiu do grafico', () => {
-  const C = ler('components/ui/Candles.tsx')
-  assert.ok(!C.includes('variacaoDaVela'), 'o grafico voltou a calcular variacao')
+test('nenhum arquivo do produto menciona candlestick, vela ou OHLC', () => {
+  // Varredura do codigo INTEIRO, nao de uma lista de telas: o pedido e que
+  // nao sobre nenhuma versao duplicada ou escondida.
+  const culpados: string[] = []
+  for (const f of todosOsFontes()) {
+    const txt = readFileSync(f, 'utf8')
+    // So o CODIGO: os comentarios registram POR QUE as velas sairam, e essa
+    // memoria tem valor. Linhas de comentario saem da conta.
+    const codigo = txt
+      .split('\n')
+      .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l))
+      .join('\n')
+    for (const termo of ['Candles', 'Candlestick', 'velaDegenerada', 'variacaoDaVela', 'OHLC']) {
+      if (codigo.includes(termo)) culpados.push(`${f}: ${termo}`)
+    }
+  }
+  assert.deepEqual(culpados, [], `vela sobreviveu em: ${culpados.join(', ')}`)
 })
 
-test('sem indicador de trading: nenhum RSI, MACD, banda ou media movel', () => {
-  const C = ler('components/ui/Candles.tsx')
-  // Palavra inteira: `/EMA/i` casaria dentro de "SEMANA", e `/SMA/i` dentro
-  // de "mesma" — um teste que falha por substring nao protege nada.
-  for (const proibido of ['RSI', 'MACD', 'Bollinger', 'EMA', 'SMA', 'ATR', 'Ichimoku']) {
-    assert.ok(
-      !new RegExp(`\\b${proibido}\\b`).test(C),
-      `${proibido} apareceu no grafico de velas`,
-    )
+test('o Cockpit nao importa nada de velas', () => {
+  for (const f of ['app/dashboard/page.tsx', 'components/dashboard/DashboardCharts.tsx']) {
+    const c = ler(f)
+    assert.ok(!c.includes("from '@/lib/candle'"), `${f} ainda importa lib/candle`)
+    assert.ok(!c.includes("from '@/components/ui/Candles'"), `${f} ainda importa Candles`)
+    assert.ok(!c.includes('<Candles'), `${f} ainda renderiza <Candles>`)
   }
-  // Uma única série: a das velas. Nenhuma linha ou área sobreposta.
-  assert.equal((C.match(/<Bar /g) ?? []).length, 1, 'ha mais de uma serie no grafico')
-  assert.ok(!C.includes('<Line '), 'uma linha foi sobreposta as velas')
-  assert.ok(!C.includes('<Area '), 'uma area foi sobreposta as velas')
+})
+
+test('o Cockpit nao tem mais NENHUMA secao de metas', () => {
+  // So o CODIGO. O comentario do arquivo explica POR QUE as metas sairam, e
+  // cita `metasDoPeriodo` ao fazer isso — um teste por substring do arquivo
+  // inteiro falharia justamente por causa da explicacao.
+  const c = semComentarios(ler('app/dashboard/page.tsx'))
+  assert.ok(!c.includes('MetaAnalytics'), 'MetaAnalytics voltou ao Cockpit')
+  assert.ok(!c.includes('metasDoPeriodo'), 'o Cockpit voltou a consultar metas')
+  assert.ok(!c.includes('avaliarCompleto'), 'o Cockpit voltou a avaliar metas')
+  assert.ok(!c.includes('<MetaBar'), 'uma barra de meta voltou ao Cockpit')
 })
 
 test('a grade e discreta: so horizontal, sem tracejado', () => {
@@ -260,28 +307,239 @@ test('a grade e discreta: so horizontal, sem tracejado', () => {
   assert.ok(tema.includes("strokeDasharray: '0'"))
 })
 
-test('o eixo e limpo: poucas marcas e rotulos que nao se empilham', () => {
-  const C = ler('components/ui/Candles.tsx')
-  assert.ok(C.includes('tickCount={4}'), 'o eixo voltou a encher de numeros')
-  assert.ok(C.includes('interval="preserveStartEnd"'), 'os rotulos voltam a competir no mobile')
+/* ========================================================================= *
+ * COCKPIT — "Evolução Atividade Operacional Diária"
+ * ========================================================================= */
+
+/** Só o corpo do gráfico diário, sem os comentários do arquivo. */
+function corpoDoDiario(): string {
+  const C = ler('components/dashboard/DashboardCharts.tsx')
+  const ini = C.indexOf('const diarioChart =')
+  const fim = C.indexOf('const charts: Record<string, React.ReactNode>')
+  assert.ok(ini > 0 && fim > ini, 'o grafico diario mudou de forma')
+  return C.slice(ini, fim)
+}
+
+test('o grafico diario existe, com o nome EXATO pedido', () => {
+  const C = ler('components/dashboard/DashboardCharts.tsx')
+  assert.ok(
+    C.includes("title: 'Evolução Atividade Operacional Diária'"),
+    'o titulo do grafico diario nao e o pedido',
+  )
 })
 
-test('os candles sao estreitos — a serie precisa parecer uma serie', () => {
-  const C = ler('components/ui/Candles.tsx')
-  assert.ok(C.includes('width * 0.44'), 'os candles voltaram a encostar um no outro')
+test('TPV e Receita sao COLUNAS; Transacoes e MED sao LINHAS', () => {
+  const d = corpoDoDiario()
+  // Barras: exatamente duas, TPV e Receita.
+  assert.ok(/<Bar [^>]*dataKey="tpv"/.test(d), 'TPV nao e coluna')
+  assert.ok(/<Bar [^>]*dataKey="receita"/.test(d), 'Receita nao e coluna')
+  assert.equal((d.match(/<Bar /g) ?? []).length, 2, 'o numero de colunas mudou')
+
+  // Linhas: exatamente duas, Transacoes e MED.
+  assert.ok(/<Line [^>]*dataKey="transacoes"/.test(d), 'Transacoes nao e linha')
+  assert.ok(/<Line [^>]*dataKey="medPercentual"/.test(d), 'MED nao e linha')
+  assert.equal((d.match(/<Line /g) ?? []).length, 2, 'o numero de linhas mudou')
 })
 
-test('o valor no tooltip vem do formatador de fora — moeda por extenso', () => {
-  // Nunca K, M, MM ou BI: quem passa o formatador e o Cockpit, com `moedaCheia`.
-  const C = ler('components/ui/Candles.tsx')
-  assert.ok(C.includes('formatar: (n: number) => string'))
-  const cockpit = ler('components/dashboard/DashboardCharts.tsx')
-  assert.ok(cockpit.includes('formatar={moedaCheia}'))
+test('TPV e Receita tem EIXOS MONETARIOS SEPARADOS — um nao esmaga o outro', () => {
+  const d = corpoDoDiario()
+  // Dois eixos monetarios distintos: no mesmo eixo, a receita (milhares)
+  // viraria um fio ao lado do TPV (milhoes).
+  assert.ok(d.includes('yAxisId="tpv"'), 'o eixo do TPV sumiu')
+  assert.ok(d.includes('yAxisId="receita"'), 'o eixo da Receita sumiu')
+  assert.ok(d.includes('orientation="right"'), 'os dois eixos monetarios ficaram do mesmo lado')
+  // Transacoes e MED com amplitude propria.
+  assert.ok(d.includes('yAxisId="tx"'), 'o eixo de transacoes sumiu')
+  assert.ok(d.includes('yAxisId="med"'), 'o eixo de MED sumiu')
 })
 
-test('cada vela tem titulo proprio no Cockpit', () => {
-  const cockpit = ler('components/dashboard/DashboardCharts.tsx')
-  for (const t of ['TPV — velas mensais', 'Receita — velas mensais', 'Transações — velas mensais']) {
-    assert.ok(cockpit.includes(t), `o grafico "${t}" perdeu o titulo`)
+test('os dados NAO sao normalizados artificialmente', () => {
+  const d = corpoDoDiario()
+  for (const proibido of ['/ max', 'normaliz', '* 100 /', 'indice']) {
+    assert.ok(!d.includes(proibido), `o grafico diario normaliza (${proibido})`)
   }
+})
+
+test('o tooltip diario mostra data, transacoes, receita, TPV e MED', () => {
+  const d = corpoDoDiario()
+  for (const nome of ["nome: 'TPV'", "nome: 'Receita'", "nome: 'Transações'", "nome: 'MED'"]) {
+    assert.ok(d.includes(nome), `${nome} saiu do tooltip diario`)
+  }
+})
+
+test('o tooltip diario usa VALOR MONETARIO COMPLETO — nunca K, M ou BI', () => {
+  const d = corpoDoDiario()
+  // Cada serie monetaria carrega `moedaCheia`, nao o formatador de eixo.
+  assert.equal(
+    (d.match(/formatar: moedaCheia/g) ?? []).length, 2,
+    'TPV e Receita precisam dos dois formatadores de moeda cheia',
+  )
+  assert.ok(!d.includes('formatar: eixoMoeda'), 'o tooltip usou o formatador de eixo')
+})
+
+test('o grafico diario tem a altura de DOIS graficos normais', () => {
+  const d = corpoDoDiario()
+  const normal = ler('components/dashboard/DashboardCharts.tsx').includes('height={200}')
+  assert.ok(normal, 'o grafico normal mudou de altura — reveja a proporcao')
+  assert.ok(d.includes('height={420}'), 'o grafico diario nao tem altura dupla')
+})
+
+test('o grafico diario NAO e candlestick', () => {
+  const d = corpoDoDiario()
+  for (const proibido of ['Candle', 'faixa', 'high', 'low', 'OHLC']) {
+    assert.ok(!d.includes(proibido), `${proibido} apareceu no grafico diario`)
+  }
+})
+
+/* ========================================================================= *
+ * LAYOUT DESTA RODADA — detalhe BaaS, tela BaaS, datas, Carteira
+ * ========================================================================= */
+
+const DETALHE = ler('components/financeiro/DetalheBaas.tsx')
+const BAAS = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+
+test('o detalhe BaaS: PRODUTO nao engole mais a tabela', () => {
+  /**
+   * "Produto" era a unica coluna sem `whitespace-nowrap` e com `max-w-0`: o
+   * navegador lhe dava TODO o espaco sobrante e empurrava Taxa, Volume e
+   * Total para a borda direita, com um vao vazio no meio.
+   *
+   * As quatro larguras somam 100%, entao nenhuma pode crescer sobre as
+   * outras.
+   */
+  for (const largura of ['w-[40%]', 'w-[18%]', 'w-[24%]']) {
+    assert.ok(DETALHE.includes(largura), `a largura ${largura} saiu da tabela de produtos`)
+  }
+  // Duas colunas de 18% (Taxa e Volume).
+  assert.equal(
+    (DETALHE.match(/w-\[18%\]/g) ?? []).length, 2,
+    'Taxa e Volume deixaram de ter a mesma largura',
+  )
+})
+
+test('as quatro colunas do detalhe BaaS existem, nesta ordem', () => {
+  const cabecalho = DETALHE.slice(DETALHE.indexOf('<HeadRow>'), DETALHE.indexOf('</HeadRow>'))
+  const ordem = ['Produto', 'Taxa', 'Volume', 'Total']
+  let pos = -1
+  for (const col of ordem) {
+    const i = cabecalho.indexOf(`>${col}<`)
+    assert.ok(i > pos, `${col} fora de ordem no detalhe BaaS`)
+    pos = i
+  }
+})
+
+test('o nome do produto TRUNCA e mantem o texto no tooltip', () => {
+  // A informacao continua completa: `title` com o nome inteiro.
+  assert.ok(DETALHE.includes('max-w-0'), 'a celula do produto voltou a crescer')
+  assert.ok(DETALHE.includes('bp-truncate'), 'o nome do produto deixou de truncar')
+  assert.ok(DETALHE.includes('title={i.nome}'), 'o nome completo saiu do tooltip')
+})
+
+test('a tela de Lancamentos BaaS ROLA na horizontal em vez de espremer', () => {
+  // Dez colunas, seis monetarias e por extenso. O TableShell ja tem
+  // `overflow-x-auto`; o que faltava era a largura minima confortavel.
+  assert.ok(BAAS.includes('min-w-[82rem]'), 'a tabela BaaS voltou a espremer as colunas')
+  const shell = ler('components/ui/DataTable.tsx')
+  assert.ok(shell.includes('overflow-x-auto'), 'o TableShell perdeu a rolagem horizontal')
+})
+
+test('DATA BASE e DATA DE CORTE sao DUAS colunas, lado a lado', () => {
+  /**
+   * Era uma coluna "Periodo" com "01/10/2026 a 31/10/2026" dentro, e na
+   * largura disponivel a string quebrava em TRES linhas, esticando a altura
+   * de toda a linha da tabela.
+   */
+  assert.ok(BAAS.includes('>Data base<'), 'a coluna Data base nao existe')
+  assert.ok(BAAS.includes('>Data de corte<'), 'a coluna Data de corte nao existe')
+  // Lado a lado e sem quebrar.
+  assert.ok(
+    BAAS.indexOf('>Data base<') < BAAS.indexOf('>Data de corte<'),
+    'Data de corte vem antes de Data base',
+  )
+  // Duas celulas, cada uma com uma data, e nenhuma delas quebrando linha.
+  assert.equal(
+    (BAAS.match(/whitespace-nowrap">\s*\{formatDate\(l\.periodo/g) ?? []).length, 2,
+    'as duas datas da linha mudaram de forma',
+  )
+  // A coluna unica "Periodo" saiu do cabecalho.
+  const cabecalho = BAAS.slice(BAAS.indexOf('<HeadRow>'), BAAS.indexOf('</HeadRow>'))
+  assert.ok(!cabecalho.includes('>Período<'), 'a coluna unica "Periodo" voltou')
+})
+
+test('os nomes oficiais aparecem tambem no FORMULARIO', () => {
+  assert.ok(BAAS.includes('>Data base *<'), 'o formulario nao usa "Data base"')
+  assert.ok(BAAS.includes('>Data de corte *<'), 'o formulario nao usa "Data de corte"')
+  // So o CODIGO: o comentario do arquivo cita o rotulo antigo ao explicar a
+  // troca, e procura-lo no arquivo inteiro acusaria a propria explicacao.
+  assert.ok(
+    !semComentarios(BAAS).includes('Período — início'),
+    'o rotulo antigo voltou ao formulario',
+  )
+})
+
+test('CARTEIRA: Modelo operacional e Segmento ficam visualmente SEPARADOS', () => {
+  /**
+   * Largura e `pr-4` ja existiam e nao bastaram: dois badges cinzas lado a
+   * lado continuam lendo como um campo so de duas palavras. O que separa e o
+   * fio vertical.
+   */
+  assert.ok(
+    CARTEIRA.includes('>Modelo operacional<'),
+    'o cabecalho voltou a abreviar para "Modelo"',
+  )
+  assert.ok(
+    CARTEIRA.includes('border-l border-line">Segmento<'),
+    'o fio entre Modelo e Segmento saiu do cabecalho',
+  )
+  assert.ok(
+    CARTEIRA.includes('max-w-0 border-l border-line pl-4'),
+    'o fio entre Modelo e Segmento saiu da celula',
+  )
+})
+
+test('CARTEIRA: a ordem e Modelo → Segmento → ... → Gestor', () => {
+  const cabecalho = CARTEIRA.slice(CARTEIRA.indexOf('<HeadRow>'), CARTEIRA.indexOf('</HeadRow>'))
+  const iModelo = cabecalho.indexOf('Modelo operacional')
+  const iSegmento = cabecalho.indexOf('Segmento')
+  const iGestor = cabecalho.indexOf('Gestor')
+  assert.ok(iModelo < iSegmento, 'Segmento voltou a vir antes de Modelo')
+  assert.ok(iSegmento < iGestor, 'Gestor saiu de lugar')
+})
+
+test('CARTEIRA: nada foi removido — conta, status, mensalidade e gestor ficam', () => {
+  for (const col of ['Cliente', 'Conta', 'Status', 'Mensalidade API', 'Gestor']) {
+    assert.ok(CARTEIRA.includes(`>${col}<`), `a coluna ${col} desapareceu da Carteira`)
+  }
+})
+
+/* ========================================================================= *
+ * DESCRIÇÃO CURTA E CATEGORIA — na tela de Lançamentos
+ * ========================================================================= */
+
+test('LANCAMENTOS: toda linha tem DETALHES, nao so a de origem BaaS', () => {
+  // Um lancamento comum nao tinha para onde clicar: para LER a observacao era
+  // preciso abrir o formulario de ESCRITA.
+  assert.ok(
+    LANCAMENTOS.includes('onClick={() => setDetalhe(l)}>Detalhes</Button>'),
+    'o botao Detalhes voltou a ser condicional',
+  )
+})
+
+test('o painel de detalhes mostra os campos gerais pedidos', () => {
+  const D = ler('components/financeiro/DetalheLancamento.tsx')
+  for (const campo of [
+    'Descrição', 'Categoria', 'Tipo', 'Data do lançamento',
+    'Status', 'Periodicidade', 'Fornecedor', 'Origem',
+  ]) {
+    assert.ok(D.includes(`rotulo="${campo}"`), `o campo ${campo} saiu do detalhe`)
+  }
+  // Observacao aparece sempre, com "—" quando vazia: a ausencia e informacao.
+  assert.ok(D.includes('Observação'))
+  assert.ok(D.includes("l.observacao?.trim() || '—'"))
+})
+
+test('o detalhe BaaS entra no MESMO painel, nao num segundo modal', () => {
+  const D = ler('components/financeiro/DetalheLancamento.tsx')
+  assert.ok(D.includes('<CorpoBaas l={baas} />'), 'a camada BaaS saiu do painel geral')
+  assert.ok(!D.includes('<DetalheBaas'), 'voltou a empilhar um modal sobre o outro')
 })

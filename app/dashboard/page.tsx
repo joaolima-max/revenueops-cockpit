@@ -3,18 +3,15 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, metasDoPeriodo, indicadoresEstrutura, observacoesDiarias,
+  kpisDoPeriodo, indicadoresEstrutura, atividadeOperacionalDiaria,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import { evolucaoParceiros } from '@/lib/financeiro'
-import { velas as velasDe } from '@/lib/candle'
 import { formatMesRef } from '@/lib/utils'
 import {
   figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem, variacao,
 } from '@/lib/format-financeiro'
 import DashboardCharts from '@/components/dashboard/DashboardCharts'
-import MetaAnalytics from '@/components/dashboard/MetaAnalytics'
-import { avaliarCompleto } from '@/lib/metas'
 import PageHeader from '@/components/dashboard/PageHeader'
 import HairlineGrid from '@/components/ui/HairlineGrid'
 import StatTile from '@/components/ui/StatTile'
@@ -28,17 +25,28 @@ export default async function DashboardPage() {
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(12)
 
-  const [kpis, metas, estrutura, serie, parceiros, diarias] = await Promise.all([
+  /**
+   * METAS SAÍRAM DO COCKPIT.
+   *
+   * `metasDoPeriodo` não é mais consultada aqui, e com ela saíram o
+   * acompanhamento, o pacing e o projetado × realizado. Metas vivem em
+   * Metas — um painel dedicado, onde se cria, edita e acompanha. Tê-las
+   * também no Cockpit significava duas telas respondendo à mesma pergunta e
+   * um executivo conferindo de memória se os dois números batiam.
+   *
+   * O Cockpit voltou a ser o que ele é: o que aconteceu, e como evoluiu.
+   */
+  const [kpis, estrutura, serie, parceiros, diario] = await Promise.all([
     kpisDoPeriodo(periodo),
-    metasDoPeriodo(periodo),
     indicadoresEstrutura(periodo),
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
     // Série de BaaS e White Labels ativos, RECONSTRUÍDA do histórico de
     // `ativo` das condições comerciais — não é o número de hoje repetido.
     evolucaoParceiros(periodos),
-    // Observações DIÁRIAS: o insumo das velas. A série mensal já agregada não
-    // permite montar OHLC — abertura, máxima e mínima somem na média.
-    observacoesDiarias(periodos),
+    // Série DIÁRIA da "Evolução Atividade Operacional Diária": TPV, receita,
+    // transações e MED, dia a dia. Recortada no servidor (90 dias lançados)
+    // para não mandar um ano de observações ao navegador.
+    atividadeOperacionalDiaria(periodos),
   ])
 
   /** Mês anterior com dado — base honesta para variação. Nada é extrapolado. */
@@ -124,36 +132,6 @@ export default async function DashboardPage() {
     }
   })
 
-  /**
-   * VELAS MENSAIS, agregadas AQUI e não no navegador.
-   *
-   * Cada vela é formada pelas observações diárias daquele mês: abertura é o
-   * primeiro dia, fechamento o último, máxima e mínima os extremos. Todo
-   * número é um valor que foi efetivamente lançado em algum dia — a agregação
-   * não inventa OHLC, ela o encontra.
-   *
-   * Dia sem lançamento é descartado, nunca lido como zero.
-   */
-  const velas = {
-    tpv: velasDe(diarias.map((d) => ({ data: d.data, valor: d.tpv }))),
-    receita: velasDe(diarias.map((d) => ({ data: d.data, valor: d.receitaTarifaria }))),
-    transacoes: velasDe(diarias.map((d) => ({ data: d.data, valor: d.qtdTransacoes }))),
-  }
-
-  /**
-   * Avaliação completa de cada meta — comparação, gap, cumprimento, direção e
-   * ritmo. Uma única função produz tudo (lib/metas.ts), e é a MESMA que a tela
-   * de Metas usa: os dois lugares não têm como discordar.
-   */
-  const avaliacoes = metas.map((m) => avaliarCompleto({
-    tipo: m.tipo,
-    periodo,
-    meta: m.meta,
-    realizado: m.realizado,
-    direcao: m.direcao,
-    unidade: m.unidade,
-  }))
-
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
@@ -213,15 +191,8 @@ export default async function DashboardPage() {
       <DashboardCharts
         chartData={chartData}
         mrrEvolution={periodos.map((p) => ({ mes: p, mrr: estrutura.mrr.total }))}
-        velas={velas}
+        diario={diario}
       />
-
-      {/* ACOMPANHAMENTO DE METAS — depois dos gráficos, de propósito.
-          A leitura do Cockpit é: o que aconteceu (KPIs), como evoluiu
-          (gráficos) e só então o quanto disso estava no plano. Metas no topo
-          invertiam a ordem: julgavam o número antes de o executivo tê-lo lido.
-          Toda a matemática vem de `avaliarCompleto`. */}
-      <MetaAnalytics avaliacoes={avaliacoes} periodoLabel={formatMesRef(periodo)} />
     </div>
   )
 }

@@ -46,3 +46,14 @@ next-env.d.ts
 /app/generated/prisma
 
 .env.local
+
+# BACKUPS DO BANCO — nunca versionados.
+#
+# `backups-revops/` guarda dumps de PRODUÇÃO. Um `git add -A` os arrastou para
+# o índice nesta rodada; commitá-los publicaria dados de produção no GitHub e
+# engordaria o repositório para sempre (um dump não comprime bem entre
+# versões, e o histórico do git não se apaga).
+#
+# Os dumps continuam no disco, onde servem para restaurar. Só não entram aqui.
+backups-revops/
+*.dump

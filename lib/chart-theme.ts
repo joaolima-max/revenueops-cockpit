@@ -64,6 +64,27 @@ export function signal(tema: Tema) {
 /** @deprecated use `signal(tema)` — mantido para o tema escuro. */
 export const SIGNAL = SIGNAL_DARK
 
+/* ---------- tipografia dos gráficos -------------------------------------- */
+
+/**
+ * A FAMÍLIA DO TEXTO DENTRO DO SVG.
+ *
+ * O recharts desenha eixos e legendas como `<text>` dentro de um `<svg>`, e
+ * não declara família nenhuma. Herdar do CSS funciona — até alguém envolver o
+ * gráfico num contexto que reseta a herança, ou o navegador aplicar a sua
+ * própria default de SVG. O resultado é uma tela cujos rótulos de eixo saem
+ * numa fonte diferente do resto da página, e o sintoma é exatamente o que se
+ * relata como "página com fonte diferente".
+ *
+ * Declarar resolve de uma vez. As variáveis são as MESMAS do design system
+ * (definidas em globals.css a partir de `next/font`) — não um segundo
+ * cadastro de fonte, que é como as duas divergiriam.
+ *
+ *   --font-sans    corpo: rótulos de eixo, legenda
+ *   --font-display números: nada aqui ainda, mas é a família dos KPIs
+ */
+export const FONTE_GRAFICO = 'var(--font-sans), system-ui, sans-serif'
+
 /* ---------- props derivadas do tema -------------------------------------- */
 
 export function gridProps(p: Paleta) {
@@ -73,7 +94,8 @@ export function gridProps(p: Paleta) {
 
 export function axisProps(p: Paleta) {
   return {
-    tick: { fill: p.axis, fontSize: 11 },
+    // `fontFamily` explícito: ver FONTE_GRAFICO.
+    tick: { fill: p.axis, fontSize: 11, fontFamily: FONTE_GRAFICO },
     axisLine: false,
     tickLine: false,
     tickMargin: 10,
@@ -83,7 +105,10 @@ export function axisProps(p: Paleta) {
 
 export function legendProps(p: Paleta) {
   return {
-    wrapperStyle: { color: p.muted, fontSize: 11, paddingTop: 14 },
+    wrapperStyle: {
+      color: p.muted, fontSize: 11, paddingTop: 14,
+      fontFamily: FONTE_GRAFICO,
+    },
     iconType: 'plainline' as const,
     iconSize: 12,
   }
@@ -137,7 +162,7 @@ export function rampaCategorias(tema: Tema, n: number): string[] {
 }
 
 /** Uma série só existe se houver ao menos um valor finito diferente de zero. */
-export function hasSeries<T extends Record<string, unknown>>(rows: T[], ...keys: (keyof T)[]): boolean {
+export function hasSeries<T extends object>(rows: T[], ...keys: (keyof T)[]): boolean {
   return rows.some((r) => keys.some((k) => {
     const v = r[k]
     return typeof v === 'number' && Number.isFinite(v) && v !== 0
@@ -145,7 +170,7 @@ export function hasSeries<T extends Record<string, unknown>>(rows: T[], ...keys:
 }
 
 /** Uma série é constante? (ex.: MRR repetido em 12 meses não é tendência) */
-export function isFlat<T extends Record<string, unknown>>(rows: T[], key: keyof T): boolean {
+export function isFlat<T extends object>(rows: T[], key: keyof T): boolean {
   const vals: number[] = []
   for (const r of rows) {
     const v = r[key]

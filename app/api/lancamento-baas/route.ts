@@ -7,6 +7,7 @@ import {
   calcular, receitaBassPago, validarLancamento,
   type ProdutoTarifado,
 } from '@/lib/lancamento-baas'
+import { gerarTitulos, clientePelaConta } from '@/lib/baas-titulos'
 
 /**
  * LANÇAMENTO BAAS — o volume mensal de um parceiro, tarifado.
@@ -144,15 +145,78 @@ export async function POST(request: NextRequest) {
       include: { itens: { orderBy: { ordem: 'asc' } } },
     })
 
+    /**
+     * OS TÍTULOS NASCEM COM O LANÇAMENTO.
+     *
+     * Antes o lançamento era criado como RASCUNHO e os três registros só
+     * apareciam quando alguém clicava "Lançar" depois. Era a causa exata de
+     * "Contas a Pagar e Contas a Receber não estão sendo atualizados": nada
+     * estava quebrado no cálculo nem na geração — o passo simplesmente não
+     * acontecia sozinho, e quem lançava não tinha como saber que faltava um
+     * segundo clique. Foi assim que surgiram lançamentos em produção com
+     * conjunto incompleto.
+     *
+     * Lançar É gerar: um lançamento BaaS existe para produzir a receita, o
+     * título a receber e o título a pagar. Um lançamento sem eles não é um
+     * estado intermediário útil, é um lançamento pela metade.
+     *
+     * Idempotente pelas três FKs UNIQUE — e editar depois ATUALIZA os mesmos
+     * títulos, nunca cria um segundo conjunto.
+     */
+    /**
+     * SE A GERAÇÃO FALHAR, O LANÇAMENTO NÃO É DESCARTADO — e o problema não é
+     * engolido.
+     *
+     * As duas alternativas eram piores. Apagar o lançamento recém-criado
+     * jogaria fora o trabalho de quem preencheu o formulário por causa de um
+     * erro que quase sempre é de configuração. Devolver 201 em silêncio
+     * reproduziria o defeito original: um lançamento sem títulos que ninguém
+     * sabe que está pela metade.
+     *
+     * Então o lançamento fica, o aviso volta junto, e a linha mostra "Regerar
+     * títulos" — que é idempotente e resolve com um clique assim que a causa
+     * (uma categoria ausente, tipicamente) estiver corrigida.
+     */
+    let titulos = null
+    let avisoTitulos: string | null = null
+    try {
+      titulos = await gerarTitulos({
+        lancamentoBaasId: criado.id,
+        condicaoId: condicao.id,
+        parceiroNome: condicao.nomeFantasia,
+        numeroConta: criado.numeroConta,
+        periodoInicio: inicio,
+        periodoFim: fim,
+        // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
+        // overprice). O AP é o residual devido ao parceiro.
+        tarifas: calc.totalTarifas,
+        receita: receitaBassPago(calc),
+        valorCliente: calc.valorCliente,
+        criadoPorId: session.userId,
+        clienteId: await clientePelaConta(criado.numeroConta),
+      })
+    } catch (erroTitulos) {
+      avisoTitulos = erroTitulos instanceof Error
+        ? erroTitulos.message
+        : 'Não foi possível gerar os títulos.'
+    }
+
     await logAudit(
       session.userId, 'CRIOU_LANCAMENTO_BAAS', 'LancamentoBaas', criado.id,
       `${condicao.nomeFantasia} · conta ${criado.numeroConta} · `
       + `${body.periodoInicio} a ${body.periodoFim} · `
       + `saldo ${calc.saldoInicial} · tarifas ${calc.totalTarifas} · `
-      + `overprice ${calc.overpriceValor} · cliente ${calc.valorCliente}`,
+      + `overprice ${calc.overpriceValor} · cliente ${calc.valorCliente} · `
+      + (titulos
+        ? `lançamento ${titulos.lancamentoId} · AR ${titulos.contaReceberId} · `
+          + `AP ${titulos.contaPagarId}`
+        : `TÍTULOS NÃO GERADOS: ${avisoTitulos}`),
     )
 
-    return NextResponse.json({ lancamento: criado, receitaBassPago: receitaBassPago(calc) }, { status: 201 })
+    return NextResponse.json(
+      { lancamento: criado, receitaBassPago: receitaBassPago(calc), titulos, avisoTitulos },
+      { status: 201 },
+    )
   } catch (e) {
     // O UNIQUE (condicaoId, periodoInicio, periodoFim) é o que impede tarifar
     // o mesmo volume duas vezes. A recusa explica, em vez de estourar 500.

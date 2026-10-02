@@ -204,6 +204,9 @@ enum MovimentacaoTipo {
   /// Mudanca de RESULTADO do card. Ganho e Perdido nao sao etapas: sao o
   /// desfecho do processo comercial, e mudam sem o card sair da coluna.
   MUDANCA_RESULTADO
+  /// Card removido do Pipeline. O LEAD CONTINUA EXISTINDO: o que sai e o card,
+  /// e a movimentacao registra de qual funil e etapa ele saiu.
+  EXCLUSAO_CARD
 }
 
 /// DESFECHO do card, independente da etapa em que ele esta.
@@ -340,6 +343,7 @@ model User {
   pendenciaEventos   PendenciaEvento[]
   comentariosLead    LeadComentario[]
   leadsExcluidos     Lead[]                       @relation("LeadExcluidoPor")
+  cardsExcluidos     Deal[]                       @relation("DealExcluidoPor")
   lancamentosBaas    LancamentoBaas[]             @relation("LancamentoBaasCriador")
   comentariosDeal    DealComentario[]             @relation("DealComentarioAutor")
   lancamentos        LancamentoFinanceiro[]       @relation("LancamentoCriador")
@@ -437,6 +441,19 @@ model Deal {
   /// Quando o resultado deixou de ser EM_ANDAMENTO.
   resultadoEm DateTime?
 
+  /// EXCLUSAO DO CARD — soft delete, igual ao de Lead.
+  ///
+  /// EXCLUIR CARD NAO E EXCLUIR LEAD. O lead continua em Leads, com seu
+  /// historico, seus comentarios e suas atividades; o que desaparece e o card
+  /// do Pipeline. Apagar fisicamente levaria embora as movimentacoes e os
+  /// comentarios do card, que sao justamente o historico que a exclusao
+  /// precisa preservar.
+  ///
+  /// Toda consulta de Pipeline e todo KPI filtram `deletedAt: null`.
+  deletedAt   DateTime?
+  deletedById String?
+  deletedBy   User?     @relation("DealExcluidoPor", fields: [deletedById], references: [id], onDelete: SetNull)
+
   ownerId    String
   owner      User       @relation("DealOwner", fields: [ownerId], references: [id])
   leadId     String?
@@ -464,6 +481,9 @@ model Deal {
   @@index([funilId, etapaId])
   @@index([resultado])
   @@index([segmentoComercialId])
+  /// Sem o indice, cada leitura do quadro varreria a tabela para descartar os
+  /// cards excluidos.
+  @@index([deletedAt])
 }
 
 /// Anotacao do card, com autor e data/hora. Mesma mecanica de LeadComentario:

@@ -111,6 +111,7 @@ export default function CardDetalheModal({
   const [historico, setHistorico] = useState<Movimentacao[]>([])
   const [comentarios, setComentarios] = useState<Comentario[]>([])
   const [acesso, setAcesso] = useState<AcessoCard | null>(null)
+  const [excluindo, setExcluindo] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
 
@@ -168,6 +169,41 @@ export default function CardDetalheModal({
     setSalvandoResultado(false)
   }
 
+  /**
+   * EXCLUIR O CARD — **não** o lead.
+   *
+   * A confirmação diz isso com todas as letras, porque é a dúvida real de
+   * quem clica: o botão fica ao lado de Ganho e Perdido, e "excluir" num
+   * contexto comercial soa como "descartar o contato". O lead continua em
+   * Leads, com histórico, e pode receber um card novo depois.
+   */
+  async function excluirCard() {
+    if (!detalhe) return
+
+    const lead = detalhe.lead
+    const ok = window.confirm(
+      `Excluir o card "${detalhe.title}" do Pipeline?\n\n`
+      + `O card sai do quadro e deixa de contar nos indicadores.\n\n`
+      + (lead
+        ? `O LEAD "${lead.name}" NÃO será excluído: continua em Leads, com o `
+          + `histórico dele, e pode receber um card novo depois.\n\n`
+        : '')
+      + `O histórico do card (movimentações e anotações) é preservado.`,
+    )
+    if (!ok) return
+
+    setExcluindo(true); setErro('')
+    const res = await fetch(`/api/pipeline/cards/${cardId}`, { method: 'DELETE' })
+    if (res.ok) {
+      onMudou()
+      onFechar()
+    } else {
+      const d = await res.json().catch(() => ({}))
+      setErro(d.error ?? 'Não foi possível excluir o card.')
+      setExcluindo(false)
+    }
+  }
+
   async function comentar(e: React.FormEvent) {
     e.preventDefault()
     const texto = novoComentario.trim()
@@ -190,6 +226,9 @@ export default function CardDetalheModal({
   }
 
   const podeResultado = !!acesso && (acesso.mover || acesso.editar)
+  // EXCLUIR exige `editar`, não `mover`: tirar o card do quadro é mais forte
+  // que arrastá-lo de coluna. Espelha `podeExcluirCard` no servidor.
+  const podeExcluir = !!acesso && acesso.editar
 
   return (
     <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -380,7 +419,16 @@ export default function CardDetalheModal({
           )}
         </div>
 
-        <div className="p-5 border-t border-line flex justify-end flex-none">
+        {/* EXCLUIR fica no rodapé, à esquerda e separado do "Fechar".
+            Não entra na fileira de Ganho/Perdido de propósito: aqueles três
+            são o desfecho do negócio e se alternam entre si; excluir tira o
+            card do quadro, e não é um quarto resultado possível. */}
+        <div className="p-5 border-t border-line flex items-center justify-between gap-3 flex-none">
+          {podeExcluir ? (
+            <Button variant="danger" size="sm" disabled={excluindo} onClick={excluirCard}>
+              {excluindo ? 'Excluindo…' : 'Excluir card'}
+            </Button>
+          ) : <span />}
           <Button onClick={onFechar}>Fechar</Button>
         </div>
       </div>

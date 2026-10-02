@@ -13,6 +13,7 @@ import {
 import Figure from '@/components/ui/Figure'
 import { figuraMoeda, moedaCheia, quantidadeCompacta } from '@/lib/format-financeiro'
 import { calcular, rotuloPeriodo, type ProdutoTarifado } from '@/lib/lancamento-baas'
+import { formatDate } from '@/lib/utils'
 import DetalheBaas from '@/components/financeiro/DetalheBaas'
 
 /**
@@ -107,6 +108,7 @@ export default function LancamentoBaasClient() {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
   const [filtro, setFiltro] = useState('')
+  const [sincronizando, setSincronizando] = useState(false)
 
   useEffect(() => {
     let vivo = true
@@ -270,6 +272,41 @@ export default function LancamentoBaasClient() {
     }
   }
 
+  /**
+   * Repara todos os lançamentos com conjunto incompleto.
+   *
+   * O relatório é explícito nos três casos — nada a fazer, reparados, e
+   * falhas com o motivo. "Nada a fazer" é informação: significa que todos os
+   * conjuntos estão completos, e é o estado esperado.
+   */
+  async function sincronizar() {
+    setSincronizando(true)
+    try {
+      const res = await fetch('/api/lancamento-baas/sincronizar', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(d.error ?? 'Não foi possível sincronizar.')
+        return
+      }
+      if (d.examinados === 0) {
+        alert('Nada a sincronizar: todos os lançamentos já têm o lançamento financeiro, o título a receber e o título a pagar.')
+      } else {
+        alert(
+          `Examinados: ${d.examinados}\nReparados: ${d.reparados}`
+          + (d.falhas?.length
+            ? `\n\nNão reparados (${d.falhas.length}):\n`
+              + d.falhas.map((f: { parceiro: string; motivo: string }) =>
+                `· ${f.parceiro} — ${f.motivo}`).join('\n')
+            : ''),
+        )
+      }
+      // Mesmo gatilho que as outras ações usam para recarregar a lista.
+      setVersao((v) => v + 1)
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   if (carregando) return <p className="t-sm text-subtle">Carregando...</p>
 
   const inp = 'bp-field'
@@ -281,7 +318,21 @@ export default function LancamentoBaasClient() {
         title="Lançamento BaaS"
         sub="Volume mensal de BaaS e White Label, tarifado pelas condições vigentes. As tarifas vêm do cadastro — não se redigitam aqui."
         actions={podeGerenciar
-          ? <Button variant="primary" onClick={abrirNovo}>Novo lançamento</Button>
+          ? (
+            <div className="flex items-center gap-2">
+              {/* SINCRONIZAR — reparo em lote dos conjuntos incompletos.
+                  Herança do tempo em que criar um lançamento não gerava os
+                  três registros sozinho (agora gera), e de títulos apagados à
+                  mão em Lançamentos, que zeram a FK.
+                  Idempotente e conservador: não toca em conjunto completo nem
+                  em nada liquidado. Em uso normal não encontra nada a fazer e
+                  diz isso. */}
+              <Button onClick={sincronizar} disabled={sincronizando}>
+                {sincronizando ? 'Sincronizando…' : 'Sincronizar títulos'}
+              </Button>
+              <Button variant="primary" onClick={abrirNovo}>Novo lançamento</Button>
+            </div>
+          )
           : undefined}
       />
 
@@ -305,13 +356,28 @@ export default function LancamentoBaasClient() {
         </div>
       )}
 
+      {/* ROLAGEM HORIZONTAL em vez de colunas espremidas.
+          São dez colunas, seis delas monetárias e por extenso ("R$
+          4.250.000,00" — nunca abreviado). Forçar tudo na largura da tela
+          quebrava as datas em três linhas e encavalava os valores. O
+          `min-w` garante largura confortável a cada coluna; o
+          `overflow-x-auto` do TableShell cuida de telas menores, onde
+          rolar lateralmente é melhor que ler um número cortado. */}
       <TableShell>
-        <Table>
+        <Table className="min-w-[82rem]">
           <THead>
             <HeadRow>
-              <Th>Parceiro</Th>
+              <Th className="pl-5">Parceiro</Th>
               <Th>Conta</Th>
-              <Th>Período</Th>
+              {/* DATA BASE | DATA DE CORTE — duas colunas, lado a lado.
+                  Era uma coluna só, "Período", com "01/10/2026 a
+                  31/10/2026" dentro: na largura disponível a string
+                  quebrava em três linhas ("01/10/2026" / "a" /
+                  "31/10/2026") e esticava a altura de toda a linha. Duas
+                  colunas com `nowrap` resolvem e ainda nomeiam o que cada
+                  data é. */}
+              <Th className="whitespace-nowrap">Data base</Th>
+              <Th className="whitespace-nowrap">Data de corte</Th>
               <Th align="right">Saldo</Th>
               <Th align="right">Tarifas</Th>
               <Th align="right">Overprice</Th>
@@ -322,7 +388,7 @@ export default function LancamentoBaasClient() {
           </THead>
           <tbody>
             {visiveis.length === 0 ? (
-              <EmptyRow colSpan={9}>
+              <EmptyRow colSpan={10}>
                 {lancamentos.length === 0
                   ? 'Nenhum lançamento registrado.'
                   : 'Nenhum lançamento corresponde à busca.'}
@@ -334,8 +400,11 @@ export default function LancamentoBaasClient() {
                   <span className="t-label text-subtle">{TIPO_LABEL[l.condicao.tipo] ?? l.condicao.tipo}</span>
                 </Td>
                 <Td className="text-muted">{l.numeroConta}</Td>
-                <Td className="text-muted">
-                  {rotuloPeriodo(new Date(l.periodoInicio), new Date(l.periodoFim))}
+                <Td className="text-muted t-num whitespace-nowrap">
+                  {formatDate(l.periodoInicio)}
+                </Td>
+                <Td className="text-muted t-num whitespace-nowrap">
+                  {formatDate(l.periodoFim)}
                 </Td>
                 <Td align="right" numeric>{moedaCheia(l.saldoInicial)}</Td>
                 <Td align="right" numeric>{moedaCheia(l.totalTarifas)}</Td>
@@ -420,13 +489,18 @@ export default function LancamentoBaasClient() {
                   <input id="lb-conta" className={inp} value={form.numeroConta}
                     onChange={(e) => setForm((f) => ({ ...f, numeroConta: e.target.value }))} />
                 </div>
+                {/* DATA BASE | DATA DE CORTE, no mesmo bloco e lado a lado.
+                    Os nomes oficiais substituem "Período — início/fim": o
+                    rótulo antigo tratava as duas datas como as pontas de um
+                    intervalo, quando elas têm papéis próprios — a data base
+                    abre a apuração, a data de corte a fecha. */}
                 <div>
-                  <label className={lbl} htmlFor="lb-ini">Período — início *</label>
+                  <label className={lbl} htmlFor="lb-ini">Data base *</label>
                   <input id="lb-ini" type="date" className={inp} value={form.periodoInicio}
                     onChange={(e) => setForm((f) => ({ ...f, periodoInicio: e.target.value }))} />
                 </div>
                 <div>
-                  <label className={lbl} htmlFor="lb-fim">Período — fim *</label>
+                  <label className={lbl} htmlFor="lb-fim">Data de corte *</label>
                   <input id="lb-fim" type="date" className={inp} value={form.periodoFim}
                     onChange={(e) => setForm((f) => ({ ...f, periodoFim: e.target.value }))} />
                 </div>

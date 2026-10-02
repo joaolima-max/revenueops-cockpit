@@ -167,6 +167,13 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
             <Button variant={todos ? 'primary' : 'ghost'} onClick={() => setTodos((v) => !v)}>
               {todos ? 'Todos os períodos' : 'Ver todos'}
             </Button>
+            {/* A DESPESA NASCE EM LANÇAMENTOS, e esta tela é a leitura dela
+                por vencimento. Não há cadastro aqui, então o caminho para
+                criar ou corrigir uma despesa precisa estar visível — do jeito
+                que já está em Contas a Receber. */}
+            <Link href="/dashboard/financeiro/lancamentos">
+              <Button>Ir para lançamentos</Button>
+            </Link>
           </div>
         }
       />
@@ -229,6 +236,11 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
           <EmptyState
             title="Nenhuma despesa neste período"
             description="Despesas são lançadas em Lançamentos e aparecem aqui pela data de vencimento."
+            action={
+              <Link href="/dashboard/financeiro/lancamentos">
+                <Button variant="primary">Ir para lançamentos</Button>
+              </Link>
+            }
           />
         </Panel>
       ) : (

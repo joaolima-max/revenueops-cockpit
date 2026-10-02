@@ -140,7 +140,17 @@ test('receita e despesa usam categorias DIFERENTES', () => {
   // somar receita com despesa no mesmo balde.
   assert.notEqual(CATEGORIA_RECEITA_BAAS, CATEGORIA_DESPESA_BAAS)
   assert.equal(CATEGORIA_RECEITA_BAAS, 'Tarifas BaaS')
-  assert.equal(CATEGORIA_DESPESA_BAAS, 'Repasse a Cliente BaaS')
+  // "BaaS", nao "Repasse a Cliente BaaS": o residual e devido ao PARCEIRO, que
+  // nao e cliente da carteira. A v26 renomeia a categoria preservando o id.
+  assert.equal(CATEGORIA_DESPESA_BAAS, 'BaaS')
+})
+
+test('a categoria da despesa NAO e generica', () => {
+  // Uma categoria chamada "Outros" ou "Despesas" deixaria o repasse ao
+  // parceiro indistinguivel de qualquer outra saida no gasto por categoria.
+  for (const generica of ['Outros', 'Despesas', 'Diversos', 'Geral']) {
+    assert.notEqual(CATEGORIA_DESPESA_BAAS, generica)
+  }
 })
 
 /* ========================================================================= *
@@ -273,10 +283,20 @@ test('o detalhe diz o que cada modulo recebeu', () => {
 
 test('o detalhe e alcancavel DE LANCAMENTOS', () => {
   // E a pergunta que a tela de Lancamentos levanta: de onde veio esse valor?
+  //
+  // O caminho mudou nesta rodada. Era um botao condicional que abria o
+  // DetalheBaas direto; agora TODA linha tem "Detalhes", e o painel geral
+  // acrescenta a camada BaaS quando a linha veio de um Lancamento BaaS — a
+  // decisao de mostrar ou nao a composicao saiu da tabela e foi para o
+  // painel, que e quem tem o dado.
   const l = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
-  assert.ok(l.includes('function origemBaas('))
-  assert.ok(l.includes('setDetalheBaas(origemBaas(l))'))
-  assert.ok(l.includes('<DetalheBaas'))
+  assert.ok(l.includes('onClick={() => setDetalhe(l)}>Detalhes</Button>'))
+  assert.ok(l.includes('<DetalheLancamento'))
+
+  // E o painel decide pela origem, mostrando o mesmo corpo do modulo.
+  const d = ler('components/financeiro/DetalheLancamento.tsx')
+  assert.ok(d.includes('l.baasReceita ?? l.baasContaPagar ?? null'))
+  assert.ok(d.includes('<CorpoBaas l={baas} />'))
 })
 
 test('o detalhe NAO e um dashboard: nenhum grafico', () => {
@@ -290,16 +310,33 @@ test('o detalhe NAO e um dashboard: nenhum grafico', () => {
  * DESCRIÇÃO SIMPLES
  * ========================================================================= */
 
-test('a descricao gerada e simples: "<o que> — <parceiro> — <competencia>"', () => {
+test('a descricao gerada e CURTA: "<o que> — <parceiro>"', () => {
   const t = ler('lib/baas-titulos.ts')
-  assert.ok(t.includes('`${oque} — ${d.parceiroNome} — ${competencia}`'))
-  // A composicao por produto NAO entra na descricao: e o que o detalhe mostra.
+  assert.ok(
+    t.includes('`${oque} — ${d.parceiroNome}`'),
+    'a descricao nao esta no formato curto',
+  )
+
+  // O QUE NAO PODE VOLTAR para a descricao, e por que:
+  //   - a conta e o intervalo: nao cabem numa linha de tabela;
+  //   - a competencia: a data ja e uma COLUNA da tela de Lancamentos;
+  //   - os produtos e volumes: e o que o painel de detalhes mostra.
   assert.ok(!t.includes('conta ${d.numeroConta} ·'), 'a conta voltou para a descricao')
+  assert.ok(!t.includes('${competencia}'), 'a competencia voltou para a descricao')
+  assert.ok(!t.includes('toLocaleDateString'), 'a descricao voltou a formatar data')
 })
 
-test('os tres registros tem descricoes distinguiveis', () => {
+test('os tres registros tem descricoes distinguiveis e curtas', () => {
   const t = ler('lib/baas-titulos.ts')
-  assert.ok(t.includes("descricao(d, 'Lançamento BaaS')"), 'o lancamento financeiro')
-  assert.ok(t.includes("descricao(d, 'Tarifas BaaS')"), 'o titulo a receber')
-  assert.ok(t.includes("descricao(d, 'Repasse ao parceiro')"), 'o titulo a pagar')
+  // Receita e titulo a receber dizem "Tarifa BaaS" — sao a mesma cobranca
+  // vista de dois lugares. O repasse diz outra coisa, porque e outro fluxo.
+  assert.equal(
+    (t.match(/descricao\(d, 'Tarifa BaaS'\)/g) ?? []).length, 2,
+    'o lancamento de receita e o titulo a receber devem dizer "Tarifa BaaS"',
+  )
+  assert.ok(t.includes("descricao(d, 'Repasse BaaS')"), 'o titulo a pagar')
+
+  // Os rotulos longos sairam.
+  assert.ok(!t.includes("'Repasse ao parceiro'"), 'o rotulo longo do repasse voltou')
+  assert.ok(!t.includes("'Lançamento BaaS')"), 'o rotulo antigo da receita voltou')
 })

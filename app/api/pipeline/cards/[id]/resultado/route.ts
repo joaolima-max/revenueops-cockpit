@@ -8,6 +8,7 @@ import {
 import {
   acessoAoCard, registrarMovimentacao, auditarPipeline, INCLUDE_CARD,
 } from '@/lib/pipeline-db'
+import { cardExcluido, ERRO_CARD_EXCLUIDO } from '@/lib/pipeline-db'
 
 /**
  * PATCH — muda o RESULTADO do card.
@@ -28,6 +29,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params
   const ctx = await acessoAoCard(session, id)
   if (!ctx) return NextResponse.json({ error: 'Card não encontrado' }, { status: 404 })
+  if (cardExcluido(ctx.deal)) {
+    return NextResponse.json({ error: ERRO_CARD_EXCLUIDO }, { status: 409 })
+  }
   if (!podeAlterarResultado(ctx.acesso)) {
     return NextResponse.json({ error: 'Você não pode alterar o resultado deste card.' }, { status: 403 })
   }

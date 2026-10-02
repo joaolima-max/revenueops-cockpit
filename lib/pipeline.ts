@@ -180,6 +180,21 @@ export function podeAlterarResultado(acesso: AcessoFunil): boolean {
   return acesso.mover || acesso.editar
 }
 
+/**
+ * PODE EXCLUIR O CARD?
+ *
+ * Exige `editar`, e não `mover`. Mudar o resultado ou arrastar de coluna é
+ * operar o funil — alçada que se dá a quem trabalha o dia a dia. Tirar o card
+ * do quadro é outra ordem de coisa: ele sai da leitura de todo mundo e dos
+ * indicadores. Quem move não necessariamente exclui.
+ *
+ * `administrar` não é exigido de propósito: administrar é configurar o funil
+ * (etapas, alçadas), não trabalhar os cards dele.
+ */
+export function podeExcluirCard(acesso: AcessoFunil): boolean {
+  return acesso.editar
+}
+
 /** Renumera de 1..n na ordem recebida. Usado pela reordenacao de etapas e funis. */
 export function reordenar(ids: string[]): Array<{ id: string; ordem: number }> {
   return ids.map((id, i) => ({ id, ordem: i + 1 }))

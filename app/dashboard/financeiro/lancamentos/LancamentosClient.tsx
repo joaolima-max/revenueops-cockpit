@@ -13,20 +13,8 @@ import { formatDate, formatMesRef } from '@/lib/utils'
 import {
   validarArquivo, EXTENSOES_ACEITAS, MAX_ANEXOS_LANCAMENTO, TAMANHO_MAX,
 } from '@/lib/arquivos'
-import DetalheBaas, { type LancamentoBaasDetalhe } from '@/components/financeiro/DetalheBaas'
-
-/**
- * O Lançamento BaaS que originou a linha, se houver.
- *
- * Um lançamento é o lado da receita OU o do repasse — nunca os dois —, e nos
- * dois casos o detalhe é o mesmo registro de origem.
- */
-function origemBaas(l: {
-  baasReceita?: LancamentoBaasDetalhe | null
-  baasContaPagar?: LancamentoBaasDetalhe | null
-}): LancamentoBaasDetalhe | null {
-  return l.baasReceita ?? l.baasContaPagar ?? null
-}
+import { type LancamentoBaasDetalhe } from '@/components/financeiro/DetalheBaas'
+import DetalheLancamento from '@/components/financeiro/DetalheLancamento'
 
 /**
  * A segunda linha da descrição: tipo, fornecedor, parceiro e anexos.
@@ -185,8 +173,15 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
   const [erroAnexo, setErroAnexo] = useState('')
   /** Nome do arquivo em upload — o progresso que o fetch não dá. */
   const [nomeEnviando, setNomeEnviando] = useState('')
-  /** Detalhe do Lançamento BaaS que originou a linha. */
-  const [detalheBaas, setDetalheBaas] = useState<LancamentoBaasDetalhe | null>(null)
+  /**
+   * Lançamento aberto em DETALHES.
+   *
+   * Um painel para os dois casos: ele mostra os dados gerais e, quando a linha
+   * veio de um Lançamento BaaS, acrescenta a composição por produto. Antes
+   * existia só o detalhe BaaS, e um lançamento comum não tinha para onde
+   * clicar — quem quisesse ler a observação tinha que abrir a EDIÇÃO.
+   */
+  const [detalhe, setDetalhe] = useState<Lancamento | null>(null)
 
   // Buscar e aplicar separados: dentro do efeito o estado só é tocado no
   // `.then`, e `vivo` evita escrever em componente já desmontado.
@@ -530,14 +525,10 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
                 </Td>
                 <Td align="right">
                   <span className="inline-flex gap-2">
-                    {/* DETALHE da origem BaaS: a composição por produto, que
-                        é o que responde "de onde veio esse valor". Só aparece
-                        nas linhas que vêm de um Lançamento BaaS. */}
-                    {origemBaas(l) && (
-                      <Button size="sm" onClick={() => setDetalheBaas(origemBaas(l))}>
-                        Detalhes
-                      </Button>
-                    )}
+                    {/* DETALHES em TODA linha. A composição por produto entra
+                        no mesmo painel quando a linha vem de um Lançamento
+                        BaaS — é a seção extra, não outro modal. */}
+                    <Button size="sm" onClick={() => setDetalhe(l)}>Detalhes</Button>
                     <Button size="sm" onClick={() => { setAnexosDe(l); setErroAnexo('') }}>
                       Anexos {l.anexos.length > 0 && `(${l.anexos.length})`}
                     </Button>
@@ -777,8 +768,8 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       )}
 
       {/* ── Anexos ───────────────────────────────────────────────────────── */}
-      {detalheBaas && (
-        <DetalheBaas l={detalheBaas} onFechar={() => setDetalheBaas(null)} />
+      {detalhe && (
+        <DetalheLancamento l={detalhe} onFechar={() => setDetalhe(null)} />
       )}
 
       {anexosDe && (

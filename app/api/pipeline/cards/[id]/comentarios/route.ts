@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { acessoAoCard, auditarPipeline } from '@/lib/pipeline-db'
+import {
+  acessoAoCard, auditarPipeline, cardExcluido, ERRO_CARD_EXCLUIDO,
+} from '@/lib/pipeline-db'
 
 /**
  * ANOTAÇÕES DO CARD — texto, autor, data e hora.
@@ -38,6 +40,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Quem enxerga o card pode comentar nele. Anotar é participar da conversa,
   // não alterar o cadastro — exigir `editar` silenciaria quem acompanha.
   if (!ctx.acesso.ver) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (cardExcluido(ctx.deal)) {
+    return NextResponse.json({ error: ERRO_CARD_EXCLUIDO }, { status: 409 })
+  }
 
   const { texto } = await request.json()
   const t = String(texto ?? '').trim()

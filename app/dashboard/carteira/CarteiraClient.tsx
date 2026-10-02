@@ -260,8 +260,16 @@ export default function CarteiraClient() {
                   colunas sem alargar a tabela. */}
               <Th className="pl-5">Cliente</Th>
               <Th className="w-[7rem]">Conta</Th>
-              <Th className="w-[7.5rem]">Modelo</Th>
-              <Th className="w-[10rem]">Segmento</Th>
+              {/* "Modelo operacional" POR EXTENSO. Abreviado para "Modelo",
+                  o cabeçalho não dizia modelo de quê — e ao lado de
+                  "Segmento" as duas colunas liam como um par de categorias
+                  intercambiáveis, o que elas não são. */}
+              <Th className="w-[10.5rem] whitespace-nowrap">Modelo operacional</Th>
+              {/* FIO SEPARANDO as duas. Largura e respiro já existiam e não
+                  bastaram: dois badges cinzas lado a lado continuam lendo
+                  como um campo só de duas palavras. A régua vertical é o que
+                  declara onde um termina e o outro começa. */}
+              <Th className="w-[10rem] border-l border-line">Segmento</Th>
               <Th className="w-[6rem]">Status</Th>
               <Th align="right" className="w-[9rem]">Mensalidade API</Th>
               <Th className="w-[9rem]">Gestor</Th>
@@ -297,7 +305,7 @@ export default function CarteiraClient() {
                 <Td className="pr-4">
                   <Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge>
                 </Td>
-                <Td className="max-w-0">
+                <Td className="max-w-0 border-l border-line pl-4">
                   {c.segmentoComercial
                     ? <Badge truncar title={c.segmentoComercial.nome}>{c.segmentoComercial.nome}</Badge>
                     : c.segmento

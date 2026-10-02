@@ -358,9 +358,12 @@ export default function CrmClient() {
         <Panel>
           <PanelHeader title="Leads por segmento"
             sub="Toda a base, inclusive quem ainda não entrou no Pipeline." />
-          {/* BARRAS, não donut. O `Donut` do financeiro formata em moeda por
-              construção, e usá-lo aqui mostraria "R$ 12,00" para 12 leads. A
-              barra também lê melhor com muitos segmentos. */}
+          {/* BARRAS, não donut — e o motivo mudou.
+              Era que o `Donut` formatava em moeda por construção, e um donut
+              aqui escreveria uma quantia onde há contagem de leads. Esse
+              default não existe mais: o formatador passou a ser obrigatório,
+              justamente para que nenhuma tela herde moeda por omissão.
+              A barra fica porque lê melhor com muitos segmentos. */}
           {segmentosComLead.length === 0 ? (
             <div className="mt-5"><EmptyState compact title="Nenhum lead cadastrado"
               description="A distribuição por segmento aparece quando houver lead na base." /></div>

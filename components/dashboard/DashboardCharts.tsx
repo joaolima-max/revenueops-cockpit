@@ -18,8 +18,7 @@ import {
 import EmptyState from '@/components/ui/EmptyState'
 import Button from '@/components/ui/Button'
 import { Delta } from '@/components/ui/Figure'
-import Candles from '@/components/ui/Candles'
-import type { Vela } from '@/lib/candle'
+import type { AtividadeDiaria } from '@/lib/kpi'
 
 interface ChartPoint {
   mes: string
@@ -38,18 +37,6 @@ interface ChartPoint {
 
 interface MRRPoint { mes: string; mrr: number }
 
-/**
- * Velas já agregadas no SERVIDOR (ver `lib/candle.ts`).
- *
- * Vêm prontas porque o insumo é a série DIÁRIA: mandar 365 observações para o
- * cliente só para ele agregar em 12 velas seria carregar o navegador com dado
- * que ele não vai mostrar.
- */
-interface Velas {
-  tpv: Vela[]
-  receita: Vela[]
-  transacoes: Vela[]
-}
 
 /**
  * Cada gráfico daqui tem FONTE REAL. Saíram nesta rodada:
@@ -77,19 +64,33 @@ const CHART_DEFS = [
   { id: 'takerate', title: 'Receita ÷ TPV', sub: 'Take rate — quanto da movimentação vira receita' },
   { id: 'atividade', title: 'Atividade Operacional', sub: 'Transações, MEDs e clientes ativos lado a lado' },
   { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal' },
-  // VELAS. O corpo é o movimento líquido do mês (abertura → fechamento) e as
-  // sombras são a dispersão dentro dele (mínima → máxima) — o que a linha
-  // média esconde. O OHLC é agregação de observações diárias REAIS, nunca
-  // simulado, e o tooltip declara a janela usada.
-  { id: 'tpvVelas', title: 'TPV — velas mensais', sub: 'Abertura, máxima, mínima e fechamento de cada mês' },
-  { id: 'receitaVelas', title: 'Receita — velas mensais', sub: 'Dispersão da receita tarifária dentro do mês' },
-  { id: 'transacoesVelas', title: 'Transações — velas mensais', sub: 'Dispersão do volume transacional dentro do mês' },
 ]
 
+/**
+ * O GRÁFICO DIÁRIO — fora da lista reordenável, e de propósito.
+ *
+ * Ele ocupa a largura inteira e tem o dobro da altura dos outros, então não
+ * entra no pareamento de dois por linha nem no arrasta-e-solta: uma peça de
+ * tamanho diferente embaralharia o grid a cada movimento. Fica fixo no topo
+ * das séries históricas, que é onde a leitura começa.
+ *
+ * AS VELAS SAÍRAM, todas elas. Mostravam dispersão intramensal com OHLC
+ * agregado de observações diárias — mas a pergunta que a operação faz é
+ * "como foi cada dia", e para essa pergunta o dia inteiro é o ponto, não a
+ * sombra de uma vela mensal. Candlestick também carrega uma gramática de
+ * mercado financeiro que o Cockpit não é.
+ */
+const DIARIO_DEF = {
+  id: 'diario',
+  title: 'Evolução Atividade Operacional Diária',
+  sub: 'Transações, Receita, TPV e MED nos últimos 90 dias lançados',
+}
+
 const DEFAULT_ORDER = CHART_DEFS.map(c => c.id)
-// Chave versionada: a lista de graficos mudou nesta rodada, e uma ordem
-// salva com os ids antigos nao deve sobreviver silenciosamente.
-const LS_KEY = 'dashboard_chart_order_v4'
+// Chave versionada: as velas saíram da lista nesta rodada, e uma ordem salva
+// com os ids antigos ('tpvVelas', 'receitaVelas', 'transacoesVelas') não deve
+// sobreviver silenciosamente — ela deixaria buracos no grid.
+const LS_KEY = 'dashboard_chart_order_v5'
 
 const PADRAO_SERIALIZADO = JSON.stringify(DEFAULT_ORDER)
 const EVENTO_ORDEM = 'bp-chart-order'
@@ -181,10 +182,11 @@ function NoSeries({ what }: { what: string }) {
   )
 }
 
-export default function DashboardCharts({ chartData, mrrEvolution, velas }: {
+export default function DashboardCharts({ chartData, mrrEvolution, diario }: {
   chartData: ChartPoint[]
   mrrEvolution: MRRPoint[]
-  velas: Velas
+  /** Série DIÁRIA do gráfico operacional. Já recortada no servidor. */
+  diario: AtividadeDiaria[]
 }) {
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
@@ -223,6 +225,87 @@ export default function DashboardCharts({ chartData, mrrEvolution, velas }: {
   const eixoPct = (v: number) => `${v.toFixed(v < 1 ? 2 : 1)}%`
 
   const grid = gridProps(p), eixo = axisProps(p), leg = legendProps(p), linha = LINE(p)
+
+  /**
+   * EVOLUÇÃO ATIVIDADE OPERACIONAL DIÁRIA
+   *
+   * Quatro métricas, quatro escalas, nenhuma normalização.
+   *
+   * TPV e Receita são COLUNAS; Transações e MED são LINHAS — é o que o pedido
+   * especifica, e funciona: volume financeiro se lê como massa, ritmo se lê
+   * como curva.
+   *
+   * ── POR QUE QUATRO EIXOS ────────────────────────────────────────────────
+   *
+   * TPV e Receita são os dois em reais, mas vivem em ordens de grandeza
+   * diferentes: num dia típico o TPV é da casa dos milhões e a receita, dos
+   * milhares. No MESMO eixo monetário a barra da receita teria altura de
+   * um fio — presente no gráfico e ilegível. Por isso cada um tem o seu eixo
+   * monetário, à esquerda e à direita.
+   *
+   * Transações (contagem) e MED (percentual) ganham eixos próprios, ocultos:
+   * quatro réguas desenhadas em volta de um gráfico competem com o gráfico.
+   * Elas existem para que cada série use a sua própria amplitude — é
+   * exatamente o oposto de normalizar, que achataria as quatro numa escala
+   * inventada de 0 a 100.
+   *
+   * O tooltip é onde a leitura exata acontece, e traz os quatro valores
+   * completos, cada um na sua unidade. O rodapé dele declara a convenção dos
+   * eixos, para ninguém comparar a altura de uma barra com a de outra.
+   *
+   * MED aparece em PERCENTUAL na linha — é como a operação lê MED — e também
+   * em quantidade no tooltip. O indicador é um só; o que muda é a unidade.
+   */
+  const diarioChart = hasSeries(diario, 'tpv', 'receita', 'transacoes', 'med') ? (
+    <ResponsiveContainer width="100%" height={420}>
+      <ComposedChart data={diario} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
+        <CartesianGrid {...grid} />
+        <XAxis dataKey="rotulo" {...eixo} interval="preserveStartEnd" minTickGap={28} />
+
+        {/* Eixos monetários SEPARADOS: TPV à esquerda, Receita à direita. */}
+        <YAxis yAxisId="tpv" {...eixo} tickFormatter={eixoMoeda} width={104} />
+        <YAxis yAxisId="receita" orientation="right" {...eixo}
+          tickFormatter={eixoMoeda} width={92} />
+
+        {/* Ocultos: dão amplitude própria às linhas sem desenhar uma terceira
+            e uma quarta régua em volta do quadro. */}
+        <YAxis yAxisId="tx" hide />
+        <YAxis yAxisId="med" hide />
+
+        <Tooltip
+          cursor={cursorBarra(p)}
+          content={makeTooltip(
+            diario, 'rotulo',
+            [
+              { key: 'tpv', nome: 'TPV', cor: p.s1, formatar: moedaCheia },
+              { key: 'receita', nome: 'Receita', cor: p.s2, formatar: moedaCheia },
+              { key: 'transacoes', nome: 'Transações', cor: p.fg, formatar: quantidadeCompacta },
+              {
+                key: 'medPercentual', nome: 'MED', cor: p.s3,
+                formatar: (v: number) => percentual(v, 2),
+              },
+              { key: 'med', nome: 'MED (qtd.)', cor: p.s3, formatar: quantidadeCompacta },
+            ],
+            moedaCheia,
+            'TPV à esquerda · Receita à direita · escalas independentes',
+          )}
+        />
+        <Legend {...leg} />
+
+        <Bar yAxisId="tpv" dataKey="tpv" name="TPV" fill={p.s1} {...BAR} />
+        <Bar yAxisId="receita" dataKey="receita" name="Receita" fill={p.s2} {...BAR} />
+        <Line yAxisId="tx" dataKey="transacoes" name="Transações" stroke={p.fg} {...linha} />
+        <Line yAxisId="med" dataKey="medPercentual" name="MED" stroke={p.s3} {...linha} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  ) : (
+    <div className="h-[420px] flex items-center justify-center">
+      <EmptyState compact
+        title="Sem atividade diária no período"
+        description="O gráfico vem do Lançamento Diário. Sem dias lançados, não há série para desenhar."
+      />
+    </div>
+  )
 
   const charts: Record<string, React.ReactNode> = {
     receita: hasSeries(data, 'receitaTarifaria') ? (
@@ -424,21 +507,6 @@ export default function DashboardCharts({ chartData, mrrEvolution, velas }: {
       </ResponsiveContainer>
     ) : <NoSeries what="Nenhum White Label ativo no período — ou nenhuma condição cadastrada." />,
 
-    tpvVelas: (
-      <Candles velas={velas.tpv} formatar={moedaCheia}
-        vazio="Nenhum dia do período informou TPV no lançamento diário." />
-    ),
-
-    receitaVelas: (
-      <Candles velas={velas.receita} formatar={moedaCheia}
-        vazio="Nenhum dia do período informou receita tarifária." />
-    ),
-
-    transacoesVelas: (
-      <Candles velas={velas.transacoes} formatar={quantidadeCompacta}
-        vazio="Nenhum dia do período informou transações." />
-    ),
-
     atividade: hasSeries(data, 'qtdTransacoes', 'qtdMed', 'clientesAtivos') ? (
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
@@ -484,6 +552,22 @@ export default function DashboardCharts({ chartData, mrrEvolution, velas }: {
           {reordering ? 'Concluir' : 'Reordenar'}
         </Button>
       </div>
+      {/* O DIÁRIO ABRE AS SÉRIES HISTÓRICAS, em largura cheia e altura dupla.
+          Fica fora do grid de dois-por-linha e fora do arrasta-e-solta: é a
+          peça de tamanho diferente, e deixá-la reordenável abriria buracos na
+          grade a cada movimento. */}
+      <ChartCard
+        title={DIARIO_DEF.title}
+        sub={DIARIO_DEF.sub}
+        dragging={false}
+        reordering={false}
+        onDragStart={() => {}}
+        onDragOver={() => {}}
+        onDrop={() => {}}
+      >
+        {diarioChart}
+      </ChartCard>
+
       <div className="space-y-4">
         {pares.map((par, ri) => (
           <div key={ri} className={cn('grid gap-4', par.length === 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1')}>

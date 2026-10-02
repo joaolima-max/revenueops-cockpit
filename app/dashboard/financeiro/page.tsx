@@ -105,8 +105,10 @@ export default async function FinanceiroVisaoGeralPage({
           O Resultado fica à DIREITA porque é a conclusão da linha — as três
           parcelas que o explicam vêm antes dele, na ordem em que se leem. */}
       <HairlineGrid cols={4}>
-        <StatTile label="Receitas" figura={figuraMoeda(resultado.receita)} note="Lançamentos do período" />
-        <StatTile label="Despesas" figura={figuraMoeda(resultado.despesa)} note="Lançamentos do período" />
+        <StatTile label="Receitas" figura={figuraMoeda(resultado.receita)}
+          note="Lançamentos do período, tarifas BaaS incluídas" />
+        <StatTile label="Despesas" figura={figuraMoeda(resultado.despesa)}
+          note="Lançamentos do período, sem repasse a BaaS" />
         <StatTile label="Inadimplência"
           figura={figuraMoeda(inadimplencia.valor)}
           note={
@@ -114,9 +116,23 @@ export default async function FinanceiroVisaoGeralPage({
               ? `${inadimplencia.titulos} título${inadimplencia.titulos === 1 ? '' : 's'}`
               : `${figuraPercentual(inadimplencia.percentual, 1).completo} do faturado · ${inadimplencia.titulos} título${inadimplencia.titulos === 1 ? '' : 's'}`
           } />
+        {/* A REGRA CONTÁBIL FICA ESCRITA, não implícita.
+            O repasse ao parceiro existe como despesa em Contas a Pagar — é
+            assim que ele é pago —, mas não reduz o Resultado: o saldo da
+            conta do BaaS nunca foi receita nossa, e devolvê-lo não é custo.
+            Sem a frase, quem somasse Contas a Pagar à mão encontraria uma
+            diferença e concluiria que o painel está errado. */}
         <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
           note="Receitas − Despesas" />
       </HairlineGrid>
+
+      <p className="t-sm text-subtle -mt-2">
+        Pagamentos para os BaaS não são contabilizados como despesas.
+        {resultado.repasseBaas > 0 && (
+          <> No período, {moedaCheia(resultado.repasseBaas)} de repasse ficaram fora
+          do Resultado — o valor continua em Contas a Pagar, para pagamento.</>
+        )}
+      </p>
 
       {/* Evolução temporal — a série que responde "como chegamos aqui". */}
       <Panel>
@@ -136,6 +152,7 @@ export default async function FinanceiroVisaoGeralPage({
           <div className="mt-5">
             <Donut
               rotuloTotal="Despesa"
+              formatar={moedaCheia}
               fatias={gastoPorCategoria.map((g) => ({
                 id: g.categoriaId, nome: g.nome, valor: g.total,
               }))}
@@ -151,7 +168,7 @@ export default async function FinanceiroVisaoGeralPage({
           />
           <div className="mt-5">
             {temNatureza ? (
-              <Donut rotuloTotal="Receita" fatias={naturezas} />
+              <Donut rotuloTotal="Receita" formatar={moedaCheia} fatias={naturezas} />
             ) : (
               <div className="min-h-[13rem] flex items-center justify-center">
                 <EmptyState compact
@@ -175,7 +192,7 @@ export default async function FinanceiroVisaoGeralPage({
                   description="Cadastre em Condições BaaS." />
               </div>
             ) : (
-              <Donut rotuloTotal="Receita BaaS" fatias={paraFatia(receitaPorBaas)} />
+              <Donut rotuloTotal="Receita BaaS" formatar={moedaCheia} fatias={paraFatia(receitaPorBaas)} />
             )}
           </div>
         </Panel>
@@ -193,7 +210,7 @@ export default async function FinanceiroVisaoGeralPage({
                   description="Cadastre em Condições BaaS." />
               </div>
             ) : (
-              <Donut rotuloTotal="Receita WL" fatias={paraFatia(receitaPorWhiteLabel)} />
+              <Donut rotuloTotal="Receita WL" formatar={moedaCheia} fatias={paraFatia(receitaPorWhiteLabel)} />
             )}
           </div>
         </Panel>

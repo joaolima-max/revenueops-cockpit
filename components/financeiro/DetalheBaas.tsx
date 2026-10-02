@@ -79,31 +79,21 @@ function Etapa({
   )
 }
 
-export default function DetalheBaas({
-  l, onFechar,
-}: { l: LancamentoBaasDetalhe; onFechar: () => void }) {
+/**
+ * O CORPO DO DETALHE BAAS — as três seções, sem moldura.
+ *
+ * Extraído para que a tela de Lançamentos possa mostrar os dados gerais do
+ * lançamento E, abaixo deles, a composição BaaS, sem duplicar nada. O pedido é
+ * "além dos dados gerais, mostrar Produto | Taxa | Volume | Total": uma seção
+ * adicional no mesmo painel, não um segundo modal por cima do primeiro.
+ */
+export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
   const volumeTotal = l.itens.reduce((a, i) => a + i.volume, 0)
   /** A receita da Bass Pago: tarifas + overprice. */
   const receita = l.totalTarifas + l.overpriceValor
 
   return (
-    <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto"
-      onClick={(e) => e.target === e.currentTarget && onFechar()}>
-      <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-2xl my-8">
-        <div className="flex items-start justify-between gap-4 p-5 border-b border-line">
-          <div className="min-w-0">
-            <h2 className="t-h2 text-fg bp-truncate">
-              Lançamento BaaS — {l.condicao.nomeFantasia}
-            </h2>
-            <p className="t-sm text-muted mt-0.5">
-              {TIPO_LABEL[l.condicao.tipo] ?? l.condicao.tipo} · conta {l.numeroConta} ·{' '}
-              {rotuloPeriodo(new Date(l.periodoInicio), new Date(l.periodoFim))}
-            </p>
-          </div>
-          <button onClick={onFechar} className="text-subtle hover:text-fg flex-none" aria-label="Fechar">✕</button>
-        </div>
-
-        <div className="p-5 space-y-6">
+    <>
           {/* ── PRODUTO | TAXA | VOLUME | TOTAL ───────────────────────────
               A taxa é o SNAPSHOT do lançamento, não o preço de hoje: se a
               tarifa foi reajustada depois, este painel continua mostrando a
@@ -123,10 +113,21 @@ export default function DetalheBaas({
                 <Table>
                   <THead>
                     <HeadRow>
-                      <Th>Produto</Th>
-                      <Th align="right">Taxa</Th>
-                      <Th align="right">Volume</Th>
-                      <Th align="right">Total</Th>
+                      {/* LARGURAS DECLARADAS, somando 100%.
+                          Sem elas, "Produto" era a única coluna sem
+                          `whitespace-nowrap` e com `max-w-0`: o navegador lhe
+                          dava TODO o espaço sobrante e empurrava Taxa, Volume
+                          e Total para a borda direita, com um vão vazio no
+                          meio. Os quatro cabeçalhos ficavam na tela, mas
+                          desgrudados — e a leitura "taxa × volume = total"
+                          dependia de atravessar o vão com o olho.
+                          Com a largura fixada, o nome do produto trunca (e o
+                          `title` recupera o texto inteiro) e os três números
+                          ficam juntos, que é como se conferem. */}
+                      <Th className="w-[40%]">Produto</Th>
+                      <Th align="right" className="w-[18%]">Taxa</Th>
+                      <Th align="right" className="w-[18%]">Volume</Th>
+                      <Th align="right" className="w-[24%]">Total</Th>
                     </HeadRow>
                   </THead>
                   <tbody>
@@ -145,7 +146,7 @@ export default function DetalheBaas({
                       </Row>
                     ))}
                     <Row className="border-t-2 border-line-2">
-                      <Td className="text-fg font-medium">Total de Tarifas</Td>
+                      <Td className="text-fg font-medium whitespace-nowrap">Total de Tarifas</Td>
                       <Td />
                       <Td align="right" numeric className="text-subtle">
                         {quantidadeCompacta(volumeTotal)}
@@ -226,6 +227,33 @@ export default function DetalheBaas({
               </p>
             )}
           </section>
+
+    </>
+  )
+}
+
+export default function DetalheBaas({
+  l, onFechar,
+}: { l: LancamentoBaasDetalhe; onFechar: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-ink/80 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onFechar()}>
+      <div className="bg-surface border border-line-2 rounded-2xl w-full max-w-2xl my-8">
+        <div className="flex items-start justify-between gap-4 p-5 border-b border-line">
+          <div className="min-w-0">
+            <h2 className="t-h2 text-fg bp-truncate">
+              Lançamento BaaS — {l.condicao.nomeFantasia}
+            </h2>
+            <p className="t-sm text-muted mt-0.5">
+              {TIPO_LABEL[l.condicao.tipo] ?? l.condicao.tipo} · conta {l.numeroConta} ·{' '}
+              {rotuloPeriodo(new Date(l.periodoInicio), new Date(l.periodoFim))}
+            </p>
+          </div>
+          <button onClick={onFechar} className="text-subtle hover:text-fg flex-none" aria-label="Fechar">✕</button>
+        </div>
+
+        <div className="p-5 space-y-6">
+          <CorpoBaas l={l} />
 
           {l.observacao && (
             <section>

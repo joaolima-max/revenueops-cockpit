@@ -60,11 +60,46 @@ export async function estadoDoUsuario(userId: string): Promise<EstadoDoUsuario |
   }
 }
 
-/** O usuário da sessão é SÓCIO? É esta a autorização do Conselho. */
+/**
+ * O usuário da sessão é SÓCIO?
+ *
+ * Metade da autorização do Conselho — a outra é `view_conselho`. Para decidir
+ * o acesso, use `podeVerConselho`, que junta as duas.
+ */
 export async function socio(session: TokenPayload | null): Promise<boolean> {
   if (!session) return false
   const e = await estadoDoUsuario(session.userId)
   return ehSocio(e)
+}
+
+/**
+ * PODE ABRIR O CONSELHO? — o ÚNICO lugar que decide isso.
+ *
+ * Exige as DUAS condições:
+ *
+ *   1. ser SÓCIO       (`User.isPartner`) — um fato sobre a pessoa;
+ *   2. ter `view_conselho` — uma alçada que se concede e se revoga.
+ *
+ * Por que uma função só, e não duas checagens espalhadas: quando as condições
+ * são conferidas em lugares diferentes, elas discordam. Foi exatamente assim
+ * que o acesso quebrou antes — o menu consultava um eixo, a rota consultava
+ * outro, e o sócio legítimo via o item do Conselho levar a um redirect. Página,
+ * API e menu chamam ESTA função; nenhum deles repete a regra.
+ *
+ * UMA consulta ao banco para as duas respostas, não duas: `estadoDoUsuario`
+ * traz `isPartner` e as permissões gravadas juntos.
+ *
+ * `view_conselho` é RESTRITA (`PERMISSOES_RESTRITAS`), então não há atalho de
+ * ADMIN nem fallback por perfil: a chave tem de estar gravada no usuário.
+ *
+ * Lê do BANCO a cada requisição, nunca do token: o JWT vive 7 dias, e isso
+ * faria tanto a concessão quanto a revogação esperarem uma semana.
+ */
+export async function podeVerConselho(session: TokenPayload | null): Promise<boolean> {
+  if (!session) return false
+  const e = await estadoDoUsuario(session.userId)
+  if (!e) return false
+  return ehSocio(e) && e.permissoes.includes('view_conselho')
 }
 
 /** O usuário da sessão é DIRETOR? É esta a autorização da Lixeira de Leads. */

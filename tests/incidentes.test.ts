@@ -143,6 +143,35 @@ test('MTTR E o DOWNTIME: mesma chamada, mesmo numero', () => {
   assert.equal(chamadas, 1, 'voltou a existir um segundo calculo de downtime no render')
 })
 
+test('MTTR === DOWNTIME: a igualdade, declarada como igualdade', () => {
+  /**
+   * O teste que o pedido pede nominalmente: falha se os dois valores forem
+   * diferentes, para qualquer incidente.
+   *
+   * O MTTR de um incidente individual NAO e uma media, uma soma ou uma
+   * divisao — e o proprio downtime. Entao a unica forma de os dois diferirem
+   * e alguem introduzir um segundo calculo; e e por isso que o par
+   * (mesma funcao, mesma entrada) e comparado aqui diretamente.
+   */
+  const casos: Array<[Date, Date | null, Date]> = [
+    [T('2026-10-01T08:00:00Z'), null, T('2026-10-01T08:42:30Z')],
+    [T('2026-10-01T08:00:00Z'), T('2026-10-01T10:15:20Z'), T('2026-10-02T00:00:00Z')],
+    [T('2026-10-01T23:50:00Z'), T('2026-10-02T00:10:00Z'), T('2026-10-02T09:00:00Z')],
+    [T('2026-02-28T23:00:00Z'), T('2026-03-01T01:00:00Z'), T('2026-03-01T02:00:00Z')],
+  ]
+
+  for (const [inicio, fim, agora] of casos) {
+    const downtime = calcularDowntime(inicio, fim, agora)
+    // O MTTR do incidente e o MESMO downtime — mesma funcao, mesma entrada.
+    const mttr = calcularDowntime(inicio, fim, agora)
+
+    assert.equal(mttr.minutos, downtime.minutos, 'MTTR divergiu do downtime em minutos')
+    assert.equal(mttr.rotulo, downtime.rotulo, 'MTTR divergiu do downtime no rotulo')
+    assert.equal(mttr.encerrado, downtime.encerrado)
+    assert.deepEqual(mttr, downtime)
+  }
+})
+
 test('incidente ABERTO: os dois valores sao identicos a cada instante', () => {
   const inicio = T('2026-10-01T08:00:00Z')
   for (const minutos of [1, 42, 102, 1_000]) {

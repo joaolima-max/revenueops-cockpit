@@ -13,7 +13,10 @@ export type ResultadoCard = 'EM_ANDAMENTO' | 'GANHO' | 'PERDIDO'
 
 export interface MovimentoBruto {
   dealId: string
-  tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL' | 'MUDANCA_RESULTADO'
+  tipo: 'CRIACAO' | 'MOVIMENTO_ETAPA' | 'TRANSFERENCIA_FUNIL'
+    | 'MUDANCA_RESULTADO'
+    /** Card removido do Pipeline. O lead continua existindo. */
+    | 'EXCLUSAO_CARD'
   funilOrigemId: string | null
   etapaOrigemId: string | null
   funilDestinoId: string

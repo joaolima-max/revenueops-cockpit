@@ -24,9 +24,17 @@ import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { centavos } from '@/lib/lancamento-baas'
 
-/** Categorias que o lançamento automático usa. Semeadas pela migration v22. */
+/**
+ * Categorias que o lançamento automático usa.
+ *
+ * A de despesa chama-se "BaaS", e não mais "Repasse a Cliente BaaS": o
+ * residual é devido ao PARCEIRO (BaaS/White Label), que não é cliente da
+ * carteira — o nome antigo confundia os dois lados do lançamento. A v26
+ * RENOMEIA a categoria existente, preservando o id, para que os lançamentos
+ * já classificados sigam apontando para ela.
+ */
 export const CATEGORIA_RECEITA_BAAS = 'Tarifas BaaS'
-export const CATEGORIA_DESPESA_BAAS = 'Repasse a Cliente BaaS'
+export const CATEGORIA_DESPESA_BAAS = 'BaaS'
 
 /**
  * Quem DEVE o título a receber.
@@ -107,21 +115,22 @@ async function categoria(
 }
 
 /**
- * A descrição dos registros gerados: "<o quê> — <parceiro> — <competência>".
+ * A descrição dos registros gerados: "<o quê> — <parceiro>".
  *
- * SIMPLES de propósito. A versão longa trazia a conta e o intervalo inteiro
- * ("conta 12000 · 01/09/2026 a 30/09/2026"), e nenhuma dessas informações
- * cabia numa linha de tabela — a conta e as datas exatas estão no detalhe do
- * lançamento, que é onde se vai quando a pergunta é "de onde veio esse valor".
+ * CURTA de propósito, e cada corte tem um motivo:
  *
- * A composição por produto NÃO entra aqui: é justamente o que o painel de
- * detalhes existe para mostrar.
+ *   - a CONTA e o intervalo exato saíram primeiro ("conta 12000 · 01/09/2026 a
+ *     30/09/2026") — não cabiam numa linha de tabela;
+ *   - a COMPETÊNCIA saiu depois ("— 09/2026"): a data é uma COLUNA da tabela
+ *     de Lançamentos, e repeti-la na descrição gastava largura para dizer
+ *     duas vezes a mesma coisa;
+ *   - a COMPOSIÇÃO POR PRODUTO nunca entrou — é exatamente o que o painel de
+ *     detalhes existe para mostrar.
+ *
+ * O que sobra é o que identifica a linha num relance: o que é, e de quem.
  */
 function descricao(d: DadosGeracao, oque: string): string {
-  const competencia = d.periodoFim.toLocaleDateString('pt-BR', {
-    month: '2-digit', year: 'numeric', timeZone: 'UTC',
-  })
-  return `${oque} — ${d.parceiroNome} — ${competencia}`
+  return `${oque} — ${d.parceiroNome}`
 }
 
 export interface TitulosGerados {
@@ -174,7 +183,7 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     /* ── 1. RECEITA da Bass Pago ───────────────────────────────────────── */
     const dadosReceita = {
       tipo: 'RECEITA' as const,
-      descricao: descricao(d, 'Lançamento BaaS'),
+      descricao: descricao(d, 'Tarifa BaaS'),
       categoriaId: catReceita,
       valor: receita,
       data: vencimento,
@@ -197,7 +206,7 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     // realizado no outro lado — pagando menos ao parceiro —, e cobrá-lo aqui
     // seria cobrar duas vezes o mesmo valor.
     const comum = {
-      descricao: descricao(d, 'Tarifas BaaS'),
+      descricao: descricao(d, 'Tarifa BaaS'),
       tipo: CATEGORIA_RECEITA_BAAS,
       valor: tarifas,
       dataVenc: vencimento,
@@ -218,7 +227,7 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
       // "ao PARCEIRO": o residual é devido ao BaaS/White Label, que não é
       // cliente da carteira. O rótulo antigo dizia "cliente" e confundia os
       // dois lados do lançamento.
-      descricao: descricao(d, 'Repasse ao parceiro'),
+      descricao: descricao(d, 'Repasse BaaS'),
       categoriaId: catDespesa,
       valor: cliente,
       data: vencimento,
@@ -360,5 +369,117 @@ export async function apagarTitulos(lancamentoBaasId: string): Promise<{
     lancamento: !!lb.lancamentoId,
     contaReceber: !!lb.contaReceberId,
     contaPagar: !!lb.contaPagarId,
+  }
+}
+
+
+/* ========================================================================= *
+ * SINCRONIZAÇÃO — reparo dos lançamentos que ficaram sem títulos
+ * ========================================================================= */
+
+export interface ResultadoSincronizacao {
+  /** Lançamentos examinados (todos os que tinham algum dos três faltando). */
+  examinados: number
+  /** Conjuntos completados com sucesso. */
+  reparados: number
+  /** Lançamentos que não puderam ser reparados, com o motivo. */
+  falhas: Array<{ id: string; parceiro: string; motivo: string }>
+  /** Ids reparados, para a trilha de auditoria. */
+  ids: string[]
+}
+
+/**
+ * COMPLETA OS TÍTULOS FALTANTES de todos os lançamentos BaaS.
+ *
+ * POR QUE ISTO EXISTE. Enquanto a criação não gerava os títulos sozinha,
+ * nasceram lançamentos em produção com conjunto incompleto — e um deles ficou
+ * ainda mais incompleto quando alguém apagou o lançamento financeiro pela
+ * tela de Lançamentos, o que zera a FK (`ON DELETE SET NULL`) sem avisar
+ * ninguém. Corrigir a criação impede novos casos; os que já existem precisam
+ * de reparo.
+ *
+ * SEGURA, e por construção:
+ *
+ *   - só olha lançamentos em que FALTA algum dos três. Conjunto completo não
+ *     é tocado — nem para "conferir", porque reescrever um título correto é
+ *     risco sem ganho;
+ *   - NÃO DUPLICA: `gerarTitulos` atualiza quando a FK já aponta para algo, e
+ *     as três FKs são UNIQUE. O que falta é criado; o que existe permanece;
+ *   - NUNCA MEXE EM LIQUIDADO: um conjunto com título já recebido, faturado
+ *     ou pago é deixado como está, e entra em `falhas` com o motivo. O valor
+ *     movimentado é o histórico — recalculá-lo seria apagá-lo;
+ *   - os valores são RECALCULADOS dos itens gravados no próprio lançamento
+ *     (snapshot de preço e volume), não de tarifa de hoje. O título de
+ *     setembro continua valendo a tarifa de setembro;
+ *   - uma falha não interrompe as demais: cada lançamento é independente, e
+ *     um parceiro com categoria ausente não deve impedir o reparo dos outros.
+ *
+ * Idempotente: rodar duas vezes seguidas não muda nada na segunda.
+ */
+export async function sincronizarTitulosFaltantes(
+  criadoPorId: string,
+): Promise<ResultadoSincronizacao> {
+  const incompletos = await prisma.lancamentoBaas.findMany({
+    where: {
+      OR: [
+        { lancamentoId: null },
+        { contaReceberId: null },
+        { contaPagarId: null },
+      ],
+    },
+    include: {
+      condicao: { select: { id: true, nomeFantasia: true, overpricePercent: true } },
+      itens: { orderBy: { ordem: 'asc' } },
+    },
+    orderBy: [{ periodoInicio: 'asc' }],
+  })
+
+  const falhas: ResultadoSincronizacao['falhas'] = []
+  const ids: string[] = []
+
+  for (const lb of incompletos) {
+    // Liquidado fica como está. A ausência de um título num conjunto cujo
+    // outro título já foi movimentado é um caso para pessoa, não para rotina.
+    const liq = await liquidacaoDe(lb.id)
+    if (liq.liquidado) {
+      falhas.push({
+        id: lb.id,
+        parceiro: lb.condicao.nomeFantasia,
+        motivo: `${liq.motivo} — reparo automático não mexe em histórico liquidado`,
+      })
+      continue
+    }
+
+    try {
+      await gerarTitulos({
+        lancamentoBaasId: lb.id,
+        condicaoId: lb.condicaoId,
+        parceiroNome: lb.condicao.nomeFantasia,
+        numeroConta: lb.numeroConta,
+        periodoInicio: lb.periodoInicio,
+        periodoFim: lb.periodoFim,
+        // Os valores GRAVADOS no lançamento, não um recálculo a partir do
+        // cadastro atual: o snapshot é o que define o que se cobra.
+        tarifas: lb.totalTarifas,
+        receita: lb.totalTarifas + lb.overpriceValor,
+        valorCliente: lb.valorCliente,
+        criadoPorId,
+        clienteId: await clientePelaConta(lb.numeroConta),
+      })
+      ids.push(lb.id)
+    } catch (e) {
+      falhas.push({
+        id: lb.id,
+        parceiro: lb.condicao.nomeFantasia,
+        motivo: e instanceof Error ? e.message : 'erro ao gerar os títulos',
+      })
+    }
+  }
+
+  return {
+    examinados: incompletos.length,
+    reparados: ids.length,
+    falhas,
+    ids,
   }
 }

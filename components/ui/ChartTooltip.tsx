@@ -18,6 +18,16 @@ export interface LinhaTooltip {
   cor: string
   /** Valor do mesmo indicador no ponto anterior, para calcular a variação. */
   anterior?: number | null
+  /**
+   * Formatador PRÓPRIO desta linha, quando ela não compartilha a unidade das
+   * demais.
+   *
+   * Existe para gráficos que cruzam naturezas diferentes — TPV em reais,
+   * transações em unidades e MED em percentual no mesmo tooltip. Sem isto, um
+   * formatador só para o quadro inteiro escreveria "R$ 152.450,00" para uma
+   * contagem de transações.
+   */
+  formatar?: (n: number) => string
 }
 
 export function TooltipCard({
@@ -42,7 +52,7 @@ export function TooltipCard({
               </span>
               <span className="text-right">
                 <span className="block t-sm font-medium text-fg t-num">
-                  {l.valor === null ? 'sem dados' : formatar(l.valor)}
+                  {l.valor === null ? 'sem dados' : (l.formatar ?? formatar)(l.valor)}
                 </span>
                 {v && (
                   <span className={cn(
@@ -66,11 +76,17 @@ export function TooltipCard({
  * Adapta o payload do Recharts para o TooltipCard, buscando o ponto anterior
  * no array original para calcular a variação.
  */
-export function makeTooltip<T extends Record<string, unknown>>(
+export function makeTooltip<T extends object>(
   dados: T[],
   chaveRotulo: keyof T,
-  series: Array<{ key: keyof T; nome: string; cor: string }>,
+  series: Array<{
+    key: keyof T; nome: string; cor: string
+    /** Unidade própria da série, quando difere das outras do mesmo gráfico. */
+    formatar?: (n: number) => string
+  }>,
   formatar: (n: number) => string,
+  /** Rodapé do tooltip — para declarar uma convenção que o quadro assume. */
+  nota?: string,
 ) {
   function Conteudo({ active, label }: TooltipContentProps): ReactNode {
     if (!active || label == null) return null
@@ -83,9 +99,11 @@ export function makeTooltip<T extends Record<string, unknown>>(
       <TooltipCard
         titulo={String(label)}
         formatar={formatar}
+        nota={nota}
         linhas={series.map((s) => ({
           nome: s.nome,
           cor: s.cor,
+          formatar: s.formatar,
           valor: typeof ponto[s.key] === 'number' ? (ponto[s.key] as number) : null,
           anterior: anterior && typeof anterior[s.key] === 'number' ? (anterior[s.key] as number) : null,
         }))}

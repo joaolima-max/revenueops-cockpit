@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
     prisma.deal.findMany({
       where: {
         funilId: funil.id,
+        // CARD EXCLUÍDO NÃO APARECE NO QUADRO. É o que torna a exclusão real:
+        // sem este filtro, o soft delete seria só uma coluna marcada.
+        deletedAt: null,
         // Preserva a regra que hoje está embutida na página: o COMERCIAL só
         // enxerga os próprios negócios. Agora ela é configuração, não código.
         ...(acesso.apenasProprios ? { ownerId: session.userId } : {}),

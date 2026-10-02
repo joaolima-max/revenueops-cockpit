@@ -461,7 +461,9 @@ test('quem NÃO é sócio vê EXECUTIVO sem Conselho', () => {
 /* ── A SIDEBAR DESTA RODADA, item por item ───────────────────────────────── */
 
 test('EXECUTIVO: Cockpit e Conselho', () => {
-  const s = navigationFor('ADMIN', null, true).find((x) => x.key === 'executivo')!
+  // `view_conselho` na lista: o Conselho passou a exigir socio E a chave, e
+  // sem ela o item (corretamente) nao aparece.
+  const s = navigationFor('ADMIN', ['view_conselho'], true).find((x) => x.key === 'executivo')!
   assert.deepEqual(s.items.map((i) => i.label), ['Cockpit', 'Conselho'])
 })
 

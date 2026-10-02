@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
   }
 
   const deals = await prisma.deal.findMany({
-    where,
+    // Card excluído não é listado.
+    where: { ...where, deletedAt: null },
     include: {
       owner: { select: { id: true, name: true } },
       lead: { select: { id: true, name: true, company: true } },

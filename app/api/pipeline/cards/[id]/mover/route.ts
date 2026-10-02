@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { validarMovimento } from '@/lib/pipeline'
 import { acessoAoCard, registrarMovimentacao, stageLegado, auditarPipeline, INCLUDE_CARD } from '@/lib/pipeline-db'
+import { cardExcluido, ERRO_CARD_EXCLUIDO } from '@/lib/pipeline-db'
 
 /** Move o card para outra etapa do MESMO funil. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +14,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const ctx = await acessoAoCard(session, id)
   if (!ctx) return NextResponse.json({ error: 'Card não encontrado' }, { status: 404 })
   if (!ctx.acesso.mover) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (cardExcluido(ctx.deal)) {
+    return NextResponse.json({ error: ERRO_CARD_EXCLUIDO }, { status: 409 })
+  }
 
   const { etapaId } = await request.json()
   if (!etapaId) return NextResponse.json({ error: 'Informe a etapa de destino.' }, { status: 400 })

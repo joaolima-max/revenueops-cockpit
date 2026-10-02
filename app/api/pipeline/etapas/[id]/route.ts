@@ -89,8 +89,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
 
       await prisma.$transaction(async (tx) => {
-        const cards = await tx.deal.findMany({ where: { etapaId: id }, select: { id: true } })
-        await tx.deal.updateMany({ where: { etapaId: id }, data: { etapaId: destino } })
+        // Card excluído não é realocado nem ganha movimentação: ele já saiu
+        // do quadro, e movê-lo escreveria histórico sobre um card que ninguém
+        // enxerga.
+        const cards = await tx.deal.findMany({
+          where: { etapaId: id, deletedAt: null }, select: { id: true },
+        })
+        await tx.deal.updateMany({
+          where: { etapaId: id, deletedAt: null }, data: { etapaId: destino },
+        })
         await tx.pipelineEtapa.update({ where: { id }, data: { ativo: false } })
         if (cards.length > 0) {
           await tx.pipelineMovimentacao.createMany({

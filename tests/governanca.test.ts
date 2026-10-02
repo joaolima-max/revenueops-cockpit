@@ -36,17 +36,16 @@ const PERFIS_TECNICOS = ['ADMIN', 'OPERACIONAL', 'COMERCIAL', 'GESTOR']
  * AS CHAVES RESTRITAS
  * ========================================================================= */
 
-test('a AUDITORIA e chave restrita; o CONSELHO nao e chave nenhuma', () => {
+test('AUDITORIA e CONSELHO sao chaves RESTRITAS', () => {
   assert.ok(permissaoRestrita('view_auditoria'))
   assert.ok(permissaoRestrita('manage_auditoria'))
   assert.ok(!permissaoRestrita('view_dashboard'))
 
-  // O Conselho saiu do catalogo de chaves: ele e `isPartner`. Ter a chave
-  // numa lista E a condicao de socio noutra coluna criava duas fontes de
-  // verdade sobre o mesmo acesso — e foi assim que o acesso ficou bloqueado
-  // para quem estava configurado no contexto de Conselho.
-  assert.ok(!permissaoRestrita('view_conselho'))
-  assert.ok(!ALL_PERMISSIONS.some((p) => p.key === 'view_conselho'))
+  // `view_conselho` e restrita: ser ADMIN nao a concede. A condicao de socio
+  // e a OUTRA metade, e as duas sao exigidas — ver `podeVerConselho`, que e o
+  // unico lugar que as combina.
+  assert.ok(permissaoRestrita('view_conselho'))
+  assert.ok(ALL_PERMISSIONS.some((p) => p.key === 'view_conselho'))
 })
 
 test('SER ADMIN NAO LIBERA chave restrita', () => {
@@ -106,25 +105,30 @@ test('sem autorizacao, Conselho e Auditoria NAO aparecem — nem para ADMIN', ()
   }
 })
 
-test('SOCIO ve o Conselho; a chave ve a Auditoria', () => {
-  const itens = navigationFor('ADMIN', ['view_auditoria'], true)
-    .flatMap((s) => s.items.map((i) => i.label))
-  assert.ok(itens.includes('Conselho'))
-  assert.ok(itens.includes('Auditoria'))
-})
+test('cada tela tem a SUA chave: Conselho e Auditoria nao se confundem', () => {
+  const menu = (chaves: string[] | null, socio: boolean) =>
+    navigationFor('ADMIN', chaves, socio).flatMap((s) => s.items.map((i) => i.label))
 
-test('socio SEM a chave nao ve a Auditoria', () => {
-  const itens = navigationFor('ADMIN', null, true)
-    .flatMap((s) => s.items.map((i) => i.label))
-  assert.ok(itens.includes('Conselho'))
-  assert.ok(!itens.includes('Auditoria'), 'ser socio nao e ser auditor')
-})
+  // As duas chaves + socio: as duas telas.
+  const ambas = menu(['view_conselho', 'view_auditoria'], true)
+  assert.ok(ambas.includes('Conselho'))
+  assert.ok(ambas.includes('Auditoria'))
 
-test('quem tem a chave da Auditoria mas NAO e socio nao ve o Conselho', () => {
-  const itens = navigationFor('ADMIN', ['view_auditoria'], false)
-    .flatMap((s) => s.items.map((i) => i.label))
-  assert.ok(!itens.includes('Conselho'))
-  assert.ok(itens.includes('Auditoria'))
+  // Socio com a chave do Conselho so: nao ve Auditoria. Ser socio nao e ser
+  // auditor.
+  const soConselho = menu(['view_conselho'], true)
+  assert.ok(soConselho.includes('Conselho'))
+  assert.ok(!soConselho.includes('Auditoria'), 'ser socio nao e ser auditor')
+
+  // Socio sem chave nenhuma: nenhuma das duas.
+  const nenhuma = menu(null, true)
+  assert.ok(!nenhuma.includes('Conselho'), 'socio sem view_conselho entrou')
+  assert.ok(!nenhuma.includes('Auditoria'))
+
+  // Auditor que nao e socio: ve Auditoria, nao ve Conselho.
+  const soAuditoria = menu(['view_auditoria', 'view_conselho'], false)
+  assert.ok(!soAuditoria.includes('Conselho'), 'nao socio com a chave entrou')
+  assert.ok(soAuditoria.includes('Auditoria'))
 })
 
 test('URL DIRETA bloqueada sem autorizacao, inclusive para ADMIN', () => {
@@ -139,9 +143,16 @@ test('API bloqueada sem autorizacao', () => {
   assert.equal(checkAccess('/api/conselho', 'ADMIN', null, false), 'forbidden')
 })
 
-test('socio abre o Conselho; a chave abre a Auditoria', () => {
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, true), 'allow')
-  assert.equal(checkAccess('/api/conselho', 'ADMIN', null, true), 'allow')
+test('o Conselho exige socio E a chave; a Auditoria exige a dela', () => {
+  // As duas condicoes juntas abrem.
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], true), 'allow')
+  assert.equal(checkAccess('/api/conselho', 'ADMIN', ['view_conselho'], true), 'allow')
+  // Cada uma sozinha nao abre.
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, true), 'forbidden',
+    'socio sem a chave entrou')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], false), 'forbidden',
+    'a chave sem ser socio entrou')
+  // A Auditoria segue com a chave dela, independente de socio.
   assert.equal(checkAccess('/api/auditoria', 'ADMIN', ['view_auditoria'], false), 'allow')
 })
 
@@ -195,11 +206,15 @@ test('ver e EDITAR usuarios sao alcadas separadas', () => {
   assert.equal(podeGerenciarUsuarios(null, 'OPERACIONAL'), false)
 })
 
-test('cada funcao declara o eixo que a governa', () => {
+test('cada funcao declara os eixos que a governam', () => {
   const conselho = activeFeatures().find((f) => f.key === 'conselho')!
   const auditoria = activeFeatures().find((f) => f.key === 'admin.auditoria')!
-  assert.equal(conselho.socio, true, 'o Conselho e governado por socio')
-  assert.equal(conselho.permissao, undefined, 'e nao por chave')
+
+  // CONSELHO: os dois eixos, e ambos obrigatorios.
+  assert.equal(conselho.socio, true, 'o Conselho exige socio')
+  assert.equal(conselho.permissao, 'view_conselho', 'o Conselho exige a chave explicita')
+
+  // AUDITORIA: chave, e so. Ser socio nao tem nada a ver com auditar.
   assert.equal(auditoria.permissao, 'view_auditoria')
   assert.equal(auditoria.socio, undefined, 'a Auditoria nao exige socio')
 })

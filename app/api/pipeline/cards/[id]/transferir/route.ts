@@ -5,6 +5,7 @@ import { validarTransferencia } from '@/lib/pipeline'
 import {
   acessoAoCard, acessoAoFunil, registrarMovimentacao, stageLegado, auditarPipeline, INCLUDE_CARD,
 } from '@/lib/pipeline-db'
+import { cardExcluido, ERRO_CARD_EXCLUIDO } from '@/lib/pipeline-db'
 import { notificar } from '@/lib/notificacoes'
 
 /**
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
   const ctx = await acessoAoCard(session, id)
   if (!ctx) return NextResponse.json({ error: 'Card não encontrado' }, { status: 404 })
+  if (cardExcluido(ctx.deal)) {
+    return NextResponse.json({ error: ERRO_CARD_EXCLUIDO }, { status: 409 })
+  }
   if (!ctx.acesso.transferir) {
     return NextResponse.json({ error: 'Você não pode transferir cards deste funil.' }, { status: 403 })
   }

@@ -109,12 +109,23 @@ export const MODULES: Module[] = [
     enabled: true,
     features: [
       { key: 'cockpit', label: 'Cockpit', route: '/dashboard', api: ['/api/dashboard'], enabled: true, exact: true },
-      // CONSELHO É DOS SÓCIOS — `socio`, não `roles` nem `permissao`.
+      // CONSELHO: SÓCIO **E** `view_conselho`. As duas, nunca uma.
       //
-      // Ser ADMIN é operar o sistema; ser Diretor é estar no topo da
-      // hierarquia; estar no departamento Conselho é trabalhar com o conselho.
-      // Nenhuma das três é ser dono da empresa, e inferir de qualquer uma
-      // delas daria falso positivo.
+      // São perguntas diferentes. "É dono da empresa?" é um fato sobre a
+      // pessoa, gravado em `User.isPartner`. "Está autorizado a abrir o painel
+      // do conselho?" é uma alçada que se concede e se revoga na tela de
+      // Usuários. Um sócio sem a chave não entra, e quem tem a chave sem ser
+      // sócio também não.
+      //
+      // Ser ADMIN, ser Diretor ou estar no departamento Conselho NÃO basta, e
+      // nenhuma das três infere as outras duas: administrar o sistema, estar
+      // no topo da hierarquia e trabalhar com o conselho são coisas distintas
+      // de ser dono. Inferir qualquer uma daria falso positivo.
+      //
+      // `liberada` faz o E: `socio` barra quem não é, e `permissao` barra quem
+      // não tem a chave — que é RESTRITA, então nem o atalho de ADMIN a
+      // concede. A autoridade final é `podeVerConselho` (lib/autorizacao), que
+      // lê as duas do banco; aqui é só o menu.
       //
       // `/api/conselho` ainda não existe — a página lê direto do servidor. O
       // prefixo fica registrado de propósito: no dia em que uma API do
@@ -123,6 +134,7 @@ export const MODULES: Module[] = [
       {
         key: 'conselho', label: 'Conselho', route: '/dashboard/conselho',
         api: ['/api/conselho'], enabled: true, socio: true,
+        permissao: 'view_conselho',
       },
     ],
   },

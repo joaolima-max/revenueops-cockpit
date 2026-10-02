@@ -62,11 +62,16 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_usuarios',  label: 'Gerenciar Usuários',       group: 'Administração' },
   // Governança — concedidas UMA A UMA, nunca por perfil. Ver PERMISSOES_RESTRITAS.
   //
-  // O CONSELHO NÃO ESTÁ AQUI. Ele é governado por `User.isPartner`, uma
-  // coluna própria: ter a chave numa lista E a condição de sócio noutra
-  // coluna criava duas fontes de verdade sobre o mesmo acesso, e foi
-  // exatamente assim que o acesso ficou bloqueado para quem estava
-  // configurado "no contexto de Conselho". Um eixo, um lugar.
+  // O CONSELHO EXIGE AS DUAS COISAS: ser sócio (`User.isPartner`) E ter esta
+  // chave. São perguntas diferentes — "é dono da empresa?" e "está autorizado
+  // a abrir o painel do conselho?" —, e cada uma vive num lugar só.
+  //
+  // O risco aqui é real e já aconteceu: quando as duas condições são checadas
+  // em lugares DIFERENTES, elas discordam, e o sócio legítimo fica trancado
+  // com o menu aberto na cara. Por isso há exatamente UMA função que combina
+  // as duas (`podeVerConselho`, em lib/autorizacao), e é ela que a página, a
+  // API e o menu consultam. Duas condições, um ponto de decisão.
+  { key: 'view_conselho',    label: 'Visualizar Conselho',      group: 'Governança' },
   { key: 'view_auditoria',   label: 'Ver Auditoria',            group: 'Governança' },
   { key: 'manage_auditoria', label: 'Administrar Auditoria',     group: 'Governança' },
 ]
@@ -82,10 +87,13 @@ export const ALL_PERMISSIONS = [
  * Elas também ficam FORA de `DEFAULT_PERMISSIONS`, inclusive do ADMIN: um
  * default as devolveria pela porta de trás no primeiro usuário sem lista.
  *
- * O CONSELHO não é uma chave: é `User.isPartner` (ver `ehSocio`).
+ * O CONSELHO é uma chave restrita E exige ser sócio. `view_conselho` entra
+ * aqui para que ser ADMIN não a conceda sozinho: o Conselho não acompanha o
+ * cargo. A condição de sócio é a outra metade, e `podeVerConselho` (em
+ * lib/autorizacao) é o único lugar que junta as duas.
  */
 export const PERMISSOES_RESTRITAS: readonly string[] = [
-  'view_auditoria', 'manage_auditoria',
+  'view_conselho', 'view_auditoria', 'manage_auditoria',
 ]
 
 export function permissaoRestrita(key: string): boolean {

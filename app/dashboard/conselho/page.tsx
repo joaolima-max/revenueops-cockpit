@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
-import { socio } from '@/lib/autorizacao'
+import { podeVerConselho } from '@/lib/autorizacao'
 import { formatMesRef } from '@/lib/utils'
 import {
   kpisDoPeriodo, linhasReceita, indicadoresEstrutura, composicaoReceitaConselho,
@@ -21,10 +21,11 @@ import ConselhoEvolucao from '@/components/dashboard/ConselhoEvolucao'
 
 export default async function ConselhoPage() {
   /**
-   * CONSELHO É DOS SÓCIOS.
+   * CONSELHO: SÓCIO **E** `view_conselho`.
    *
-   * `socio()` lê `User.isPartner` do BANCO a cada requisição, e esta página é
-   * a ÚNICA autoridade sobre o acesso.
+   * `podeVerConselho()` é o ÚNICO lugar que decide isso, e lê as duas
+   * condições do BANCO a cada requisição. Esta página é a autoridade sobre o
+   * acesso; o menu usa a mesma regra, pela mesma função.
    *
    * O proxy não decide: ele roda no edge, só conhece o JWT, e o JWT vive 7
    * dias. Quando `isPartner` passou a entrar no token, o cookie de quem já
@@ -37,10 +38,13 @@ export default async function ConselhoPage() {
    * propósito. Eram três formas de inferir sócio, e cada uma delas dava falso
    * positivo — além de ter sido assim que o acesso acabou bloqueado para quem
    * estava configurado no contexto de Conselho mas sem a outra metade marcada.
+   *
+   * Nem ser sócio basta sozinho: `view_conselho` é a alçada explícita, e é
+   * RESTRITA — não vem por perfil, nem pelo atalho de ADMIN.
    */
   const session = await getSession()
   if (!session) redirect('/login')
-  if (!(await socio(session))) redirect('/dashboard')
+  if (!(await podeVerConselho(session))) redirect('/dashboard')
 
   const periodo = periodoAtual()
   const periodos = ultimosPeriodos(24)

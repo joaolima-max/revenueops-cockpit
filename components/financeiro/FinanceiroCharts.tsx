@@ -47,17 +47,22 @@ function Vazio({ titulo, descricao }: { titulo: string; descricao: string }) {
  * Valores SEMPRE por extenso, tanto na legenda quanto no tooltip. Nenhuma
  * abreviação de escala em nenhum ponto do sistema.
  */
-export function Donut({ fatias, rotuloTotal, formatar = moedaCheia, rotuloValor = 'Valor' }: {
+export function Donut({ fatias, rotuloTotal, formatar, rotuloValor = 'Valor' }: {
   fatias: Fatia[]
   rotuloTotal: string
   /**
-   * Como o valor é escrito. Default moeda, que é o caso do Financeiro.
+   * Como o valor é escrito. **OBRIGATÓRIO**, e de propósito.
    *
-   * Existe porque o donut era moeda por construção: a Visão geral do
-   * Comercial usa a mesma peça para CONTAGEM de cards, e o total aparecia
-   * como "R$ 12,00" para 12 cards — no miolo e no tooltip.
+   * Já teve default `moedaCheia`, e o default era o bug: o donut era moeda por
+   * construção, a Visão geral do Comercial o reusou para CONTAGEM de cards, e
+   * 12 cards apareceram como "R$ 12,00" — no miolo e no tooltip. Ninguém
+   * escreveu "moeda" em lugar nenhum; a moeda veio de graça.
+   *
+   * Sem default, a próxima tela que usar esta peça é OBRIGADA a dizer qual é a
+   * unidade. É o que impede valor monetário de reaparecer por omissão numa
+   * superfície que não deve ter nenhum — Leads e Pipeline, em particular.
    */
-  formatar?: (n: number) => string
+  formatar: (n: number) => string
   /** Rótulo da linha no tooltip. "Valor" não serve para contagem. */
   rotuloValor?: string
 }) {
