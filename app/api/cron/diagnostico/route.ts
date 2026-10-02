@@ -115,11 +115,64 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  /* ── AS PÁGINAS, EXECUTADAS ─────────────────────────────────────────
+   *
+   * Um server component é uma função async: chamá-la roda o corpo inteiro —
+   * as consultas, os cálculos e a construção do JSX. É o mais perto que se
+   * chega do que o servidor faz, e um throw no corpo aparece aqui em vez de
+   * virar o boundary genérico.
+   *
+   * `redirect()` do Next é implementado LANÇANDO uma exceção com digest
+   * `NEXT_REDIRECT`. Sem sessão, as páginas protegidas redirecionam para o
+   * login — então esse caso é reconhecido e reportado como redirecionamento,
+   * não como falha. */
+  const paginas = []
+  const ehRedirect = (e: unknown) =>
+    !!e && typeof e === 'object' && 'digest' in e
+    && String((e as { digest?: unknown }).digest).startsWith('NEXT_REDIRECT')
+
+  const alvos: Array<[string, () => Promise<unknown>]> = [
+    ['financeiro', async () => {
+      const m = await import('@/app/dashboard/financeiro/page')
+      return m.default({ searchParams: Promise.resolve({}) })
+    }],
+    ['financeiro?periodo', async () => {
+      const m = await import('@/app/dashboard/financeiro/page')
+      return m.default({ searchParams: Promise.resolve({ periodo: p }) })
+    }],
+    ['metas', async () => {
+      const m = await import('@/app/dashboard/metas/page')
+      return m.default()
+    }],
+  ]
+
+  for (const [nome, fn] of alvos) {
+    const t0 = Date.now()
+    try {
+      await fn()
+      paginas.push({ pagina: nome, ok: true, ms: Date.now() - t0 })
+    } catch (e) {
+      paginas.push({
+        pagina: nome,
+        ok: ehRedirect(e),
+        redirect: ehRedirect(e),
+        ms: Date.now() - t0,
+        erro: e instanceof Error
+          ? `${e.name}: ${e.message}`.slice(0, 1500)
+          : String(e).slice(0, 600),
+        stack: e instanceof Error ? (e.stack ?? '').split('\n').slice(1, 6).join(' | ').slice(0, 1200) : undefined,
+      })
+    }
+  }
+
   return NextResponse.json({
     periodo: p,
     financeiro,
     relacao,
     conselho,
-    falhas: [...financeiro, ...relacao].filter((x) => !x.ok).map((x) => x.consulta),
+    paginas,
+    falhas: [...financeiro, ...relacao, ...paginas.map((x) => ({ ...x, consulta: x.pagina }))]
+      .filter((x) => !x.ok)
+      .map((x) => ('consulta' in x ? x.consulta : 'desconhecido')),
   })
 }

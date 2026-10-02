@@ -1,10 +1,36 @@
 'use client'
 
+import { useEffect } from 'react'
+
 /**
  * Sem este boundary, uma falha de servidor no segmento da pagina deixa a area
  * de conteudo vazia: o shell ja foi enviado e o erro nunca chega ao usuario.
+ *
+ * ── O QUE ELE NAO DEVE SER ──────────────────────────────────────────────
+ *
+ * Uma tela que diz "nao foi possivel carregar" e esconde o motivo. Ausencia
+ * de dado NAO passa por aqui: cada tela tem o seu `EmptyState`, e lista vazia
+ * nao e erro. Quando este boundary aparece, algo de fato estourou — e a
+ * pergunta seguinte e sempre "o que".
+ *
+ * O `digest` e a unica ponte entre o que o usuario ve e o log do servidor
+ * (o Next nao envia a mensagem do erro ao cliente, de proposito). Por isso
+ * ele e exibido com rotulo e selecionavel, e o erro vai para o console do
+ * navegador — onde quem esta investigando consegue ler sem pedir acesso ao
+ * painel da Vercel.
  */
 export default function DashboardError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    // O console do navegador registra o que a tela nao pode mostrar. Em
+    // producao a mensagem vem redigida pelo Next; o `digest` correlaciona com
+    // o log do servidor, que tem o texto inteiro.
+    console.error('[dashboard] falha ao renderizar o segmento', {
+      mensagem: error.message,
+      digest: error.digest,
+      stack: error.stack,
+    })
+  }, [error])
+
   return (
     <div className="min-h-full flex items-center justify-center p-8">
       <div className="max-w-md w-full bg-surface border border-line rounded-2xl p-8 text-center">
@@ -24,7 +50,11 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
           Tentar novamente
         </button>
         {error.digest && (
-          <p className="mt-4 text-[10px] text-subtle tracking-wide">referência: {error.digest}</p>
+          <p className="mt-4 t-mono text-subtle">
+            {/* SELECIONAVEL de proposito: e o unico identificador que liga
+                esta tela ao log do servidor, e quem reporta precisa copia-lo. */}
+            referência: <span className="select-all text-muted">{error.digest}</span>
+          </p>
         )}
       </div>
     </div>
