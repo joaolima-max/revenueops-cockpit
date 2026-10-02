@@ -135,21 +135,43 @@ test('EXATAMENTE UM devedor, sempre — e a regra que o banco tambem exige', () 
  * AS CATEGORIAS DOS DOIS LADOS
  * ========================================================================= */
 
-test('receita e despesa usam categorias DIFERENTES', () => {
-  // Classificar os dois na mesma categoria faria o resultado do periodo
-  // somar receita com despesa no mesmo balde.
-  assert.notEqual(CATEGORIA_RECEITA_BAAS, CATEGORIA_DESPESA_BAAS)
-  assert.equal(CATEGORIA_RECEITA_BAAS, 'Tarifas BaaS')
-  // "BaaS", nao "Repasse a Cliente BaaS": o residual e devido ao PARCEIRO, que
-  // nao e cliente da carteira. A v26 renomeia a categoria preservando o id.
+test('receita e despesa compartilham o NOME "BaaS" — e nao se misturam', () => {
+  /**
+   * As duas passaram a se chamar "BaaS". A preocupacao antiga — "classificar
+   * os dois na mesma categoria faria o resultado somar receita com despesa no
+   * mesmo balde" — continua valida, e NAO e o nome que a resolve.
+   *
+   * O que a resolve e `CategoriaFinanceira` ser unica por (nome, tipo): sao
+   * DUAS LINHAS, com ids diferentes, uma de RECEITA e uma de DESPESA. Toda
+   * agregacao filtra por `tipo` antes de agrupar por categoria — receita por
+   * categoria olha RECEITA, gasto por categoria olha DESPESA. O balde e o
+   * `tipo`, nunca o nome.
+   *
+   * O nome unico existe porque a categoria responde "de onde vem?", e a
+   * resposta e a mesma para os tres registros do Lancamento BaaS. O PAPEL de
+   * cada um ("Tarifa BaaS", "Repasse BaaS") vive na descricao.
+   */
+  assert.equal(CATEGORIA_RECEITA_BAAS, 'BaaS')
   assert.equal(CATEGORIA_DESPESA_BAAS, 'BaaS')
+
+  // A separacao real: a agregacao filtra por tipo antes de agrupar.
+  const fin = ler('lib/financeiro.ts')
+  const gasto = fin.slice(
+    fin.indexOf('export async function gastoPorCategoria'),
+    fin.indexOf('export async function gastoPorCategoria') + 1200,
+  )
+  assert.ok(
+    gasto.includes("tipo: 'DESPESA'"),
+    'o gasto por categoria deixou de filtrar por tipo — agora os nomes colidem',
+  )
 })
 
-test('a categoria da despesa NAO e generica', () => {
+test('a categoria NAO e generica', () => {
   // Uma categoria chamada "Outros" ou "Despesas" deixaria o repasse ao
   // parceiro indistinguivel de qualquer outra saida no gasto por categoria.
-  for (const generica of ['Outros', 'Despesas', 'Diversos', 'Geral']) {
+  for (const generica of ['Outros', 'Despesas', 'Receitas', 'Diversos', 'Geral']) {
     assert.notEqual(CATEGORIA_DESPESA_BAAS, generica)
+    assert.notEqual(CATEGORIA_RECEITA_BAAS, generica)
   }
 })
 

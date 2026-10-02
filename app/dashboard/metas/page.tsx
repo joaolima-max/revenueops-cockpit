@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { metasDoPeriodo, periodoAtual, ultimosPeriodos } from '@/lib/kpi'
+import { metasDoPeriodo, periodoAtual } from '@/lib/kpi'
 import { avaliarCompleto } from '@/lib/metas'
 import { formatMesRef } from '@/lib/utils'
 import MetaAnalytics from '@/components/metas/MetaAnalytics'
-import EvolucaoMetas, { type SerieMeta } from '@/components/metas/EvolucaoMetas'
 import MetasClient from './MetasClient'
 
 /**
@@ -19,27 +18,24 @@ import MetasClient from './MetasClient'
  * A ordem da página é a ordem da leitura:
  *
  *   1. ACOMPANHAMENTO — projetado × realizado, pacing e atingimento por KPI;
- *   2. COMPARAÇÃO HISTÓRICA — a trajetória do cumprimento, mês a mês;
- *   3. CADASTRO — criar e editar as metas do período.
+ *   2. CADASTRO — criar e editar as metas do período.
  *
- * Primeiro como estamos, depois como chegamos aqui, e só então o que mudar.
+ * ── A COMPARAÇÃO HISTÓRICA SAIU ─────────────────────────────────────────
+ *
+ * Havia aqui um terceiro bloco, com o cumprimento de cada meta mês a mês.
+ * Foi removido por decisão de produto, e NADA entrou no lugar — o espaço
+ * fica para o acompanhamento e o cadastro, que são o que a tela existe para
+ * fazer. A janela de 6 meses e as 6 consultas que a alimentavam saíram
+ * junto: a página voltou a pagar uma consulta por carregamento.
  *
  * Toda a matemática é de `avaliarCompleto` (lib/metas) sobre `metasDoPeriodo`
  * (lib/kpi) — as mesmas funções que a API e a Visão geral do Comercial usam.
  * Nenhum número é recalculado aqui.
  */
 
-/** Quantos meses a comparação histórica cobre. */
-const JANELA = 6
-
 export default async function MetasPage() {
   const periodo = periodoAtual()
-  const periodos = ultimosPeriodos(JANELA)
-
-  const [doMes, historico] = await Promise.all([
-    metasDoPeriodo(periodo),
-    Promise.all(periodos.map((p) => metasDoPeriodo(p))),
-  ])
+  const doMes = await metasDoPeriodo(periodo)
 
   const avaliacoes = doMes.map((m) => avaliarCompleto({
     tipo: m.tipo,
@@ -50,30 +46,9 @@ export default async function MetasPage() {
     unidade: m.unidade,
   }))
 
-  /**
-   * UMA SÉRIE POR INDICADOR que tenha meta em QUALQUER mês da janela.
-   *
-   * Indicador sem meta nenhuma no período não vira linha vazia: ele
-   * simplesmente não é acompanhado, e uma faixa de seis meses em branco só
-   * ocuparia espaço. Já um indicador metado em três dos seis meses aparece,
-   * com os outros três vazios — a lacuna é informação.
-   */
-  const tipos = [...new Set(historico.flatMap((mes) => mes.map((m) => m.tipo)))].sort()
-
-  const series: SerieMeta[] = tipos.map((tipo) => ({
-    tipo,
-    pontos: periodos.map((p, i) => {
-      const m = historico[i].find((x) => x.tipo === tipo)
-      // `atingimento` já vem com MENOR É MELHOR resolvido por `avaliarMeta`.
-      return { periodo: p, cumprimento: m?.atingimento ?? null }
-    }),
-  }))
-
   return (
     <div className="space-y-10">
       <MetaAnalytics avaliacoes={avaliacoes} periodoLabel={formatMesRef(periodo)} />
-
-      <EvolucaoMetas series={series} />
 
       <MetasClient />
     </div>

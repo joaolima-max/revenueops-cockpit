@@ -249,7 +249,14 @@ export default function CarteiraClient() {
       </Panel>
 
       <TableShell>
-        <Table>
+        {/* ROLAR, EM VEZ DE COMPRIMIR.
+            Oito colunas, e cinco delas com largura declarada. Somadas
+            (Conta 7 + Modelo 10,5 + Segmento 10 + Status 6 + Mensalidade 9 +
+            Gestor 9 + Ações 6 = 57,5rem) já passam do `min-w-[44rem]` padrão
+            da tabela — e o que sobrava para "Cliente", que é nome mais CNPJ,
+            era o resto. Com 72rem de mínimo cada coluna fica no seu tamanho e
+            o `overflow-x-auto` do TableShell assume nas telas estreitas. */}
+        <Table className="min-w-[72rem]">
           <THead>
             <HeadRow>
               {/* MODELO antes de SEGMENTO, e os dois com largura própria.
@@ -258,7 +265,7 @@ export default function CarteiraClient() {
                   badge curto e fixo. Ordenar do fixo para o variável, com
                   larguras declaradas, é o que dá respiro entre as duas
                   colunas sem alargar a tabela. */}
-              <Th className="pl-5">Cliente</Th>
+              <Th className="pl-5 w-[clamp(14rem,26%,24rem)]">Cliente</Th>
               <Th className="w-[7rem]">Conta</Th>
               {/* "Modelo operacional" POR EXTENSO. Abreviado para "Modelo",
                   o cabeçalho não dizia modelo de quê — e ao lado de
@@ -283,9 +290,18 @@ export default function CarteiraClient() {
               <EmptyRow colSpan={8}>Nenhum cliente encontrado com esses filtros.</EmptyRow>
             ) : clientes.map(c => (
               <Row key={c.id}>
-                <Td className="pl-5">
+                {/* O NOME TRUNCA, com o texto inteiro no tooltip.
+                    É razão social cadastrada — ninguém controla o tamanho —, e
+                    sem teto um nome longo esticava a coluna e empurrava as
+                    demais. `max-w-0` é o que faz a célula respeitar a largura
+                    da coluna dentro de uma tabela; sem ele `bp-truncate` não
+                    corta nada. O CNPJ tem tamanho fixo e não precisa. */}
+                <Td className="pl-5 max-w-0">
                   <Link href={`/dashboard/carteira/${c.id}`} className="group block">
-                    <span className="block t-body font-medium text-fg group-hover:text-accent-soft transition-colors duration-[180ms]">{c.nome}</span>
+                    <span
+                      className="block t-body font-medium text-fg bp-truncate group-hover:text-accent-soft transition-colors duration-[180ms]"
+                      title={c.nome}
+                    >{c.nome}</span>
                     {c.cnpj && <span className="block t-mono text-subtle mt-1">{c.cnpj}</span>}
                   </Link>
                 </Td>

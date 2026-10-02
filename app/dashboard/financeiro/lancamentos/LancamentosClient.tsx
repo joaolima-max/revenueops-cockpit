@@ -464,13 +464,29 @@ export default function LancamentosClient({ podeGerenciar }: { podeGerenciar: bo
       </Panel>
 
       <TableShell>
-        <Table>
+        {/* ROLAR, EM VEZ DE COMPRIMIR.
+            São oito colunas, e a de Ações carrega quatro botões. No
+            `min-w-[44rem]` padrão da tabela não havia espaço para todas:
+            cada coluna era empurrada até o seu mínimo e a Descrição —
+            a única de texto livre — ficava com cerca de 12rem, cortando
+            "Folha de pagamento" com reticências ainda sobrando tela.
+            Com 76rem de largura mínima, cada coluna fica no seu tamanho
+            natural e o `overflow-x-auto` do TableShell cuida das telas
+            menores. Rolar lateralmente é melhor que ler pela metade. */}
+        <Table className="min-w-[76rem]">
           <THead>
             <HeadRow>
-              {/* A DESCRIÇÃO tem teto de largura: ela é texto livre, e sem
-                  limite um lançamento com descrição longa empurrava as
-                  colunas de valor e ações para fora da tela. */}
-              <Th className="pl-5 w-[clamp(12rem,32%,24rem)]">Descrição</Th>
+              {/* A DESCRIÇÃO tem PISO e TETO.
+                  Teto porque é texto livre: sem limite, uma descrição longa
+                  empurrava valor e ações para fora da tela. Piso porque o
+                  caso comum precisa caber inteiro — "Folha de pagamento" em
+                  UMA linha, sem reticências. `bp-truncate` já impede quebra
+                  de palavra (`white-space: nowrap`), então o que decide entre
+                  "cabe" e "corta" é só a largura. 16rem dá folga para esse
+                  caso; o que passar disso ganha ellipsis e o `title`. */}
+              <Th className="pl-5 w-[clamp(16rem,30%,28rem)]">Descrição</Th>
+              {/* Categoria COMPACTA: é rótulo curto e cadastrado, com teto
+                  próprio no Badge. Não disputa espaço com a descrição. */}
               <Th className="w-[9rem]">Categoria</Th>
               <Th>Lançamento</Th>
               <Th>Vencimento</Th>

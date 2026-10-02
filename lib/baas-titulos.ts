@@ -25,16 +25,30 @@ import type { Prisma } from '@prisma/client'
 import { centavos } from '@/lib/lancamento-baas'
 
 /**
- * Categorias que o lançamento automático usa.
+ * A categoria dos três registros: **BaaS**, nos dois tipos.
  *
- * A de despesa chama-se "BaaS", e não mais "Repasse a Cliente BaaS": o
- * residual é devido ao PARCEIRO (BaaS/White Label), que não é cliente da
- * carteira — o nome antigo confundia os dois lados do lançamento. A v26
- * RENOMEIA a categoria existente, preservando o id, para que os lançamentos
- * já classificados sigam apontando para ela.
+ * ── UM NOME, NÃO TRÊS ───────────────────────────────────────────────────
+ *
+ * Já foram "Tarifas BaaS" (receita) e "Repasse a Cliente BaaS" (despesa).
+ * Nomear a categoria pelo PAPEL de cada registro criava três categorias para
+ * uma única origem — e a tela de Categorias, que existe para classificar
+ * despesa e receita por natureza, enchia de linhas que diziam a mesma coisa
+ * com palavras diferentes.
+ *
+ * "Tarifa BaaS" e "Repasse BaaS" continuam existindo, na DESCRIÇÃO, que é
+ * onde o papel do registro pertence. A categoria responde "de onde vem?", e a
+ * resposta é a mesma para os três: BaaS.
+ *
+ * São duas linhas no banco porque `CategoriaFinanceira` é única por
+ * (nome, tipo) — uma de RECEITA e uma de DESPESA, ambas chamadas BaaS. O
+ * gasto por categoria e a receita por categoria continuam separados, como
+ * devem.
  */
-export const CATEGORIA_RECEITA_BAAS = 'Tarifas BaaS'
-export const CATEGORIA_DESPESA_BAAS = 'BaaS'
+export const CATEGORIA_BAAS = 'BaaS'
+
+/** @deprecated Use `CATEGORIA_BAAS`. Mantidos para não quebrar importações. */
+export const CATEGORIA_RECEITA_BAAS = CATEGORIA_BAAS
+export const CATEGORIA_DESPESA_BAAS = CATEGORIA_BAAS
 
 /**
  * Quem DEVE o título a receber.
@@ -171,8 +185,8 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     if (!atual) throw new Error('Lançamento BaaS não encontrado.')
 
     const [catReceita, catDespesa] = await Promise.all([
-      categoria(tx, CATEGORIA_RECEITA_BAAS, 'RECEITA'),
-      categoria(tx, CATEGORIA_DESPESA_BAAS, 'DESPESA'),
+      categoria(tx, CATEGORIA_BAAS, 'RECEITA'),
+      categoria(tx, CATEGORIA_BAAS, 'DESPESA'),
     ])
 
     const vencimento = d.periodoFim
@@ -207,7 +221,9 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     // seria cobrar duas vezes o mesmo valor.
     const comum = {
       descricao: descricao(d, 'Tarifa BaaS'),
-      tipo: CATEGORIA_RECEITA_BAAS,
+      // `ContaReceber.tipo` é o rótulo que a tela mostra como badge — a
+      // categoria do título. Mesmo nome dos outros dois: BaaS.
+      tipo: CATEGORIA_BAAS,
       valor: tarifas,
       dataVenc: vencimento,
     }
