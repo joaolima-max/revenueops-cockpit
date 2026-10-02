@@ -137,9 +137,9 @@ test('a linha do card nao quebra: flex com min-w-0, sem wrap', () => {
 
 test('o segmento da Carteira trunca com o mesmo tratamento', () => {
   assert.ok(CARTEIRA.includes('<Badge truncar title={c.segmentoComercial.nome}>'))
-  // A celula ganhou o fio separador nesta rodada; o `max-w-0` que faz a
-  // truncagem funcionar dentro da tabela continua ali.
-  assert.ok(CARTEIRA.includes('className="max-w-0 border-l border-line pl-4"'))
+  // `max-w-0` e o que faz a truncagem funcionar dentro de tabela; o `pr-6` e
+  // o respiro que substituiu o fio vertical.
+  assert.ok(CARTEIRA.includes('className="max-w-0 pr-6"'))
 })
 
 /* ========================================================================= *
@@ -168,23 +168,32 @@ test('as acoes e o status continuam na tabela', () => {
  * ========================================================================= */
 
 test('MODELO vem antes de SEGMENTO, e os dois tem largura propria', () => {
-  // Estavam colados: segmento e texto cadastrado, de largura imprevisivel, e
-  // sem teto encostava no modelo — que e um badge curto e fixo.
-  //
-  // O cabecalho deixou de abreviar: "Modelo" nao dizia modelo de que, e ao
-  // lado de "Segmento" as duas liam como categorias intercambiaveis.
   const iModelo = CARTEIRA.indexOf('>Modelo operacional<')
   const iSegmento = CARTEIRA.indexOf('>Segmento<')
   assert.ok(iModelo > 0 && iSegmento > 0, 'uma das colunas desapareceu')
   assert.ok(iModelo < iSegmento, 'Modelo deveria vir antes de Segmento')
 
-  // Largura suficiente para o rotulo por extenso, sem quebrar.
-  assert.ok(CARTEIRA.includes('className="w-[10.5rem] whitespace-nowrap">Modelo operacional'))
-  assert.ok(CARTEIRA.includes('border-l border-line">Segmento'))
+  // Largura folgada nas duas: o modelo cabe o rotulo por extenso sem quebrar,
+  // e o segmento tem espaco para texto cadastrado antes de truncar.
+  assert.ok(CARTEIRA.includes('className="w-[11rem] whitespace-nowrap">Modelo operacional'))
+  assert.ok(CARTEIRA.includes('className="w-[12rem]">Segmento'))
 })
 
 test('ha RESPIRO entre o badge do modelo e o do segmento', () => {
-  assert.ok(CARTEIRA.includes('<Td className="pr-4">'), 'o espacamento entre as duas colunas saiu')
+  assert.ok(CARTEIRA.includes('<Td className="pr-6">'), 'o espacamento entre as duas colunas saiu')
+})
+
+test('NAO ha fio vertical dentro da tabela da Carteira', () => {
+  /**
+   * O divisor entre Modelo e Segmento SAIU.
+   *
+   * Ele resolvia a ambiguidade de dois badges cinzas lado a lado, mas era o
+   * unico fio vertical da tabela — lia como se aquelas duas colunas fossem um
+   * grupo separado do resto. A separacao agora vem de largura e espacamento,
+   * que e o que deveria ter bastado desde o inicio.
+   */
+  const corpo = semComentarios(CARTEIRA)
+  assert.ok(!corpo.includes('border-l border-line'), 'o fio vertical voltou a tabela')
 })
 
 test('a Carteira preserva as colunas que a tela existe para dar', () => {
@@ -478,32 +487,36 @@ test('os nomes oficiais aparecem tambem no FORMULARIO', () => {
 })
 
 test('CARTEIRA: Modelo operacional e Segmento ficam visualmente SEPARADOS', () => {
-  /**
-   * Largura e `pr-4` ja existiam e nao bastaram: dois badges cinzas lado a
-   * lado continuam lendo como um campo so de duas palavras. O que separa e o
-   * fio vertical.
-   */
+  // Sem fio: a separacao e largura declarada + espacamento em cada celula.
   assert.ok(
     CARTEIRA.includes('>Modelo operacional<'),
     'o cabecalho voltou a abreviar para "Modelo"',
   )
-  assert.ok(
-    CARTEIRA.includes('border-l border-line">Segmento<'),
-    'o fio entre Modelo e Segmento saiu do cabecalho',
-  )
-  assert.ok(
-    CARTEIRA.includes('max-w-0 border-l border-line pl-4'),
-    'o fio entre Modelo e Segmento saiu da celula',
+  assert.ok(CARTEIRA.includes('w-[11rem] whitespace-nowrap">Modelo operacional'))
+  assert.ok(CARTEIRA.includes('w-[12rem]">Segmento'))
+  // Respiro nas DUAS celulas, nao so numa.
+  assert.equal(
+    (CARTEIRA.match(/<Td className="(pr-6|max-w-0 pr-6)">/g) ?? []).length, 2,
+    'o espacamento entre Modelo e Segmento mudou de forma',
   )
 })
 
-test('CARTEIRA: a ordem e Modelo → Segmento → ... → Gestor', () => {
+test('CARTEIRA: a ordem das colunas e a da composicao', () => {
+  // Cliente → Modelo → Segmento → Conta → Status → Mensalidade → Gestor → Ações
+  //
+  // "Conta" passou para DEPOIS de Segmento: ela e curta e de largura fixa, e
+  // ficava entre o nome e o modelo separando duas colunas que se leem juntas.
   const cabecalho = CARTEIRA.slice(CARTEIRA.indexOf('<HeadRow>'), CARTEIRA.indexOf('</HeadRow>'))
-  const iModelo = cabecalho.indexOf('Modelo operacional')
-  const iSegmento = cabecalho.indexOf('Segmento')
-  const iGestor = cabecalho.indexOf('Gestor')
-  assert.ok(iModelo < iSegmento, 'Segmento voltou a vir antes de Modelo')
-  assert.ok(iSegmento < iGestor, 'Gestor saiu de lugar')
+  const ordem = [
+    'Cliente', 'Modelo operacional', 'Segmento', 'Conta',
+    'Status', 'Mensalidade API', 'Gestor', 'Ações',
+  ]
+  let pos = -1
+  for (const col of ordem) {
+    const i = cabecalho.indexOf(`>${col}<`)
+    assert.ok(i > pos, `${col} fora de ordem no cabecalho da Carteira`)
+    pos = i
+  }
 })
 
 test('CARTEIRA: nada foi removido — conta, status, mensalidade e gestor ficam', () => {

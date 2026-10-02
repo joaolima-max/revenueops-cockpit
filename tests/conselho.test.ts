@@ -74,14 +74,14 @@ test('JOÃO LIMA: o menu aparece quando o banco diz que ele e socio', () => {
 
 test('JOÃO LIMA: a rota abre com socio confirmado E a chave', () => {
   const chaves = ['view_conselho', 'view_auditoria', 'manage_auditoria']
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', chaves, true), 'allow')
-  assert.equal(checkAccess('/api/conselho', 'ADMIN', chaves, true), 'allow')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', chaves, true, true), 'allow')
+  assert.equal(checkAccess('/api/conselho', 'ADMIN', chaves, true, true), 'allow')
 })
 
 test('MANUEL: socio autorizado nesta rodada — entra', () => {
   // O estado real gravado no banco: ADMIN, sócio, com a chave na lista.
   const chaves = ['view_conselho', 'view_usuarios', 'manage_usuarios', 'view_auditoria']
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', chaves, true), 'allow')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', chaves, true, true), 'allow')
   const itens = navigationFor('ADMIN', chaves, true).flatMap((s) => s.items.map((i) => i.label))
   assert.ok(itens.includes('Conselho'), 'o Conselho sumiu do menu do Manuel')
 })
@@ -90,10 +90,13 @@ test('MANUEL: socio autorizado nesta rodada — entra', () => {
  * AS DUAS CONDIÇÕES — uma só não basta
  * ========================================================================= */
 
-test('SOCIO SEM A CHAVE nao entra', () => {
+test('SOCIO SEM A CHAVE nao entra — conferido com a lista DO BANCO', () => {
   // Ser dono da empresa nao e o mesmo que estar autorizado a abrir o painel.
+  //
+  // `doBanco: true` e obrigatorio aqui: e a lista ATUAL que decide chave
+  // restrita. Ver o teste "o PROXY nao decide chave restrita" abaixo.
   assert.equal(
-    checkAccess('/dashboard/conselho', 'ADMIN', ['view_auditoria'], true), 'forbidden',
+    checkAccess('/dashboard/conselho', 'ADMIN', ['view_auditoria'], true, true), 'forbidden',
     'socio sem view_conselho entrou',
   )
   const itens = navigationFor('ADMIN', ['view_auditoria'], true)
@@ -103,7 +106,7 @@ test('SOCIO SEM A CHAVE nao entra', () => {
 
 test('A CHAVE SEM SER SOCIO nao entra', () => {
   assert.equal(
-    checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], false), 'forbidden',
+    checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], false, true), 'forbidden',
     'quem tem a chave mas nao e socio entrou',
   )
   const itens = navigationFor('ADMIN', ['view_conselho'], false)
@@ -147,15 +150,15 @@ test('NAO SOCIO: o menu nao aparece', () => {
 })
 
 test('NAO SOCIO: rota e API barradas, mesmo sendo ADMIN', () => {
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, false), 'forbidden')
-  assert.equal(checkAccess('/api/conselho', 'ADMIN', null, false), 'forbidden')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, false, true), 'forbidden')
+  assert.equal(checkAccess('/api/conselho', 'ADMIN', null, false, true), 'forbidden')
 })
 
 test('NAO SOCIO: nem com o catalogo INTEIRO de permissoes', () => {
   // Nenhuma combinacao de chaves substitui a condicao de socio — nem a
   // propria `view_conselho`, nem todas as outras juntas.
   const todas = ALL_PERMISSIONS.map((p) => p.key)
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', todas, false), 'forbidden')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', todas, false, true), 'forbidden')
 })
 
 test('ehSocio recusa ausencia, nulo e objeto vazio', () => {
@@ -181,7 +184,6 @@ test('a obrigacao de conferir socio fica DECLARADA na rota', () => {
 
 test('undefined NAO decide — e por isso que o proxy nao barra o socio', () => {
   // Se `undefined` voltasse a barrar, o bug do token antigo voltaria inteiro.
-  // Com a chave presente e `socio` desconhecido, passa — e a pagina decide.
   assert.equal(
     checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], undefined), 'allow',
   )
@@ -193,17 +195,51 @@ test('o Conselho declara OS DOIS eixos: socio E a chave', () => {
   assert.equal(conselho.permissao, 'view_conselho', 'o Conselho perdeu a chave explicita')
 })
 
-test('undefined em socio nao decide, mas a CHAVE continua valendo no proxy', () => {
-  // O proxy nao sabe quem e socio (nao consulta o banco), entao nao barra por
-  // isso. Mas ele TEM as permissoes do token: quem nao tem a chave e barrado
-  // ja no edge, sem chegar na pagina.
+test('o PROXY nao decide chave restrita — e por isso o Conselho abre', () => {
+  /**
+   * ESTE TESTE AFIRMAVA O BUG.
+   *
+   * A versao anterior exigia `forbidden` quando o token nao tinha
+   * `view_conselho`, com a mensagem "o proxy deixou passar quem nao tem a
+   * chave". Parecia rigor e era o defeito: o JWT fotografa as permissoes no
+   * LOGIN e vive 7 dias, e a migration concedeu a chave DEPOIS. Joao Lima e
+   * Manuel tinham a chave no banco e nao no cookie — o proxy barrava no edge,
+   * e a pagina que leria o banco nunca era alcancada. A sidebar mostrava o
+   * Conselho e o clique levava embora.
+   *
+   * E a repeticao exata do bug do `isPartner`, na outra metade da regra.
+   *
+   * Sem `doBanco`, o portao NAO OPINA sobre chave restrita. A autoridade e a
+   * pagina e a API, que leem a lista atual a cada requisicao.
+   */
+  for (const token of [null, [], ['view_auditoria'], ['view_conselho']]) {
+    assert.equal(
+      checkAccess('/dashboard/conselho', 'ADMIN', token, undefined), 'allow',
+      `o proxy voltou a decidir chave restrita (token: ${JSON.stringify(token)})`,
+    )
+  }
+})
+
+test('o mesmo vale para a AUDITORIA — era o mesmo bug, latente', () => {
+  // `view_auditoria` tambem e restrita. Quem recebesse a chave hoje ficaria
+  // barrado pelo proxy ate o token expirar, por ate 7 dias.
+  assert.equal(checkAccess('/dashboard/auditoria', 'ADMIN', null, undefined), 'allow')
+  // E a pagina/API, que leem o banco, continuam exigindo.
+  assert.equal(checkAccess('/dashboard/auditoria', 'ADMIN', null, false, true), 'forbidden')
+})
+
+test('chave COMUM continua decidida no proxy', () => {
+  // `view_usuarios`/`manage_usuarios` NAO sao restritas: tem atalho de ADMIN e
+  // fallback por perfil, entao uma lista velha nao as nega indevidamente — e
+  // barrar no edge e melhor que deixar a pagina decidir.
   assert.equal(
-    checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], undefined), 'allow',
+    checkAccess('/dashboard/usuarios', 'COMERCIAL', [], undefined), 'forbidden',
+    'o proxy parou de decidir chave comum',
   )
-  assert.equal(
-    checkAccess('/dashboard/conselho', 'ADMIN', ['view_auditoria'], undefined), 'forbidden',
-    'o proxy deixou passar quem nao tem a chave',
-  )
+  // ADMIN entra pelo atalho, mesmo com lista vazia.
+  assert.equal(checkAccess('/dashboard/usuarios', 'ADMIN', [], undefined), 'allow')
+  // E quem tem a chave gravada entra sem ser ADMIN.
+  assert.equal(checkAccess('/dashboard/usuarios', 'COMERCIAL', ['view_usuarios'], undefined), 'allow')
 })
 
 test('ADMIN, Diretor e departamento Conselho NAO implicam socio', () => {

@@ -132,42 +132,51 @@ test('cada tela tem a SUA chave: Conselho e Auditoria nao se confundem', () => {
 })
 
 test('URL DIRETA bloqueada sem autorizacao, inclusive para ADMIN', () => {
+  // `doBanco: true` — e a lista ATUAL que decide chave restrita. O proxy, que
+  // so tem o token, nao opina: a autoridade e a pagina, que le o banco (ver
+  // "o PROXY nao decide chave restrita" em tests/conselho).
   for (const rota of ['/dashboard/conselho', '/dashboard/auditoria']) {
-    assert.equal(checkAccess(rota, 'ADMIN', null, false), 'forbidden', `${rota} abriu sem autorizacao`)
-    assert.equal(checkAccess(rota, 'ADMIN', [], false), 'forbidden')
+    assert.equal(
+      checkAccess(rota, 'ADMIN', null, false, true), 'forbidden',
+      `${rota} abriu sem autorizacao`,
+    )
+    assert.equal(checkAccess(rota, 'ADMIN', [], false, true), 'forbidden')
   }
 })
 
 test('API bloqueada sem autorizacao', () => {
-  assert.equal(checkAccess('/api/auditoria', 'ADMIN', null, false), 'forbidden')
-  assert.equal(checkAccess('/api/conselho', 'ADMIN', null, false), 'forbidden')
+  // As APIs restritas conferem com `autorizado()`, que le o banco — logo
+  // `doBanco: true` reproduz a decisao que de fato acontece no handler.
+  assert.equal(checkAccess('/api/auditoria', 'ADMIN', null, false, true), 'forbidden')
+  assert.equal(checkAccess('/api/conselho', 'ADMIN', null, false, true), 'forbidden')
 })
 
 test('o Conselho exige socio E a chave; a Auditoria exige a dela', () => {
-  // As duas condicoes juntas abrem.
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], true), 'allow')
-  assert.equal(checkAccess('/api/conselho', 'ADMIN', ['view_conselho'], true), 'allow')
+  // As duas condicoes juntas abrem. `doBanco` em todas: e a lista atual que
+  // decide chave restrita.
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], true, true), 'allow')
+  assert.equal(checkAccess('/api/conselho', 'ADMIN', ['view_conselho'], true, true), 'allow')
   // Cada uma sozinha nao abre.
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, true), 'forbidden',
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', null, true, true), 'forbidden',
     'socio sem a chave entrou')
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], false), 'forbidden',
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', ['view_conselho'], false, true), 'forbidden',
     'a chave sem ser socio entrou')
   // A Auditoria segue com a chave dela, independente de socio.
-  assert.equal(checkAccess('/api/auditoria', 'ADMIN', ['view_auditoria'], false), 'allow')
+  assert.equal(checkAccess('/api/auditoria', 'ADMIN', ['view_auditoria'], false, true), 'allow')
 })
 
 test('NAO ser socio barra o Conselho mesmo com todas as chaves', () => {
   const todas = ALL_PERMISSIONS.map((p) => p.key)
-  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', todas, false), 'forbidden')
+  assert.equal(checkAccess('/dashboard/conselho', 'ADMIN', todas, false, true), 'forbidden')
 })
 
 test('a CHAVE e o gate da Auditoria — nao o perfil', () => {
   // A funcao lista os quatro perfis de proposito: herdar `roles: ['ADMIN']`
   // da secao impediria conceder auditoria a quem nao e administrador do
   // sistema, e a chave restrita existe justamente para isso.
-  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', ['view_auditoria'], false), 'allow')
-  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', null, false), 'forbidden')
-  assert.equal(checkAccess('/dashboard/auditoria', 'ADMIN', null, false), 'forbidden',
+  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', ['view_auditoria'], false, true), 'allow')
+  assert.equal(checkAccess('/dashboard/auditoria', 'COMERCIAL', null, false, true), 'forbidden')
+  assert.equal(checkAccess('/dashboard/auditoria', 'ADMIN', null, false, true), 'forbidden',
     'ser ADMIN nunca libera chave restrita')
 })
 

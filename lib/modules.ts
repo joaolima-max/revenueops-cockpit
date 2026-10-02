@@ -16,7 +16,7 @@
  * Desabilitar uma FUNÇÃO desliga apenas ela.
  */
 
-import { hasPermission } from '@/lib/permissions'
+import { hasPermission, permissaoRestrita } from '@/lib/permissions'
 
 export type Role = 'ADMIN' | 'OPERACIONAL' | 'COMERCIAL' | 'GESTOR'
 
@@ -312,6 +312,18 @@ function roleAllowed(feature: ResolvedFeature, role?: string): boolean {
  * usuários em Production — perdia o menu de Usuários, porque `null.includes`
  * nunca encontra nada. A regra de permissão não pode ter duas implementações.
  */
+/**
+ * A função exige CHAVE RESTRITA?
+ *
+ * Restrita = concedida uma a uma, conferida contra o BANCO a cada
+ * requisição, sem atalho de ADMIN (`PERMISSOES_RESTRITAS`).
+ */
+function exigeChaveRestrita(feature: Feature): boolean {
+  if (!feature.permissao) return false
+  const chaves = Array.isArray(feature.permissao) ? feature.permissao : [feature.permissao]
+  return chaves.some((k) => permissaoRestrita(k))
+}
+
 function permissaoConcedida(
   feature: Feature, permissoes?: string[] | null, role?: string,
 ): boolean {
@@ -335,6 +347,19 @@ export interface Contexto {
    * não deve opinar sobre quem é sócio. Ver `liberada`.
    */
   socio?: boolean
+  /**
+   * As `permissoes` acima vieram DO BANCO?
+   *
+   * `true`  → lista atual: chaves restritas podem ser decididas aqui.
+   * ausente → lista do TOKEN: chaves restritas NÃO são decididas aqui.
+   *
+   * Mesma lógica de `socio`, e pelo mesmo motivo. O JWT fotografa as
+   * permissões no login e vive 7 dias; uma chave restrita concedida depois
+   * disso não está nele. Decidir por essa lista barra quem acabou de ser
+   * autorizado — e foi exatamente o que aconteceu com o Conselho. Ver
+   * `liberada`.
+   */
+  doBanco?: boolean
 }
 
 /**
@@ -362,8 +387,44 @@ export interface Contexto {
  */
 function liberada(feature: ResolvedFeature, ctx: Contexto): boolean {
   if (feature.socio && ctx.socio === false) return false
-  return roleAllowed(feature, ctx.role)
-    && permissaoConcedida(feature, ctx.permissoes, ctx.role)
+
+  if (!roleAllowed(feature, ctx.role)) return false
+
+  /**
+   * CHAVE RESTRITA NÃO SE DECIDE PELO TOKEN — o mesmo erro, agora na outra
+   * metade da regra.
+   *
+   * O bug do `isPartner` (documentado abaixo) foi corrigido tratando `socio`
+   * como tri-estado. Depois o Conselho ganhou uma segunda condição,
+   * `view_conselho`, e ela entrou por `permissao` — que o proxy DECIDE, com a
+   * lista do JWT. O resultado foi idêntico ao bug original:
+   *
+   *   1. a migration concedeu `view_conselho` a João Lima e Manuel;
+   *   2. o JWT deles foi emitido ANTES disso e não tem a chave;
+   *   3. `hasPermission` de chave restrita não tem atalho de ADMIN — exige a
+   *      chave na lista —, então devolveu `false`;
+   *   4. o proxy barrou no edge e redirecionou;
+   *   5. a página, que leria o banco e liberaria, nunca foi alcançada.
+   *
+   * A sidebar mostrava o Conselho (ela lê do banco) e o clique levava embora.
+   * Exatamente o sintoma relatado.
+   *
+   * Então chave restrita só é decidida quando as permissões vêm DO BANCO
+   * (`doBanco`). Sem isso, o portão aqui não opina, e a autoridade é a página
+   * e a API — que leem a lista atual a cada requisição, via
+   * `podeVerConselho` / `autorizado`.
+   *
+   * NÃO é afrouxamento de segurança: a página e a API continuam exigindo a
+   * chave, e agora com a lista CORRETA. O que deixa de acontecer é negar
+   * acesso a quem tem a permissão gravada só porque o cookie é antigo — e
+   * revogar passa a valer na hora, em vez de esperar o token expirar.
+   *
+   * Chaves COMUNS seguem decididas aqui: elas têm atalho de ADMIN e fallback
+   * por perfil, então uma lista velha não as nega indevidamente.
+   */
+  if (exigeChaveRestrita(feature) && !ctx.doBanco) return true
+
+  return permissaoConcedida(feature, ctx.permissoes, ctx.role)
 }
 
 /**
@@ -394,10 +455,18 @@ export function isFeatureEnabled(key: string): boolean {
  * Navegação da sidebar para um perfil: só módulos e funções ligados, e só o
  * que o perfil pode ver. Seções que ficam vazias são omitidas.
  */
+/**
+ * O MENU. As permissões chegam aqui vindas DO BANCO — `app/dashboard/layout`
+ * as busca com `estadoDoUsuario` a cada navegação —, então `doBanco: true`:
+ * chaves restritas SÃO aplicadas, e quem não tem a chave não vê o item.
+ *
+ * É o oposto do proxy, que decide com o token e por isso não opina sobre
+ * chave restrita. Ver `liberada`.
+ */
 export function navigationFor(
   role: string, permissoes?: string[] | null, socio?: boolean,
 ): Array<{ key: string; label: string; items: ResolvedFeature[] }> {
-  const ctx: Contexto = { role, permissoes, socio }
+  const ctx: Contexto = { role, permissoes, socio, doBanco: true }
   return MODULES.filter((m) => m.enabled)
     .map((m) => ({
       key: m.key,
@@ -415,13 +484,13 @@ export function navigationFor(
  * desligado, caso em que redirecionar para `/dashboard` criaria um loop.
  */
 export function firstAvailableRoute(
-  role?: string, permissoes?: string[] | null, socio?: boolean,
+  role?: string, permissoes?: string[] | null, socio?: boolean, doBanco?: boolean,
 ): string | null {
   // Destino de fallback precisa ser uma tela de menu — mandar o usuário para
   // uma área interna seria levá-lo a um lugar sem caminho de volta. E nunca
   // para uma tela restrita: cair no Conselho sem ter a chave devolveria 403.
   const feature = activeFeatures().find(
-    (f) => !f.oculto && liberada(f, { role, permissoes, socio }),
+    (f) => !f.oculto && liberada(f, { role, permissoes, socio, doBanco }),
   )
   return feature?.route ?? null
 }
@@ -438,6 +507,12 @@ export type AccessVerdict = 'allow' | 'disabled' | 'forbidden'
  */
 export function checkAccess(
   pathname: string, role?: string, permissoes?: string[] | null, socio?: boolean,
+  /**
+   * As permissões vieram do banco? O proxy OMITE — ele só tem o token, e
+   * decidir chave restrita por lista velha barra quem acabou de ser
+   * autorizado. Páginas e APIs que leem o banco passam `true`.
+   */
+  doBanco?: boolean,
 ): AccessVerdict {
   if (ALWAYS_ON.some((p) => pathname === p || pathname.startsWith(p + '/'))) return 'allow'
 
@@ -462,5 +537,5 @@ export function checkAccess(
    * do Pipeline anularia a restrição de ADMIN da administração de funis.
    */
   const maisEspecifica = active.reduce((a, b) => (b.route.length > a.route.length ? b : a))
-  return liberada(maisEspecifica, { role, permissoes, socio }) ? 'allow' : 'forbidden'
+  return liberada(maisEspecifica, { role, permissoes, socio, doBanco }) ? 'allow' : 'forbidden'
 }

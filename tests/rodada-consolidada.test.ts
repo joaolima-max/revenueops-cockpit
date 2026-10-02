@@ -165,7 +165,7 @@ test('descricao longa ganha ellipsis E o texto no tooltip', () => {
 
 test('a Carteira ROLA em vez de esmagar as oito colunas', () => {
   const C = ler('app/dashboard/carteira/CarteiraClient.tsx')
-  assert.ok(C.includes('min-w-[72rem]'), 'a Carteira voltou a comprimir as colunas')
+  assert.ok(C.includes('min-w-[76rem]'), 'a Carteira voltou a comprimir as colunas')
 })
 
 test('o nome do cliente trunca com tooltip', () => {

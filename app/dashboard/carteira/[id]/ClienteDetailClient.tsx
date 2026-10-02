@@ -7,6 +7,7 @@ import {
   CLIENTE_STATUS_LABELS, CLIENTE_STATUS_COLORS, MODELO_OPERACIONAL_LABELS,
   SEGMENTO_CRM_LABELS,
 } from '@/lib/utils'
+import type { ModeloOperacional, ClienteStatus } from '@prisma/client'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -16,7 +17,17 @@ interface FollowUpItem { id: string; titulo: string; descricao: string | null; t
 
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null; telefone: string | null
-  modeloOperacional: string; status: string; segmento: string | null
+  /**
+   * Os ENUMS, não `string`.
+   *
+   * Eram `string`, e por isso `MODELO_OPERACIONAL_LABELS[c.modeloOperacional]`
+   * compilava mesmo com o mapa incompleto — foi o que deixou "BaaS" sair em
+   * branco em produção. Com a união do enum, indexar o mapa obriga o mapa a
+   * cobrir todos os valores, e o compilador cobra os dois lados.
+   */
+  modeloOperacional: ModeloOperacional
+  status: ClienteStatus
+  segmento: string | null
   dataFechamento: string | null; dataEncerramento: string | null
   mensalidadeApi: number | null; notas: string | null
   owner: { id: string; name: string }
@@ -98,7 +109,9 @@ export default function ClienteDetailClient({
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
-  async function handleStatusChange(newStatus: string) {
+  // `ClienteStatus`, não `string`: o handler é chamado pelo `<select>`, e
+  // aceitar string solta permitiria gravar um status que o enum não conhece.
+  async function handleStatusChange(newStatus: ClienteStatus) {
     setStatusEdit(newStatus)
     await fetch(`/api/clientes/${cliente.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -179,7 +192,11 @@ export default function ClienteDetailClient({
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
               <button onClick={() => setShowTarefaModal(true)} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-2 text-muted text-xs font-medium rounded-lg border border-line-2 transition-colors">+ Tarefa</button>
-              <select value={statusEdit} onChange={e => handleStatusChange(e.target.value)}
+              {/* O `value` de um <select> é sempre `string` para o DOM; o cast
+                  estreita para o enum, e as opções abaixo são a garantia de que
+                  só valores válidos chegam aqui. */}
+              <select value={statusEdit}
+                onChange={e => handleStatusChange(e.target.value as ClienteStatus)}
                 className="bp-field text-sm">
                 <option value="PROSPECCAO">Prospecção</option>
                 <option value="ATIVO">Ativo</option>

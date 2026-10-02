@@ -15,6 +15,7 @@ import {
 } from '@/lib/utils'
 import { STATUS_CLIENTE, STATUS_CLIENTE_LABEL } from '@/lib/clientes'
 import GerenciarSegmentos from '@/components/carteira/GerenciarSegmentos'
+import type { ModeloOperacional, ClienteStatus } from '@prisma/client'
 
 /**
  * CARTEIRA DE CLIENTES.
@@ -36,7 +37,16 @@ import GerenciarSegmentos from '@/components/carteira/GerenciarSegmentos'
 interface Cliente {
   id: string; nome: string; cnpj: string | null; email: string | null
   telefone: string | null
-  modeloOperacional: string; status: string
+  /**
+   * Os ENUMS, não `string`.
+   *
+   * Eram `string`, e por isso `MODELO_OPERACIONAL_LABELS[c.modeloOperacional]`
+   * compilava mesmo com o mapa incompleto — foi o que deixou "BaaS" sair em
+   * branco em produção. Com a união do enum, indexar o mapa obriga o mapa a
+   * cobrir todos os valores, e o compilador cobra os dois lados.
+   */
+  modeloOperacional: ModeloOperacional
+  status: ClienteStatus
   segmento: string | null
   segmentoComercialId: string | null
   segmentoComercial: { id: string; nome: string; slug: string } | null
@@ -250,33 +260,35 @@ export default function CarteiraClient() {
 
       <TableShell>
         {/* ROLAR, EM VEZ DE COMPRIMIR.
-            Oito colunas, e cinco delas com largura declarada. Somadas
-            (Conta 7 + Modelo 10,5 + Segmento 10 + Status 6 + Mensalidade 9 +
-            Gestor 9 + Ações 6 = 57,5rem) já passam do `min-w-[44rem]` padrão
-            da tabela — e o que sobrava para "Cliente", que é nome mais CNPJ,
-            era o resto. Com 72rem de mínimo cada coluna fica no seu tamanho e
-            o `overflow-x-auto` do TableShell assume nas telas estreitas. */}
-        <Table className="min-w-[72rem]">
+            Oito colunas com largura declarada. As sete fixas somam
+            (Modelo 11 + Segmento 12 + Conta 7,5 + Status 6 + Mensalidade 9 +
+            Gestor 9 + Ações 6 = 60,5rem) e "Cliente" pede 14rem no mínimo —
+            75rem no total. Está acima da largura de um notebook de propósito:
+            a rolagem do TableShell assume, e nenhuma coluna é esmagada para
+            caber. */}
+        <Table className="min-w-[76rem]">
           <THead>
             <HeadRow>
-              {/* MODELO antes de SEGMENTO, e os dois com largura própria.
-                  Estavam colados: segmento é texto cadastrado, de largura
-                  imprevisível, e sem teto ele encostava no modelo — que é um
-                  badge curto e fixo. Ordenar do fixo para o variável, com
-                  larguras declaradas, é o que dá respiro entre as duas
-                  colunas sem alargar a tabela. */}
-              <Th className="pl-5 w-[clamp(14rem,26%,24rem)]">Cliente</Th>
-              <Th className="w-[7rem]">Conta</Th>
+              {/* ── COMPOSIÇÃO DA TABELA ────────────────────────────────
+                  Prioridade: LEITURA CORRETA > PROPORÇÃO > SCROLL.
+
+                  Cada coluna tem largura declarada, e a soma passa da largura
+                  da tela de propósito — a rolagem do TableShell assume. Não
+                  se esmaga coluna para evitar scroll: um número cortado é
+                  pior que rolar.
+
+                  O FIO VERTICAL entre Modelo e Segmento SAIU. Ele resolvia a
+                  ambiguidade de dois badges cinzas lado a lado, mas introduzia
+                  um divisor que nenhuma outra coluna tinha — lia como se as
+                  duas pertencessem a um grupo separado do resto da tabela. A
+                  separação agora vem do que já devia bastar: largura folgada
+                  e espaçamento declarado em cada célula. */}
+              <Th className="pl-5 w-[clamp(14rem,24%,22rem)]">Cliente</Th>
               {/* "Modelo operacional" POR EXTENSO. Abreviado para "Modelo",
-                  o cabeçalho não dizia modelo de quê — e ao lado de
-                  "Segmento" as duas colunas liam como um par de categorias
-                  intercambiáveis, o que elas não são. */}
-              <Th className="w-[10.5rem] whitespace-nowrap">Modelo operacional</Th>
-              {/* FIO SEPARANDO as duas. Largura e respiro já existiam e não
-                  bastaram: dois badges cinzas lado a lado continuam lendo
-                  como um campo só de duas palavras. A régua vertical é o que
-                  declara onde um termina e o outro começa. */}
-              <Th className="w-[10rem] border-l border-line">Segmento</Th>
+                  o cabeçalho não dizia modelo de quê. */}
+              <Th className="w-[11rem] whitespace-nowrap">Modelo operacional</Th>
+              <Th className="w-[12rem]">Segmento</Th>
+              <Th className="w-[7.5rem]">Conta</Th>
               <Th className="w-[6rem]">Status</Th>
               <Th align="right" className="w-[9rem]">Mensalidade API</Th>
               <Th className="w-[9rem]">Gestor</Th>
@@ -305,23 +317,18 @@ export default function CarteiraClient() {
                     {c.cnpj && <span className="block t-mono text-subtle mt-1">{c.cnpj}</span>}
                   </Link>
                 </Td>
-                {/* NÚMERO DA CONTA — opcional, e é a chave que o Lançamento
-                    BaaS usa para achar o cliente de um título. */}
-                <Td className="t-mono text-muted">
-                  {c.numeroConta ?? <span className="text-subtle">—</span>}
-                </Td>
-                {/* MODELO antes de SEGMENTO, na ordem do cabeçalho, com
-                    `pr-4` de respiro. Os dois estavam colados: o modelo é um
-                    badge curto e fixo, o segmento é texto cadastrado de
-                    largura imprevisível, e sem espaçamento o segundo começava
-                    encostado no primeiro.
-                    Os dois são categorias, não status: tom neutro. O nome do
-                    segmento vem da entidade, com retaguarda no enum antigo, e
-                    trunca com o nome completo no hover. */}
-                <Td className="pr-4">
+                {/* MODELO OPERACIONAL — badge curto e de conjunto fechado
+                    (API, BaaS, White Label). `pr-6` separa do segmento: o
+                    respiro vem do espaçamento, não de um fio vertical. */}
+                <Td className="pr-6">
                   <Badge>{MODELO_OPERACIONAL_LABELS[c.modeloOperacional]}</Badge>
                 </Td>
-                <Td className="max-w-0 border-l border-line pl-4">
+                {/* SEGMENTO — texto CADASTRADO, de largura imprevisível.
+                    `max-w-0` faz a célula respeitar a largura da coluna; sem
+                    ele a truncagem não acontece dentro de tabela. O nome vem
+                    da entidade, com retaguarda no enum antigo, e o completo
+                    fica no tooltip. */}
+                <Td className="max-w-0 pr-6">
                   {c.segmentoComercial
                     ? <Badge truncar title={c.segmentoComercial.nome}>{c.segmentoComercial.nome}</Badge>
                     : c.segmento
@@ -330,6 +337,11 @@ export default function CarteiraClient() {
                           return <Badge truncar title={nome}>{nome}</Badge>
                         })()
                       : <span className="text-subtle">—</span>}
+                </Td>
+                {/* NÚMERO DA CONTA — opcional, e é a chave que o Lançamento
+                    BaaS usa para achar o cliente de um título. */}
+                <Td className="t-mono text-muted whitespace-nowrap">
+                  {c.numeroConta ?? <span className="text-subtle">—</span>}
                 </Td>
                 <Td><Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{CLIENTE_STATUS_LABELS[c.status]}</Badge></Td>
                 <Td align="right" numeric className="text-fg">

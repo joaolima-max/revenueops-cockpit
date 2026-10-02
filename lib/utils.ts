@@ -1,5 +1,14 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+/**
+ * Os TIPOS dos enums, não o cliente.
+ *
+ * `import type` é apagado na compilação, então isto não arrasta o Prisma
+ * Client para o bundle do navegador — e `lib/utils` é importado por telas de
+ * cliente. O que vem daqui é só a união de strings, que é justamente o que
+ * torna os mapas de rótulo exaustivos.
+ */
+import type { ModeloOperacional, ClienteStatus } from '@prisma/client'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -66,6 +75,17 @@ export const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador', GESTOR: 'Gestor', OPERACIONAL: 'Operador', COMERCIAL: 'Comercial',
 }
 
+/**
+ * SEGMENTO — o mapa que as telas usam, com TODOS os valores do enum.
+ *
+ * Os quatro últimos são LEGADO: não são oferecidos no cadastro novo (o
+ * segmento virou entidade, `SegmentoComercial`), mas o enum ainda os aceita e
+ * pode haver linha gravada com eles. Sem rótulo, a tela caía no `?? valor` e
+ * mostrava "CRIPTOMOEDAS" em caixa alta no lugar de um nome.
+ *
+ * O enum é a fonte da verdade, e `tests/rotulos-exaustivos` compara os dois:
+ * acrescentar valor ao enum sem rótulo aqui quebra o teste.
+ */
 export const SEGMENTO_CRM_LABELS: Record<string, string> = {
   CRYPTO_EXCHANGES: 'Crypto / Exchanges / PSAV / P2P / OTC',
   REMESSA_FX: 'Remessa / FX / Crossborder / Pagamentos Internacionais',
@@ -75,6 +95,11 @@ export const SEGMENTO_CRM_LABELS: Record<string, string> = {
   IGAMING: 'iGaming',
   SAAS: 'SaaS',
   BAAS: 'BaaS',
+  // ── Legado ──────────────────────────────────────────────────────────────
+  ECOMMERCE: 'E-commerce',
+  CRIPTOMOEDAS: 'Criptomoedas',
+  VAREJO: 'Varejo',
+  OUTROS: 'Outros',
 }
 
 export const CANAL_LABELS: Record<string, string> = {
@@ -125,12 +150,57 @@ export function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export const MODELO_OPERACIONAL_LABELS: Record<string, string> = {
-  API: 'API', WHITE_LABEL: 'White Label',
+/**
+ * MODELO OPERACIONAL — rótulo de CADA valor do enum, sem exceção.
+ *
+ * ── O BUG QUE ISTO CORRIGE ──────────────────────────────────────────────
+ *
+ * `BAAS` não estava aqui. O enum do banco sempre teve os três valores, e o
+ * `<select>` sempre mandou o valor certo (`value={m}`), mas o TEXTO da opção
+ * vinha deste mapa — e `MODELO_OPERACIONAL_LABELS['BAAS']` era `undefined`.
+ * React renderiza `undefined` como nada, então a opção existia, estava
+ * selecionável e era INVISÍVEL: um item em branco no meio da lista.
+ *
+ * O efeito apareceu em cinco lugares (filtro, formulário de criação, edição
+ * no detalhe, badge da tabela e badge do detalhe) e nos dados: a carteira
+ * tinha 29 clientes API, 4 White Label e ZERO BaaS — ninguém conseguiu
+ * cadastrar o que não dava para ver.
+ *
+ * ── POR QUE O TIPO MUDOU ────────────────────────────────────────────────
+ *
+ * Era `Record<string, string>`, que aceita qualquer chave e não exige
+ * nenhuma. Um valor de enum sem rótulo compilava, passava no lint e passava
+ * nos testes — que verificavam a LISTA de valores, nunca a existência do
+ * rótulo de cada um.
+ *
+ * `Record<ModeloOperacional, string>` torna a omissão um ERRO DE COMPILAÇÃO:
+ * acrescentar um valor ao enum sem rótulo passa a quebrar o build, que é onde
+ * esse tipo de esquecimento deve aparecer.
+ *
+ * O rótulo é "BaaS" — a grafia da marca. Nunca "BAAS", que é só como o enum
+ * do Postgres guarda.
+ */
+export const MODELO_OPERACIONAL_LABELS: Record<ModeloOperacional, string> = {
+  API: 'API',
+  BAAS: 'BaaS',
+  WHITE_LABEL: 'White Label',
 }
 
-export const CLIENTE_STATUS_LABELS: Record<string, string> = {
-  ATIVO: 'Ativo', INATIVO: 'Inativo', PROSPECCAO: 'Prospecção', ENCERRADO: 'Encerrado',
+/**
+ * STATUS DO CLIENTE — todos os valores do enum, pelo mesmo motivo.
+ *
+ * A tela oferece apenas ATIVO e INATIVO, como manda a especificação. Os
+ * outros três são LEGADO: existem no enum e podem estar gravados em linhas
+ * antigas (há 2 clientes em PROSPECCAO em produção). Sem rótulo, a badge
+ * desses clientes sairia vazia na tabela — o mesmo defeito do modelo
+ * operacional, num campo diferente.
+ */
+export const CLIENTE_STATUS_LABELS: Record<ClienteStatus, string> = {
+  ATIVO: 'Ativo',
+  INATIVO: 'Inativo',
+  PROSPECCAO: 'Prospecção',
+  ENCERRADO: 'Encerrado',
+  STANDBY: 'Stand-by',
 }
 
 /**
