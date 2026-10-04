@@ -10,7 +10,7 @@ import {
   paleta, rampaCategorias, gridProps, axisProps, legendProps, cursorBarra, BAR, LINE, hasSeries,
 } from '@/lib/chart-theme'
 import { makeTooltip, TooltipCard } from '@/components/ui/ChartTooltip'
-import { moedaCheia, eixoMoeda, figuraMoeda } from '@/lib/format-financeiro'
+import { moedaCheia, eixoMoeda, quantidadeCompacta } from '@/lib/format-financeiro'
 import { formatMesRef } from '@/lib/utils'
 import EmptyState from '@/components/ui/EmptyState'
 
@@ -38,6 +38,24 @@ function Vazio({ titulo, descricao }: { titulo: string; descricao: string }) {
 }
 
 /**
+ * COMO O VALOR DE UM GRÁFICO É ESCRITO — pelo NOME, não pela função.
+ *
+ * Estes componentes são de cliente e são usados por páginas de SERVIDOR. Uma
+ * função não atravessa a fronteira RSC: o React recusa a serialização e a
+ * página inteira vai para o error boundary. Um nome atravessa, e é resolvido
+ * aqui dentro.
+ *
+ * O conjunto é FECHADO de propósito: acrescentar um formato exige acrescentar
+ * uma entrada neste mapa, e não há como uma tela inventar formatação própria.
+ */
+export type FormatoValor = 'moeda' | 'quantidade'
+
+const FORMATADORES: Record<FormatoValor, (n: number) => string> = {
+  moeda: moedaCheia,
+  quantidade: quantidadeCompacta,
+}
+
+/**
  * GRÁFICO CIRCULAR (donut).
  *
  * Círculo dividido em segmentos, legenda ao lado, sem painel de fundo pesado —
@@ -47,7 +65,7 @@ function Vazio({ titulo, descricao }: { titulo: string; descricao: string }) {
  * Valores SEMPRE por extenso, tanto na legenda quanto no tooltip. Nenhuma
  * abreviação de escala em nenhum ponto do sistema.
  */
-export function Donut({ fatias, rotuloTotal, formatar, rotuloValor = 'Valor' }: {
+export function Donut({ fatias, rotuloTotal, formato, rotuloValor = 'Valor' }: {
   fatias: Fatia[]
   rotuloTotal: string
   /**
@@ -61,11 +79,25 @@ export function Donut({ fatias, rotuloTotal, formatar, rotuloValor = 'Valor' }: 
    * Sem default, a próxima tela que usar esta peça é OBRIGADA a dizer qual é a
    * unidade. É o que impede valor monetário de reaparecer por omissão numa
    * superfície que não deve ter nenhum — Leads e Pipeline, em particular.
+   *
+   * ── POR QUE UM NOME E NÃO A FUNÇÃO ──────────────────────────────────────
+   *
+   * A exigência nasceu como `formatar: (n) => string`, e era uma FUNÇÃO. Isto
+   * é um Client Component, e a Visão Geral Financeira é um Server Component:
+   * função não atravessa essa fronteira. O React recusava a serialização com
+   * "Functions cannot be passed directly to Client Components" e a tela inteira
+   * caía no error boundary — em toda requisição, sem nada de errado no banco
+   * nem no cálculo.
+   *
+   * Um NOME atravessa. A obrigatoriedade continua intacta (não há default, e o
+   * tipo é fechado), e quem resolve o nome em função é este módulo, do lado do
+   * cliente, onde a função sempre pôde existir.
    */
-  formatar: (n: number) => string
+  formato: FormatoValor
   /** Rótulo da linha no tooltip. "Valor" não serve para contagem. */
   rotuloValor?: string
 }) {
+  const formatar = FORMATADORES[formato]
   const { theme } = useTheme()
   const p = useMemo(() => paleta(theme), [theme])
 
@@ -139,8 +171,13 @@ export function Donut({ fatias, rotuloTotal, formatar, rotuloValor = 'Valor' }: 
               {f.nota && <span className="block t-label text-subtle">{f.nota}</span>}
             </span>
             <span className="text-right flex-none">
+              {/* A LEGENDA OBEDECE AO `formato` como o miolo e o tooltip.
+                  Ela chamava `figuraMoeda` na mão: num donut de CONTAGEM o
+                  miolo dizia "12" e a linha ao lado dizia "R$ 12,00", sobre o
+                  mesmo número. Era o bug do default de moeda, sobrevivendo
+                  num canto depois de o default ter sido removido. */}
               <span className="block t-sm font-medium text-fg tabular-nums">
-                {figuraMoeda(f.valor).completo}
+                {formatar(f.valor)}
               </span>
               <span className="block t-label text-subtle tabular-nums">
                 {((f.valor / total) * 100).toFixed(1)}%

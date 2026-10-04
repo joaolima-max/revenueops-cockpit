@@ -24,10 +24,33 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { calcular, receitaBassPago } from '../lib/lancamento-baas'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
+
+/**
+ * As PAGINAS DE SERVIDOR do produto — todo `page.tsx` sem `'use client'`.
+ *
+ * E a lista que importa para a fronteira RSC: e daqui que uma funcao passada
+ * como prop derruba a tela inteira em tempo de requisicao.
+ */
+function paginasDeServidor(): string[] {
+  const achar = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const caminho = join(dir, e.name)
+      if (e.isDirectory()) return achar(caminho)
+      return e.name === 'page.tsx' && !ler(caminho).startsWith("'use client'") ? [caminho] : []
+    })
+  return achar('app')
+}
+
+/** Os formatadores de string — os que viajariam como funcao se passados. */
+const FORMATADORES = [
+  'moedaCheia', 'quantidadeCompacta', 'percentual', 'eixoMoeda',
+  'figuraMoeda', 'figuraQuantidade', 'figuraPercentual', 'figuraContagem',
+]
 const FIN = ler('lib/financeiro.ts')
 const PAGINA = ler('app/dashboard/financeiro/page.tsx')
 
@@ -168,19 +191,58 @@ test('o valor EXCLUIDO e informado, nao apenas omitido', () => {
  * A VISÃO GERAL COMERCIAL — zero valor monetário
  * ========================================================================= */
 
-test('o Donut EXIGE formatador — sem default de moeda', () => {
+test('o Donut EXIGE o formato — sem default de moeda', () => {
   // O default `moedaCheia` era o bug: a Visao geral reusou a peca para
   // CONTAGEM e 12 cards sairam como "R$ 12,00". Sem default, a proxima tela e
   // obrigada a dizer a unidade.
   const donut = ler('components/financeiro/FinanceiroCharts.tsx')
+  assert.ok(donut.includes('formato: FormatoValor'), 'o formato do Donut voltou a ser opcional')
+  assert.ok(!/formato\s*[:=]\s*FormatoValor\s*=/.test(donut), 'o Donut ganhou default de formato')
+  assert.ok(!donut.includes('formatar = moedaCheia'), 'o default de moeda voltou ao Donut')
+  // O conjunto e fechado: nenhuma tela inventa formatacao propria.
   assert.ok(
-    donut.includes('formatar: (n: number) => string'),
-    'o formatador do Donut voltou a ser opcional',
+    donut.includes("export type FormatoValor = 'moeda' | 'quantidade'"),
+    'o conjunto de formatos deixou de ser fechado',
   )
+})
+
+test('o Donut atravessa a fronteira RSC — formato por NOME, nunca por funcao', () => {
+  // ESTE E O DEFEITO QUE DERRUBAVA A VISAO GERAL FINANCEIRA EM PRODUCAO.
+  //
+  // A exigencia do formatador nasceu como `formatar: (n) => string`. O Donut e
+  // Client Component e a Visao Geral Financeira e Server Component: funcao nao
+  // atravessa essa fronteira. O React recusava a serializacao com "Functions
+  // cannot be passed directly to Client Components" e a tela inteira caia no
+  // error boundary, em TODA requisicao — com o banco e o calculo intactos.
+  //
+  // Os testes de unidade nao viam nada: eles exercitam `lib/financeiro.ts`,
+  // que sempre esteve certo. `tsc` tambem nao, porque passar funcao como prop
+  // e TypeScript valido. So a renderizacao reclamava. Por isso a barreira
+  // aqui e ESTRUTURAL, e nao sobre o calculo.
+  const donut = ler('components/financeiro/FinanceiroCharts.tsx')
   assert.ok(
-    !donut.includes('formatar = moedaCheia'),
-    'o default de moeda voltou ao Donut',
+    !/\bformatar\s*:\s*\(n: number\) => string/.test(donut),
+    'o Donut voltou a pedir uma FUNCAO — Server Component nao consegue passar',
   )
+
+  // Nenhuma PAGINA de servidor pode passar funcao a um componente de cliente.
+  for (const pagina of paginasDeServidor()) {
+    const texto = semComentarios(ler(pagina))
+    const props = texto.match(/\b[a-zA-Z]+=\{[^}]*\}/g) ?? []
+    for (const prop of props) {
+      assert.ok(
+        !/=\{\s*\(?[\w\s,]*\)?\s*=>/.test(prop),
+        `${pagina} passa funcao inline a componente de cliente: ${prop.slice(0, 60)}`,
+      )
+      // `prop={identificador}` onde o identificador e um formatador importado:
+      // e exatamente a forma que quebrou.
+      const nome = prop.match(/=\{\s*([A-Za-z_$][\w$]*)\s*\}/)?.[1]
+      assert.ok(
+        !(nome && FORMATADORES.includes(nome)),
+        `${pagina} passa o formatador ${nome} como funcao — use o nome do formato`,
+      )
+    }
+  }
 })
 
 test('a Visao geral do Comercial nao usa NENHUM formatador monetario', () => {
@@ -204,6 +266,15 @@ test('a API e a analitica do Comercial nao expoem valor de card', () => {
 
 test('o Donut do Comercial formata CONTAGEM', () => {
   const crm = ler('app/dashboard/crm/CrmClient.tsx')
-  assert.ok(crm.includes('formatar={quantidadeCompacta}'), 'o donut do Comercial perdeu a unidade')
+  assert.ok(crm.includes('formato="quantidade"'), 'o donut do Comercial perdeu a unidade')
   assert.ok(crm.includes('rotuloValor="Cards"'), '"Valor" voltou a rotular a contagem')
+})
+
+test('a legenda do Donut obedece ao formato, como o miolo e o tooltip', () => {
+  // A legenda chamava `figuraMoeda` na mao: num donut de CONTAGEM o miolo
+  // dizia "12" e a linha ao lado dizia "R$ 12,00" sobre o mesmo numero. Era o
+  // default de moeda sobrevivendo num canto depois de ter sido removido.
+  // Só o CODIGO: o comentario da peca cita `figuraMoeda` como o que saiu.
+  const donut = semComentarios(ler('components/financeiro/FinanceiroCharts.tsx'))
+  assert.ok(!donut.includes('figuraMoeda'), 'a legenda do Donut voltou a escrever moeda na mao')
 })

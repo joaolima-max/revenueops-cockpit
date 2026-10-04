@@ -152,7 +152,7 @@ export default async function FinanceiroVisaoGeralPage({
           <div className="mt-5">
             <Donut
               rotuloTotal="Despesa"
-              formatar={moedaCheia}
+              formato="moeda"
               fatias={gastoPorCategoria.map((g) => ({
                 id: g.categoriaId, nome: g.nome, valor: g.total,
               }))}
@@ -168,7 +168,7 @@ export default async function FinanceiroVisaoGeralPage({
           />
           <div className="mt-5">
             {temNatureza ? (
-              <Donut rotuloTotal="Receita" formatar={moedaCheia} fatias={naturezas} />
+              <Donut rotuloTotal="Receita" formato="moeda" fatias={naturezas} />
             ) : (
               <div className="min-h-[13rem] flex items-center justify-center">
                 <EmptyState compact
@@ -192,7 +192,7 @@ export default async function FinanceiroVisaoGeralPage({
                   description="Cadastre em Condições BaaS." />
               </div>
             ) : (
-              <Donut rotuloTotal="Receita BaaS" formatar={moedaCheia} fatias={paraFatia(receitaPorBaas)} />
+              <Donut rotuloTotal="Receita BaaS" formato="moeda" fatias={paraFatia(receitaPorBaas)} />
             )}
           </div>
         </Panel>
@@ -210,7 +210,7 @@ export default async function FinanceiroVisaoGeralPage({
                   description="Cadastre em Condições BaaS." />
               </div>
             ) : (
-              <Donut rotuloTotal="Receita WL" formatar={moedaCheia} fatias={paraFatia(receitaPorWhiteLabel)} />
+              <Donut rotuloTotal="Receita WL" formato="moeda" fatias={paraFatia(receitaPorWhiteLabel)} />
             )}
           </div>
         </Panel>

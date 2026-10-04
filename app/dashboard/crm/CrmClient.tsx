@@ -361,7 +361,7 @@ export default function CrmClient() {
           {/* BARRAS, não donut — e o motivo mudou.
               Era que o `Donut` formatava em moeda por construção, e um donut
               aqui escreveria uma quantia onde há contagem de leads. Esse
-              default não existe mais: o formatador passou a ser obrigatório,
+              default não existe mais: o formato passou a ser obrigatório,
               justamente para que nenhuma tela herde moeda por omissão.
               A barra fica porque lê melhor com muitos segmentos. */}
           {segmentosComLead.length === 0 ? (
@@ -491,9 +491,11 @@ export default function CrmClient() {
                   description="A distribuição aparece quando houver cards registrados." />
               </div>
             ) : (
-              // CONTAGEM, não moeda: o donut agora recebe o formatador.
+              // CONTAGEM, não moeda: o donut recebe o NOME do formato.
+              // Nome e não função — o Donut é peça de cliente usada também por
+              // página de servidor, e função não atravessa a fronteira RSC.
               <Donut rotuloTotal="Cards" fatias={fatiasResultado}
-                formatar={quantidadeCompacta} rotuloValor="Cards" />
+                formato="quantidade" rotuloValor="Cards" />
             )}
           </div>
         </Panel>
