@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth'
 import { hasPermission } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import {
-  calcular, receitaBassPago, validarLancamento,
+  calcular, receitaBaas, despesaBaas, resultadoBaas, validarLancamento,
   type ProdutoTarifado,
 } from '@/lib/lancamento-baas'
 import { gerarTitulos, clientePelaConta } from '@/lib/baas-titulos'
@@ -187,11 +187,11 @@ export async function POST(request: NextRequest) {
         numeroConta: criado.numeroConta,
         periodoInicio: inicio,
         periodoFim: fim,
-        // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
-        // overprice). O AP é o residual devido ao parceiro.
-        tarifas: calc.totalTarifas,
-        receita: receitaBassPago(calc),
-        valorCliente: calc.valorCliente,
+        // A RECEITA e o TÍTULO A RECEBER valem o saldo INTEGRAL apurado; a
+        // DESPESA é a comissão do parceiro. Os três saem de `calc`, nunca de
+        // número digitado.
+        receita: receitaBaas(calc),
+        despesa: despesaBaas(calc),
         criadoPorId: session.userId,
         clienteId: await clientePelaConta(criado.numeroConta),
       })
@@ -206,7 +206,8 @@ export async function POST(request: NextRequest) {
       `${condicao.nomeFantasia} · conta ${criado.numeroConta} · `
       + `${body.periodoInicio} a ${body.periodoFim} · `
       + `saldo ${calc.saldoInicial} · tarifas ${calc.totalTarifas} · `
-      + `overprice ${calc.overpriceValor} · cliente ${calc.valorCliente} · `
+      + `overprice ${calc.overpriceValor} · comissão ${despesaBaas(calc)} · `
+      + `receita ${receitaBaas(calc)} · resultado ${resultadoBaas(calc)} · `
       + (titulos
         ? `lançamento ${titulos.lancamentoId} · AR ${titulos.contaReceberId} · `
           + `AP ${titulos.contaPagarId}`
@@ -214,7 +215,16 @@ export async function POST(request: NextRequest) {
     )
 
     return NextResponse.json(
-      { lancamento: criado, receitaBassPago: receitaBassPago(calc), titulos, avisoTitulos },
+      {
+        lancamento: criado,
+        // Os TRÊS números da contabilização, nomeados pelo papel de cada um.
+        // `receitaBassPago` saiu: ela devolvia a margem com o nome de receita,
+        // e era exatamente essa confusão que a regra nova desfaz.
+        receitaBaas: receitaBaas(calc),
+        despesaBaas: despesaBaas(calc),
+        resultadoBaas: resultadoBaas(calc),
+        titulos, avisoTitulos,
+      },
       { status: 201 },
     )
   } catch (e) {

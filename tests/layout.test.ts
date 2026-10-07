@@ -320,11 +320,19 @@ test('a grade e discreta: so horizontal, sem tracejado', () => {
  * COCKPIT — "Evolução Atividade Operacional Diária"
  * ========================================================================= */
 
-/** Só o corpo do gráfico diário, sem os comentários do arquivo. */
+/**
+ * Só o corpo do gráfico diário.
+ *
+ * O gráfico virou FUNÇÃO (`graficoDiarioOperacional`) quando cada gráfico
+ * ganhou janela própria de 7/30/90 dias: a série passou a depender da janela
+ * escolhida em tempo de execução, e um nó montado uma vez fixaria a janela da
+ * primeira renderização. O mapa de gráficos mudou junto, de `React.ReactNode`
+ * para `(id: string) => React.ReactNode`.
+ */
 function corpoDoDiario(): string {
   const C = ler('components/dashboard/DashboardCharts.tsx')
-  const ini = C.indexOf('const diarioChart =')
-  const fim = C.indexOf('const charts: Record<string, React.ReactNode>')
+  const ini = C.indexOf('function graficoDiarioOperacional()')
+  const fim = C.indexOf('const charts: Record<string, (id: string) => React.ReactNode>')
   assert.ok(ini > 0 && fim > ini, 'o grafico diario mudou de forma')
   return C.slice(ini, fim)
 }

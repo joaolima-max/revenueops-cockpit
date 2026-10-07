@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { acessoAoCard, registrarMovimentacao, auditarPipeline } from '@/lib/pipeline-db'
 import { podeExcluirCard } from '@/lib/pipeline'
+import { passagensPorEtapa } from '@/lib/sla'
 
 /**
  * DETALHES DO CARD — tudo o que a visão de detalhe mostra, numa chamada.
@@ -60,7 +61,46 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
   if (!card) return NextResponse.json({ error: 'Card não encontrado' }, { status: 404 })
 
-  return NextResponse.json({ card, historico, comentarios, acesso: ctx.acesso })
+  /**
+   * ── O HISTÓRICO DE SLA: quanto tempo em cada etapa ─────────────────────
+   *
+   * RECONSTRUÍDO do histórico que já foi buscado acima — nenhuma consulta a
+   * mais de movimentação. A duração de uma passagem é a distância até a
+   * próxima, e as duas linhas já estão na mão.
+   *
+   * Só os movimentos que MUDAM DE ETAPA. Mudança de resultado não move o card
+   * de lugar: incluí-la criaria uma passagem de duração zero na mesma etapa.
+   *
+   * Ordem CRESCENTE aqui, ao contrário da lista exibida: reconstruir durações
+   * exige o tempo correndo para frente.
+   */
+  const movimentos = historico
+    .filter((m) => m.tipo === 'CRIACAO' || m.tipo === 'MOVIMENTO_ETAPA'
+      || m.tipo === 'TRANSFERENCIA_FUNIL')
+    .slice()
+    .reverse()
+
+  const etapaIds = [...new Set(movimentos.map((m) => m.etapaDestinoId))]
+  const etapasComSla = etapaIds.length > 0
+    ? await prisma.pipelineEtapa.findMany({
+        where: { id: { in: etapaIds } },
+        select: { id: true, slaDias: true },
+      })
+    : []
+
+  const passagens = passagensPorEtapa(
+    movimentos.map((m) => ({
+      etapaDestinoId: m.etapaDestinoId,
+      etapaDestinoNome: m.etapaDestino.nome,
+      funilDestinoNome: m.funilDestino.nome,
+      createdAt: m.createdAt,
+    })),
+    new Map(etapasComSla.map((e) => [e.id, e.slaDias])),
+  )
+
+  return NextResponse.json({
+    card, historico, comentarios, passagens, acesso: ctx.acesso,
+  })
 }
 
 /**

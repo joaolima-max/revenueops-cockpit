@@ -220,9 +220,13 @@ export default function LancamentoBaasClient() {
     const reparo = l.status !== 'RASCUNHO'
     if (!confirm(
       `${reparo ? 'Regerar os títulos de' : 'Lançar'} ${l.condicao.nomeFantasia}?\n\n`
-      + `Lançamentos · receita: ${moedaCheia(l.totalTarifas + l.overpriceValor)}\n`
-      + `Contas a Receber · tarifas: ${moedaCheia(l.totalTarifas)}\n`
-      + `Contas a Pagar · devido ao parceiro: ${moedaCheia(l.valorCliente)}`
+      // A RECEITA é o saldo INTEGRAL apurado, não a margem: ele estava na
+      // conta da Bass Pago, e a comissão do parceiro sai dela como despesa.
+      + `Lançamentos · receita: ${moedaCheia(l.saldoInicial)}\n`
+      + `Lançamentos · despesa (comissão): ${moedaCheia(l.valorCliente)}\n`
+      + `Resultado: ${moedaCheia(l.saldoInicial - l.valorCliente)}\n`
+      + `Contas a Receber · título da receita: ${moedaCheia(l.saldoInicial)}\n`
+      + `Contas a Pagar · comissão do parceiro: ${moedaCheia(l.valorCliente)}`
       + (reparo
         ? '\n\nOs registros que já existem são ATUALIZADOS, não duplicados.'
         : ''),
@@ -381,7 +385,7 @@ export default function LancamentoBaasClient() {
               <Th align="right">Saldo</Th>
               <Th align="right">Tarifas</Th>
               <Th align="right">Overprice</Th>
-              <Th align="right">Devido ao cliente</Th>
+              <Th align="right">Comissão BaaS</Th>
               <Th>Status</Th>
               <Th align="right">Ações</Th>
             </HeadRow>
@@ -605,9 +609,35 @@ export default function LancamentoBaasClient() {
                       </p>
                     </HairlineCell>
                     <HairlineCell className="gap-2">
-                      <p className="t-label text-subtle">Devido ao cliente</p>
+                      <p className="t-label text-subtle">Comissão do parceiro</p>
                       <Figure figura={figuraMoeda(previa.valorCliente)} size="sm" />
-                      <p className="t-label text-subtle/70">Valor residual</p>
+                      <p className="t-label text-subtle/70">Despesa da Bass Pago</p>
+                    </HairlineCell>
+                  </HairlineGrid>
+
+                  {/* ── A CONTABILIZAÇÃO, antes de salvar ───────────────────
+                      A cascata acima diz como o número se forma; esta linha diz
+                      o que ele faz no resultado. Sem ela, quem lança não vê que
+                      o saldo integral vira receita e a comissão vira despesa —
+                      e a prévia existe justamente para não haver surpresa
+                      depois de gravar. */}
+                  <HairlineGrid cols={3}>
+                    <HairlineCell className="gap-2">
+                      <p className="t-label text-subtle">Receita</p>
+                      <Figure figura={figuraMoeda(previa.saldoInicial)} size="sm" />
+                      <p className="t-label text-subtle/70">Saldo integral apurado</p>
+                    </HairlineCell>
+                    <HairlineCell className="gap-2">
+                      <p className="t-label text-subtle">Despesa</p>
+                      <Figure figura={figuraMoeda(previa.valorCliente)} size="sm" />
+                      <p className="t-label text-subtle/70">Comissão devida ao parceiro</p>
+                    </HairlineCell>
+                    <HairlineCell className="gap-2">
+                      <p className="t-label text-subtle">Resultado</p>
+                      <Figure
+                        figura={figuraMoeda(previa.saldoInicial - previa.valorCliente)}
+                        size="sm" />
+                      <p className="t-label text-subtle/70">Tarifas + overprice</p>
                     </HairlineCell>
                   </HairlineGrid>
 

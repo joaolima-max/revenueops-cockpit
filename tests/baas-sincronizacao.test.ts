@@ -23,7 +23,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { calcular, receitaBassPago } from '../lib/lancamento-baas'
+import {
+  calcular, receitaBaas, despesaBaas, resultadoBaas,
+} from '../lib/lancamento-baas'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
 
@@ -42,11 +44,28 @@ test('CRIAR chama gerarTitulos — o rascunho sem titulos acabou', () => {
   assert.ok(POST.includes('lancamentoBaasId: criado.id'))
 })
 
-test('CRIAR passa os TRES valores certos para os TRES destinos', () => {
-  // AR = tarifas; lançamento = receita (tarifas + overprice); AP = residual.
-  assert.ok(POST.includes('tarifas: calc.totalTarifas'), 'o AR deixou de cobrar as tarifas')
-  assert.ok(POST.includes('receita: receitaBassPago(calc)'), 'o lancamento perdeu a receita')
-  assert.ok(POST.includes('valorCliente: calc.valorCliente'), 'o AP perdeu o residual')
+test('CRIAR passa os DOIS valores certos para os TRES destinos', () => {
+  /**
+   * v28 — sao DOIS valores para TRES registros:
+   *
+   *   receita  →  lancamento de RECEITA **e** titulo a receber (o mesmo valor)
+   *   despesa  →  lancamento de DESPESA (a comissao do parceiro)
+   *
+   * `tarifas` SAIU do contrato. Enquanto o titulo cobrava so as tarifas, ele
+   * era um parametro proprio; agora que o titulo espelha a receita, mante-lo
+   * seria um campo que ninguem le — e campo nao lido volta a ser preenchido
+   * errado.
+   */
+  assert.ok(POST.includes('receita: receitaBaas(calc)'), 'o lancamento perdeu a receita integral')
+  assert.ok(POST.includes('despesa: despesaBaas(calc)'), 'a despesa perdeu a comissao')
+  assert.ok(!POST.includes('tarifas:'), 'o parametro `tarifas` voltou ao contrato')
+
+  // A RECEITA nao pode voltar a ser a margem: era isso que fazia o
+  // faturamento aparecer como um quarto do apurado.
+  assert.ok(
+    !POST.includes('receita: resultadoBaas(calc)'),
+    'a receita voltou a ser a margem',
+  )
 })
 
 test('se a geracao falhar, o lancamento NAO e descartado nem o erro engolido', () => {
@@ -111,12 +130,17 @@ test('AR = TARIFAS; AP = RESIDUAL; e um nao e o outro', () => {
   assert.equal(ap, 67_451.25)
   assert.notEqual(ar, ap, 'AR e AP viraram o mesmo numero')
 
-  // A receita é outra coisa ainda: tarifas + overprice.
-  assert.equal(receitaBassPago(c), 32_548.75)
+  // A RECEITA e o saldo integral apurado, e o TITULO A RECEBER vale o mesmo.
+  assert.equal(receitaBaas(c), 100_000)
+  assert.equal(despesaBaas(c), ap)
+  assert.equal(resultadoBaas(c), 32_548.75)
 
-  // E a soma dos dois títulos não é receita de nada — nem do período, nem do
-  // parceiro. É o erro que "não misturar os dois valores" previne.
-  assert.notEqual(ar + ap, receitaBassPago(c))
+  // O titulo deixou de valer as tarifas: ele espelha a receita.
+  assert.notEqual(receitaBaas(c), ar, 'a receita voltou a valer as tarifas')
+
+  // E a soma de receita com comissao nao e receita de nada: contaria o mesmo
+  // periodo duas vezes.
+  assert.notEqual(receitaBaas(c) + ap, receitaBaas(c))
 })
 
 test('a cascata FECHA: tarifas + overprice + residual = saldo', () => {
@@ -149,8 +173,14 @@ test('a sincronizacao NAO mexe em nada liquidado', () => {
 
 test('a sincronizacao usa os valores GRAVADOS — nao a tarifa de hoje', () => {
   const bloco = TITULOS.slice(TITULOS.indexOf('export async function sincronizarTitulosFaltantes'))
-  assert.ok(bloco.includes('tarifas: lb.totalTarifas'), 'o reparo recalcula com preco atual')
-  assert.ok(bloco.includes('valorCliente: lb.valorCliente'))
+  assert.ok(bloco.includes('despesa: lb.valorCliente'), 'o reparo perdeu a comissao gravada')
+  // A RECEITA tambem vem do snapshot, e e o `saldoInicial` gravado — nao
+  // `totalTarifas + overpriceValor`, que e a margem.
+  assert.ok(bloco.includes('receita: lb.saldoInicial'), 'o reparo nao usa o saldo gravado')
+  assert.ok(
+    !bloco.includes('lb.totalTarifas + lb.overpriceValor'),
+    'o reparo voltou a gravar a margem como receita',
+  )
   assert.ok(
     !bloco.includes('calcular('),
     'o reparo voltou a recalcular do cadastro, reescrevendo o historico',

@@ -31,6 +31,14 @@ export interface EtapaResumo {
   ordem: number
   cor: string | null
   ativo: boolean
+  /**
+   * SLA da etapa, em dias corridos. `null` = etapa SEM SLA.
+   *
+   * `null` é um estado de primeira classe, não "zero dias": uma etapa sem prazo
+   * definido é diferente de uma etapa cujo prazo está sendo cumprido, e o card
+   * precisa poder dizer qual é qual.
+   */
+  slaDias: number | null
 }
 
 /**
@@ -49,6 +57,14 @@ export interface Card {
   resultado: ResultadoCard
   resultadoEm: string | null
   createdAt: string
+  /**
+   * QUANDO O CARD ENTROU NA ETAPA ATUAL — o marco zero do SLA.
+   *
+   * NÃO é `createdAt`: o relógio reinicia a cada mudança de etapa, e medir
+   * desde a criação faria um card que acabou de chegar em Proposta aparecer
+   * vencido pelo tempo que passou em Prospecção.
+   */
+  etapaEntradaEm: string | null
   owner: { id: string; name: string }
   /**
    * O lead que originou o card. `segmento` vem DAQUI e não de `Deal.segmento`:

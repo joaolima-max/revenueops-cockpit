@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import PageHeader from '@/components/dashboard/PageHeader'
 import Panel, { PanelHeader } from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -20,6 +19,14 @@ const TIPOS = [
 ]
 
 /**
+ * CATEGORIAS — aba de Financeiro › Cadastros Financeiros.
+ *
+ * Era uma PÁGINA própria (`/dashboard/financeiro/categorias`) e virou aba.
+ * O conteúdo não mudou: Categorias e Fornecedores ocupavam dois itens do
+ * sidebar para dois cadastros que se consultam juntos — ao classificar um
+ * fornecedor escolhe-se uma categoria —, e a rota antiga continua existindo
+ * como redirecionamento.
+ *
  * Categorias de receita e de despesa. Nome e tipo — nada mais.
  *
  * O tipo não é editável depois de criado: mudá-lo reclassificaria de receita
@@ -31,7 +38,7 @@ const TIPOS = [
  * NOME no servidor ao criar — não é mais uma escolha que o usuário precise
  * entender para cadastrar uma categoria comum.
  */
-export default function CategoriasClient({ podeGerenciar }: { podeGerenciar: boolean }) {
+export default function CategoriasPanel({ podeGerenciar }: { podeGerenciar: boolean }) {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [carregando, setCarregando] = useState(true)
   const [novo, setNovo] = useState<Record<string, string>>({ RECEITA: '', DESPESA: '' })
@@ -100,11 +107,15 @@ export default function CategoriasClient({ podeGerenciar }: { podeGerenciar: boo
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Categorias"
-        sub="Como receitas e despesas são classificadas nos lançamentos. Sem subcategorias: a taxonomia é plana."
-      />
+    <div className="space-y-6">
+      {/* SEM PageHeader: o cabeçalho é de Cadastros Financeiros, a página que
+          hospeda esta aba. Dois títulos empilhados — "Cadastros Financeiros"
+          e "Categorias" — gastariam uma faixa de tela para dizer o que a aba
+          selecionada já diz. */}
+      <p className="t-sm text-muted">
+        Como receitas e despesas são classificadas nos lançamentos. Sem
+        subcategorias: a taxonomia é plana.
+      </p>
 
       {erro && <p className="t-sm text-neg">{erro}</p>}
 

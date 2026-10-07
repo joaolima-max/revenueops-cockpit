@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
   if (!acesso?.ver) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const [etapas, cards] = await Promise.all([
+    // `slaDias` vem junto: o quadro desenha o indicador de SLA no card, e sem o
+    // prazo da etapa ele não tem contra o que medir o tempo de permanência.
     prisma.pipelineEtapa.findMany({ where: { funilId: funil.id, ativo: true }, orderBy: { ordem: 'asc' } }),
     prisma.deal.findMany({
       where: {

@@ -61,11 +61,22 @@ test('a DESCRICAO continua distinguindo os tres', () => {
   // A categoria agrupa; a descricao diz qual e qual. Se as duas colapsassem,
   // tres linhas identicas apareceriam em Lancamentos.
   const t = ler('lib/baas-titulos.ts')
+  /**
+   * v28 — DOIS rotulos para TRES registros.
+   *
+   * "Apuração BaaS" nomeia a receita E o titulo a receber, que valem o MESMO
+   * (o saldo integral apurado) visto de dois lugares. "Comissão BaaS" nomeia a
+   * despesa. O rotulo repetido e a informacao: nomea-los diferente sugeriria
+   * valores diferentes.
+   */
   assert.equal(
-    (t.match(/descricao\(d, 'Tarifa BaaS'\)/g) ?? []).length, 2,
-    'receita e titulo a receber devem dizer "Tarifa BaaS"',
+    (t.match(/descricao\(d, 'Apuração BaaS'\)/g) ?? []).length, 2,
+    'a receita e o titulo a receber devem compartilhar o rotulo',
   )
-  assert.ok(t.includes("descricao(d, 'Repasse BaaS')"), 'o repasse perdeu a descricao')
+  assert.equal(
+    (t.match(/descricao\(d, 'Comissão BaaS'\)/g) ?? []).length, 1,
+    'a comissao deixou de ter rotulo proprio',
+  )
 })
 
 /* ========================================================================= *

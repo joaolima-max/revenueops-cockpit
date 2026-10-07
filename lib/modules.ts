@@ -16,7 +16,7 @@
  * Desabilitar uma FUNÇÃO desliga apenas ela.
  */
 
-import { hasPermission, permissaoRestrita } from '@/lib/permissions'
+import { hasPermission, permissaoRestrita, permissaoRecente } from '@/lib/permissions'
 
 export type Role = 'ADMIN' | 'OPERACIONAL' | 'COMERCIAL' | 'GESTOR'
 
@@ -192,6 +192,35 @@ export const MODULES: Module[] = [
         api: ['/api/pipeline/funis', '/api/pipeline/etapas'],
         enabled: true, roles: ['ADMIN'], oculto: true,
       },
+      /**
+       * CONFIGURAÇÕES DO PIPELINE — registrada e OCULTA, como os Funis.
+       *
+       * Hoje contém a configuração de SLA por funil e etapa. Não é um menu: é
+       * área interna do Pipeline, alcançada pelo botão "Configurar SLA" no
+       * quadro, porque o SLA se define uma vez e o quadro se opera todo dia.
+       *
+       * ── O REGISTRO É O QUE PROTEGE A ROTA ────────────────────────────────
+       *
+       * Caminho não registrado é caminho LIBERADO para qualquer usuário
+       * autenticado (ver `checkAccess`). Sem esta entrada,
+       * `/dashboard/pipeline/configuracoes/sla` e `/api/pipeline/sla` ficariam
+       * abertos — e em silêncio, porque nada na tela indicaria isso.
+       *
+       * `roles: ['ADMIN']` pela mesma razão dos Funis: definir o prazo que será
+       * cobrado de alguém é configurar o funil, não operar o quadro. A API
+       * confere `podeAdministrarPipeline` no handler; este registro é a
+       * primeira barreira, não a única.
+       *
+       * O prefixo `/dashboard/pipeline/configuracoes` casa por PREFIXO: uma
+       * segunda área de configuração criada amanhã já nasce restrita, em vez de
+       * depender de alguém lembrar de registrá-la.
+       */
+      {
+        key: 'comercial.pipeline.configuracoes', label: 'Configurações do Pipeline',
+        route: '/dashboard/pipeline/configuracoes',
+        api: ['/api/pipeline/sla'],
+        enabled: true, roles: ['ADMIN'], oculto: true,
+      },
     ],
   },
   {
@@ -221,8 +250,83 @@ export const MODULES: Module[] = [
       // Lançamentos, pela data de vencimento. Não existe uma segunda base.
       { key: 'financeiro.pagar', label: 'Contas a Pagar', route: '/dashboard/financeiro/contas-pagar', api: ['/api/financeiro/contas-pagar'], enabled: true },
       { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
-      { key: 'financeiro.categorias', label: 'Categorias', route: '/dashboard/financeiro/categorias', api: ['/api/financeiro/categorias'], enabled: true },
-      { key: 'financeiro.fornecedores', label: 'Fornecedores', route: '/dashboard/financeiro/fornecedores', api: ['/api/financeiro/fornecedores'], enabled: true },
+      /**
+       * PREVISÃO — o lado PREVISTO do financeiro.
+       *
+       * ── A POSIÇÃO ────────────────────────────────────────────────────────
+       *
+       * Depois de Contas a Receber e antes de Cadastros Financeiros, e a ordem
+       * é a da leitura do ambiente:
+       *
+       *   Visão Geral        o que aconteceu
+       *   Lançamentos        o registro do que aconteceu
+       *   Contas a Pagar     o que vence
+       *   Contas a Receber   o que entra
+       *   PREVISÃO           o que se espera que aconteça
+       *   Cadastros          o que classifica tudo acima
+       *   Condições BaaS     o contrato do parceiro
+       *   Lançamentos BaaS   a apuração que produz os três registros
+       *
+       * Previsão fecha o bloco do DINHEIRO (realizado → previsto) e vem antes
+       * dos cadastros, que são infraestrutura. Colocá-la no fim, depois de
+       * Lançamentos BaaS, separaria a previsão de caixa dos títulos que a
+       * alimentam.
+       *
+       * ── A ALÇADA ─────────────────────────────────────────────────────────
+       *
+       * `view_previsao` OU `manage_previsao` abre a tela — quem edita também
+       * lê. São chaves COMUNS, não restritas: seguem o atalho de ADMIN e o
+       * default por perfil, porque previsão é trabalho do Financeiro e não um
+       * dado de sócio.
+       *
+       * Lançar, editar e excluir exigem `manage_previsao`, conferido no
+       * handler de cada rota — a mesma separação de Usuários: consultar o
+       * forecast é leitura executiva, reescrever o orçamento é decisão de quem
+       * responde pelo planejamento.
+       *
+       * `exact` NÃO entra aqui: a Previsão TEM subcaminhos (orçamento,
+       * receitas, despesas, fluxo de caixa, centros de custo, forecast), e é
+       * justamente por prefixo que eles herdam esta autorização. Marcar
+       * `exact` deixaria as seis sub-rotas sem registro — e caminho não
+       * registrado é caminho liberado.
+       */
+      {
+        key: 'financeiro.previsao', label: 'Previsão',
+        route: '/dashboard/financeiro/previsao',
+        api: ['/api/previsao'],
+        enabled: true,
+        permissao: ['view_previsao', 'manage_previsao'],
+      },
+      /**
+       * CADASTROS FINANCEIROS — UM item para TRÊS cadastros.
+       *
+       * Categorias e Fornecedores eram dois itens do sidebar, para dois
+       * cadastros que se consultam juntos: ao classificar um fornecedor
+       * escolhe-se uma categoria. Viraram abas de uma tela só, com Centros de
+       * Custo como terceira — ele é da mesma natureza (cadastro que classifica
+       * lançamento) e é insumo do orçamento.
+       *
+       * AS TRÊS APIs FICAM REGISTRADAS AQUI. É este array que as mantém sob
+       * controle de acesso: caminho de API não registrado é caminho LIBERADO
+       * para qualquer usuário autenticado (ver `checkAccess`). Tirar
+       * `/api/financeiro/categorias` daqui ao fundir os menus abriria o
+       * cadastro para todo mundo — e em silêncio.
+       *
+       * As rotas antigas (`/categorias`, `/fornecedores`) continuam existindo
+       * como redirecionamento para a aba correspondente. Não precisam de
+       * registro próprio: elas não leem nada, só redirecionam para esta rota,
+       * que é registrada.
+       */
+      {
+        key: 'financeiro.cadastros', label: 'Cadastros Financeiros',
+        route: '/dashboard/financeiro/cadastros',
+        api: [
+          '/api/financeiro/categorias',
+          '/api/financeiro/fornecedores',
+          '/api/financeiro/centros-custo',
+        ],
+        enabled: true,
+      },
       { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },
       // LANÇAMENTOS BAAS fecha o ambiente: ele tarifa o volume do parceiro e
       // produz os três registros que os menus acima administram.
@@ -324,6 +428,20 @@ function exigeChaveRestrita(feature: Feature): boolean {
   return chaves.some((k) => permissaoRestrita(k))
 }
 
+/**
+ * A função é governada por uma CHAVE RECENTE (`PERMISSOES_RECENTES`)?
+ *
+ * Chave recente = introduzida nesta rodada, e portanto AUSENTE dos tokens
+ * emitidos antes do deploy. Ver o comentário de `PERMISSOES_RECENTES` em
+ * lib/permissions para o defeito que isso evita — e por que a lista esvazia
+ * sozinha em 7 dias.
+ */
+function exigeChaveRecente(feature: Feature): boolean {
+  if (!feature.permissao) return false
+  const chaves = Array.isArray(feature.permissao) ? feature.permissao : [feature.permissao]
+  return chaves.some((k) => permissaoRecente(k))
+}
+
 function permissaoConcedida(
   feature: Feature, permissoes?: string[] | null, role?: string,
 ): boolean {
@@ -423,6 +541,30 @@ function liberada(feature: ResolvedFeature, ctx: Contexto): boolean {
    * por perfil, então uma lista velha não as nega indevidamente.
    */
   if (exigeChaveRestrita(feature) && !ctx.doBanco) return true
+
+  /**
+   * CHAVE RECENTE TAMBÉM NÃO SE DECIDE PELO TOKEN — o mesmo erro, pela
+   * terceira vez, por um caminho novo.
+   *
+   * O bug do `isPartner` foi corrigido com o tri-estado de `socio`. O do
+   * `view_conselho`, com `doBanco` para chaves restritas. Este é o terceiro:
+   * uma chave COMUM mas NOVA.
+   *
+   * Um GESTOR com lista explícita de permissões, a quem a migration concedeu
+   * `view_previsao`, seria barrado aqui — a lista do token não tem a chave, a
+   * lista não está vazia (então o default por perfil não é consultado) e ele
+   * não é ADMIN. A sidebar mostraria o item (ela lê do banco) e o clique
+   * viraria redirect: exatamente o sintoma dos dois bugs anteriores.
+   *
+   * Lista velha para uma chave que nasce ausente é RESTRITIVA, não permissiva.
+   * Então o portão aqui não opina, e a autoridade é a página e a API — que
+   * leem a lista atual a cada requisição.
+   *
+   * NÃO é afrouxamento: o layout de Previsão e as sete rotas de API continuam
+   * exigindo a chave. O que deixa de acontecer é negar acesso a quem tem a
+   * permissão gravada só porque o cookie é anterior ao deploy.
+   */
+  if (exigeChaveRecente(feature) && !ctx.doBanco) return true
 
   return permissaoConcedida(feature, ctx.permissoes, ctx.role)
 }

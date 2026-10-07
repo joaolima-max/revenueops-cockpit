@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  calcular, receitaBassPago, centavos, validarLancamento,
+  calcular, receitaBaas, despesaBaas, resultadoBaas, centavos, validarLancamento,
   periodosSobrepostos, rotuloPeriodo,
 } from '../lib/lancamento-baas'
 
@@ -52,7 +52,7 @@ test('o OVERPRICE incide sobre o remanescente, nao sobre o saldo inicial', () =>
   assert.equal(c.valorCliente, 37_500)
 })
 
-test('A CONTA FECHA: receita + valor do cliente = saldo informado', () => {
+test('A CONTA FECHA: resultado + comissao = receita = saldo informado', () => {
   // Nenhum real aparece nem desaparece. Se este teste quebrar, a cascata
   // passou a criar ou sumir com dinheiro.
   for (const [saldo, preco, volume, pct] of [
@@ -62,8 +62,11 @@ test('A CONTA FECHA: receita + valor do cliente = saldo informado', () => {
     [10_000, 1, 0, 50],
   ] as const) {
     const c = calcular(saldo, [{ nome: 'P', preco, volume }], pct)
+    // A RECEITA e o saldo apurado; a DESPESA e a comissao; o que sobra e o
+    // resultado. Nenhum real aparece nem desaparece entre os tres.
+    assert.equal(receitaBaas(c), centavos(saldo), `receita divergiu do saldo ${saldo}`)
     assert.equal(
-      centavos(receitaBassPago(c) + c.valorCliente), centavos(saldo),
+      centavos(resultadoBaas(c) + despesaBaas(c)), receitaBaas(c),
       `nao fechou com saldo ${saldo}`,
     )
   }
@@ -113,10 +116,18 @@ test('centavos arredonda para duas casas, nunca mais', () => {
   assert.equal(centavos(1 / 3), 0.33)
 })
 
-test('a receita da Bass Pago e tarifas + overprice', () => {
+test('a RECEITA e o saldo integral; o RESULTADO e tarifas + overprice', () => {
   const c = calcular(100_000, [{ nome: 'P', preco: 0.10, volume: 100_000 }], 25)
-  assert.equal(receitaBassPago(c), centavos(c.totalTarifas + c.overpriceValor))
-  assert.equal(receitaBassPago(c), 32_500)
+
+  // v28: receita bruta, despesa bruta, resultado pela diferenca.
+  assert.equal(receitaBaas(c), 100_000)
+  assert.equal(despesaBaas(c), c.valorCliente)
+  assert.equal(resultadoBaas(c), centavos(c.totalTarifas + c.overpriceValor))
+  assert.equal(resultadoBaas(c), 32_500)
+
+  // A RECEITA nunca e a margem. Confundir as duas era o defeito que a regra
+  // nova desfaz: o faturamento aparecia como um quarto do apurado.
+  assert.notEqual(receitaBaas(c), resultadoBaas(c))
 })
 
 /* ========================================================================= *
@@ -252,7 +263,8 @@ test('§56: saldo 100.000, tarifas 10.065, overprice 25% -> residual 67.451,25',
   assert.equal(c.valorCliente, 67_451.25)
 
   // E o FECHAMENTO: nada aparece nem desaparece.
-  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 100_000)
+  assert.equal(centavos(resultadoBaas(c) + despesaBaas(c)), 100_000)
+  assert.equal(receitaBaas(c), 100_000)
 })
 
 test('a TAXA vem do cadastro — o calculo nunca a recebe do volume', () => {
@@ -276,12 +288,14 @@ test('produtos DINAMICOS: a cascata nao conhece PIX nem KYC por nome', () => {
   ], 10)
   assert.equal(c.itens.length, 3)
   assert.equal(c.totalTarifas, centavos(12.90 * 50 + 2.45 * 200 + 0.01 * 30_000))
-  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 10_000)
+  assert.equal(centavos(resultadoBaas(c) + despesaBaas(c)), 10_000)
+  assert.equal(receitaBaas(c), 10_000)
 })
 
 test('um produto SO tambem fecha a conta', () => {
   const c = calcular(500, [{ nome: 'Único', preco: 1.37, volume: 73 }], 15)
-  assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 500)
+  assert.equal(centavos(resultadoBaas(c) + despesaBaas(c)), 500)
+  assert.equal(receitaBaas(c), 500)
 })
 
 test('saldo zerado: nenhuma tarifa, nenhum overprice, residual zero', () => {

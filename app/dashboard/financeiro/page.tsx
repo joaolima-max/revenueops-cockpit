@@ -106,9 +106,9 @@ export default async function FinanceiroVisaoGeralPage({
           parcelas que o explicam vêm antes dele, na ordem em que se leem. */}
       <HairlineGrid cols={4}>
         <StatTile label="Receitas" figura={figuraMoeda(resultado.receita)}
-          note="Lançamentos do período, tarifas BaaS incluídas" />
+          note="Lançamentos do período, apuração BaaS integral incluída" />
         <StatTile label="Despesas" figura={figuraMoeda(resultado.despesa)}
-          note="Lançamentos do período, sem repasse a BaaS" />
+          note="Lançamentos do período, comissão BaaS incluída" />
         <StatTile label="Inadimplência"
           figura={figuraMoeda(inadimplencia.valor)}
           note={
@@ -117,20 +117,21 @@ export default async function FinanceiroVisaoGeralPage({
               : `${figuraPercentual(inadimplencia.percentual, 1).completo} do faturado · ${inadimplencia.titulos} título${inadimplencia.titulos === 1 ? '' : 's'}`
           } />
         {/* A REGRA CONTÁBIL FICA ESCRITA, não implícita.
-            O repasse ao parceiro existe como despesa em Contas a Pagar — é
-            assim que ele é pago —, mas não reduz o Resultado: o saldo da
-            conta do BaaS nunca foi receita nossa, e devolvê-lo não é custo.
-            Sem a frase, quem somasse Contas a Pagar à mão encontraria uma
-            diferença e concluiria que o painel está errado. */}
+            O saldo apurado do BaaS estava na conta da Bass Pago, então entra
+            INTEGRAL como receita; a comissão devida ao parceiro sai do caixa
+            dela e é despesa. O Resultado é a diferença entre os dois valores
+            brutos — e é o mesmo número que antes aparecia como receita
+            líquida, quando a comissão ficava fora da conta. */}
         <StatTile label="Resultado" figura={figuraMoeda(resultado.resultado)} primary
           note="Receitas − Despesas" />
       </HairlineGrid>
 
       <p className="t-sm text-subtle -mt-2">
-        Pagamentos para os BaaS não são contabilizados como despesas.
-        {resultado.repasseBaas > 0 && (
-          <> No período, {moedaCheia(resultado.repasseBaas)} de repasse ficaram fora
-          do Resultado — o valor continua em Contas a Pagar, para pagamento.</>
+        A apuração BaaS entra integral como receita, e a comissão devida ao
+        parceiro é contabilizada como despesa.
+        {resultado.comissaoBaas > 0 && (
+          <> No período, {moedaCheia(resultado.comissaoBaas)} de comissão BaaS estão
+          dentro das Despesas — o mesmo valor que aparece em Contas a Pagar.</>
         )}
       </p>
 
@@ -312,7 +313,7 @@ export default async function FinanceiroVisaoGeralPage({
             title="Financeiro ainda sem dados"
             description="Cadastre categorias, registre lançamentos e as condições comerciais de BaaS e White Label para os indicadores começarem a responder."
             action={
-              <Link href="/dashboard/financeiro/categorias"
+              <Link href="/dashboard/financeiro/cadastros?aba=categorias"
                 className="inline-flex items-center gap-2 px-4 py-2.5 bp-btn-primary rounded-lg text-[0.875rem] font-medium">
                 Começar pelas categorias
               </Link>
