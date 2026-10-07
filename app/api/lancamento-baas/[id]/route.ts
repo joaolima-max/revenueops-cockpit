@@ -4,7 +4,8 @@ import { getSession } from '@/lib/auth'
 import { hasPermission } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import {
-  calcular, receitaBassPago, validarLancamento, type ProdutoTarifado,
+  calcular, receitaBaas, despesaBaas, resultadoBaas, validarLancamento,
+  type ProdutoTarifado,
 } from '@/lib/lancamento-baas'
 import {
   gerarTitulos, clientePelaConta, liquidacaoDe, apagarTitulos,
@@ -148,12 +149,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       numeroConta: String(body.numeroConta).trim(),
       periodoInicio: inicio,
       periodoFim: fim,
-      // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
-      // overprice). A diferença é o overprice, realizado pagando menos ao
-      // parceiro — faturá-lo também seria cobrar duas vezes.
+      // A RECEITA é o saldo INTEGRAL apurado; a DESPESA é a comissão do
+      // parceiro. O AR cobra as TARIFAS — o resto do saldo já está na conta da
+      // Bass Pago, e cobrá-lo seria emitir título de dinheiro já recebido.
       tarifas: calc.totalTarifas,
-      receita: receitaBassPago(calc),
-      valorCliente: calc.valorCliente,
+      receita: receitaBaas(calc),
+      despesa: despesaBaas(calc),
       criadoPorId: session.userId,
       clienteId: await clientePelaConta(String(body.numeroConta)),
     })
@@ -163,7 +164,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     session.userId, 'EDITOU_LANCAMENTO_BAAS', 'LancamentoBaas', id,
     `${atual.condicao.nomeFantasia} · saldo ${calc.saldoInicial} · `
     + `tarifas ${calc.totalTarifas} · overprice ${calc.overpriceValor} · `
-    + `cliente ${calc.valorCliente}`,
+    + `comissão ${despesaBaas(calc)} · receita ${receitaBaas(calc)} · `
+    + `resultado ${resultadoBaas(calc)}`,
   )
 
   return NextResponse.json({ lancamento: await carregar(id) })
@@ -201,20 +203,21 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       numeroConta: l.numeroConta,
       periodoInicio: l.periodoInicio,
       periodoFim: l.periodoFim,
-      // AR cobra as TARIFAS; o lançamento registra a RECEITA (tarifas +
-      // overprice). A diferença é o overprice, realizado pagando menos ao
-      // parceiro — faturá-lo também seria cobrar duas vezes.
+      // A RECEITA é o saldo INTEGRAL apurado; a DESPESA é a comissão do
+      // parceiro. O AR cobra as TARIFAS — o resto do saldo já está na conta da
+      // Bass Pago, e cobrá-lo seria emitir título de dinheiro já recebido.
       tarifas: calc.totalTarifas,
-      receita: receitaBassPago(calc),
-      valorCliente: calc.valorCliente,
+      receita: receitaBaas(calc),
+      despesa: despesaBaas(calc),
       criadoPorId: session.userId,
       clienteId: await clientePelaConta(l.numeroConta),
     })
 
     await logAudit(
       session.userId, 'LANCOU_BAAS', 'LancamentoBaas', id,
-      `${l.condicao.nomeFantasia} · receita ${receitaBassPago(calc)} · `
-      + `cliente ${calc.valorCliente} · lançamento ${titulos.lancamentoId} · `
+      `${l.condicao.nomeFantasia} · receita ${receitaBaas(calc)} · `
+      + `comissão ${despesaBaas(calc)} · resultado ${resultadoBaas(calc)} · `
+      + `lançamento ${titulos.lancamentoId} · `
       + `AR ${titulos.contaReceberId} · AP ${titulos.contaPagarId}`,
     )
 

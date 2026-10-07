@@ -201,26 +201,47 @@ export interface ResultadoPeriodo {
   /** Receita − Despesa. Negativo quando a despesa supera a receita. */
   resultado: number
   /**
-   * Repasse aos parceiros BaaS/White Label no período — EXCLUÍDO da despesa
-   * acima. Devolvido para que a tela possa declarar o número em vez de
-   * esconder a regra.
+   * Comissão devida aos parceiros BaaS/White Label no período — e ela está
+   * INCLUÍDA na despesa acima.
+   *
+   * Devolvida separadamente porque é a maior parcela da despesa de um mês com
+   * lançamento BaaS, e a tela precisa poder abrir o número: sem isso, quem vê
+   * "Despesas R$ 75.000" não sabe se é custo operacional ou repasse de
+   * parceiro. Até a v27 este campo era o que havia sido EXCLUÍDO; agora é o
+   * que está dentro.
    */
-  repasseBaas: number
+  comissaoBaas: number
 }
 
 /**
- * O FILTRO QUE TIRA O REPASSE BAAS DA DESPESA.
+ * COMO SE IDENTIFICA A COMISSÃO BAAS: pelo VÍNCULO, nunca pelo nome.
  *
  * `baasContaPagar` é a relação inversa de `LancamentoBaas.contaPagar`: só o
  * lançamento de despesa gerado por um Lançamento BaaS a tem preenchida.
  *
- * Identificar pelo VÍNCULO, e não pelo nome da categoria, é deliberado — uma
- * categoria pode ser renomeada na tela de Categorias (e foi, nesta rodada:
- * "Repasse a Cliente BaaS" virou "BaaS"), e um filtro por nome quebraria em
- * silêncio, voltando a subtrair o repasse do Resultado sem ninguém notar.
- * A FK não se renomeia.
+ * Identificar pelo vínculo, e não pelo nome da categoria, é deliberado — uma
+ * categoria pode ser renomeada na tela de Categorias (e já foi: "Repasse a
+ * Cliente BaaS" virou "BaaS"), e um filtro por nome quebraria em silêncio. A
+ * FK não se renomeia.
+ *
+ * ── O QUE MUDOU NA v28 ──────────────────────────────────────────────────
+ *
+ * Havia aqui um `SEM_REPASSE_BAAS = { baasContaPagar: null }`, aplicado ao
+ * Resultado, ao gasto por categoria e à série de 12 meses. Ele EXCLUÍA a
+ * comissão do parceiro da despesa, sob o argumento de que o saldo da conta do
+ * BaaS nunca havia sido receita da Bass Pago.
+ *
+ * A regra mudou, e o argumento caiu com ela: o saldo apurado ESTAVA na conta
+ * da Bass Pago e agora entra integralmente como receita (ver
+ * `lib/lancamento-baas.ts`). Com a receita bruta no numerador, a comissão
+ * precisa estar no denominador — senão o Resultado somaria 100 mil de receita
+ * sem os 75 mil que saem para o parceiro, e passaria a mostrar um lucro
+ * quádruplo do real.
+ *
+ * O filtro não foi "afrouxado": ele foi SUBSTITUÍDO por este marcador, que
+ * agora serve para ABRIR o número na tela, não para escondê-lo do total.
  */
-const SEM_REPASSE_BAAS = { baasContaPagar: null } as const
+const SO_COMISSAO_BAAS = { baasContaPagar: { isNot: null } } as const
 
 /**
  * Receita, Despesa e Resultado de um mês "YYYY-MM".
@@ -237,31 +258,37 @@ const SEM_REPASSE_BAAS = { baasContaPagar: null } as const
  * uma vez, sem precisar de nenhuma lógica de deduplicação: há uma única
  * origem, e é esta.
  *
- * ── O REPASSE AO PARCEIRO NÃO É DESPESA DESTE PAINEL ────────────────────
+ * ── A COMISSÃO AO PARCEIRO É DESPESA, E ENTRA NO RESULTADO ──────────────
  *
- * O residual devido ao BaaS/White Label existe como lançamento de despesa
- * porque é assim que Contas a Pagar o controla — e lá ele precisa continuar
- * aparecendo, para ser pago. Mas ele NÃO reduz o Resultado: o saldo da conta
- * do parceiro nunca foi receita da Bass Pago, e devolvê-lo não é um custo
- * nosso. Somá-lo como despesa subtrairia do resultado um dinheiro que nunca
- * entrou nele.
+ * O saldo apurado estava na conta da Bass Pago e entra INTEGRAL como receita.
+ * A comissão devida ao BaaS/White Label sai do caixa dela, e é despesa como
+ * qualquer outra: 100 mil de receita menos 75 mil de comissão dão 25 mil de
+ * resultado.
  *
- * O número é devolvido em `repasseBaas` para a tela poder dizer isso em voz
- * alta, em vez de simplesmente omitir um valor que existe em Contas a Pagar.
+ * Até a v27 era o contrário: a receita era a margem (25 mil) e a comissão era
+ * excluída da despesa. Os dois lados mudaram juntos, e o RESULTADO é o mesmo —
+ * o que mudou é que ele deixou de ser líquido e passou a ser a diferença entre
+ * dois números brutos.
+ *
+ * O valor é devolvido em `comissaoBaas` para a tela poder abrir a despesa: num
+ * mês com lançamento BaaS, a comissão é quase toda ela, e um executivo que vê
+ * só o total não sabe se é custo operacional ou repasse de parceiro.
  */
 export async function resultadoDoPeriodo(periodo: string): Promise<ResultadoPeriodo> {
   const { inicio, fim } = intervaloMes(periodo)
   const janela = { data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' as const } }
 
-  const [porTipo, repasse] = await Promise.all([
+  const [porTipo, comissao] = await Promise.all([
+    // SEM filtro de comissão: a despesa do período é a despesa inteira,
+    // comissão de parceiro incluída.
     prisma.lancamentoFinanceiro.groupBy({
       by: ['tipo'],
-      where: { ...janela, ...SEM_REPASSE_BAAS },
+      where: janela,
       _sum: { valor: true },
     }),
-    // O que foi EXCLUÍDO, para a tela poder declarar.
+    // Quanto da despesa é comissão BaaS, para a tela poder abrir o total.
     prisma.lancamentoFinanceiro.aggregate({
-      where: { ...janela, tipo: 'DESPESA', baasContaPagar: { isNot: null } },
+      where: { ...janela, tipo: 'DESPESA', ...SO_COMISSAO_BAAS },
       _sum: { valor: true },
     }),
   ])
@@ -275,7 +302,7 @@ export async function resultadoDoPeriodo(periodo: string): Promise<ResultadoPeri
     receita,
     despesa,
     resultado: receita - despesa,
-    repasseBaas: repasse._sum.valor ?? 0,
+    comissaoBaas: comissao._sum.valor ?? 0,
   }
 }
 
@@ -288,13 +315,16 @@ export interface GastoCategoria {
 /**
  * Gasto por categoria no período. Só despesas, maior primeiro.
  *
- * O REPASSE BAAS FICA FORA, pela mesma razão e com o mesmo filtro do
- * Resultado: este quadro é a DECOMPOSIÇÃO da despesa do período, e se ele
- * incluísse o repasse as fatias somariam mais que o total de Despesas
- * mostrado dois tiles ao lado. Um gráfico que não fecha com o seu próprio
- * KPI é pior que um gráfico ausente.
+ * A COMISSÃO BAAS ENTRA, pela mesma razão e com a mesma regra do Resultado:
+ * este quadro é a DECOMPOSIÇÃO da despesa do período, e tem de FECHAR com o
+ * total de Despesas mostrado dois tiles ao lado. Até a v27 a comissão era
+ * excluída dos dois ao mesmo tempo, o que mantinha a coerência; agora ela
+ * entra nos dois, pelo mesmo motivo.
  *
- * Em Contas a Pagar o repasse continua aparecendo — é lá que ele é pago.
+ * Ela aparece na categoria "BaaS" (despesa), que é a categoria dos registros
+ * gerados pelo Lançamento BaaS — então num mês com apuração de parceiro essa
+ * fatia domina o gráfico. É a verdade do período: foi para lá que o dinheiro
+ * foi.
  */
 export async function gastoPorCategoria(periodo: string): Promise<GastoCategoria[]> {
   const { inicio, fim } = intervaloMes(periodo)
@@ -303,7 +333,6 @@ export async function gastoPorCategoria(periodo: string): Promise<GastoCategoria
     by: ['categoriaId'],
     where: {
       tipo: 'DESPESA', data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' },
-      ...SEM_REPASSE_BAAS,
     },
     _sum: { valor: true },
   })
@@ -917,12 +946,12 @@ export async function evolucaoFinanceira(periodos: string[]): Promise<PontoEvolu
   const fim = intervaloMes(periodos[periodos.length - 1]).fim
 
   const linhas = await prisma.lancamentoFinanceiro.findMany({
-    // MESMA regra do KPI: o repasse ao parceiro fica fora da despesa. Sem
-    // isto, o gráfico de 12 meses contaria uma despesa que o indicador
-    // "Resultado" logo acima não conta — e os dois discordariam na mesma tela.
+    // MESMA regra do KPI: a despesa é a despesa inteira, comissão de parceiro
+    // incluída. Sem isto, o gráfico de 12 meses mostraria uma despesa que o
+    // indicador "Resultado" logo acima não mostra — e os dois discordariam na
+    // mesma tela, que é o defeito que o filtro antigo evitava do outro lado.
     where: {
       data: { gte: inicio, lt: fim }, status: { not: 'CANCELADO' },
-      ...SEM_REPASSE_BAAS,
     },
     select: { tipo: true, valor: true, data: true },
   })

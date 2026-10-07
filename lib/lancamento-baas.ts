@@ -17,8 +17,13 @@
  * É a ordem da especificação, e muda o resultado: 25% de R$ 50.000 é
  * R$ 12.500, enquanto 25% de R$ 100.000 seriam R$ 25.000.
  *
- * O último número NÃO é "lucro da Bass Pago": é o valor residual devido ao
- * cliente depois das tarifas e do overprice.
+ * O último número NÃO é "lucro da Bass Pago": é a comissão devida ao parceiro
+ * depois das tarifas e do overprice.
+ *
+ * A CASCATA É O CÁLCULO; a CONTABILIZAÇÃO é outra coisa, e está mais abaixo
+ * (`receitaBaas`, `despesaBaas`, `resultadoBaas`). O saldo integral apurado é
+ * receita da Bass Pago, e a comissão do parceiro é despesa dela — porque o
+ * saldo passou pela conta da Bass Pago e é dela que o pagamento sai.
  */
 
 export interface ProdutoTarifado {
@@ -105,14 +110,83 @@ export function calcular(
   }
 }
 
-/**
- * A RECEITA da Bass Pago no lançamento.
+/* ========================================================================= *
+ * A CONTABILIZAÇÃO DO LANÇAMENTO — receita, despesa e resultado
  *
- * É o que ela cobrou: as tarifas mais o overprice. Não é o saldo do cliente
- * nem o saldo inicial — esses são dinheiro do cliente passando pela conta.
+ * ── A REGRA ─────────────────────────────────────────────────────────────
+ *
+ * Quando o saldo apurado do período é lançado, esse saldo ESTAVA NA CONTA DA
+ * BASS PAGO. Ele passou por ela, e é dela que sai o pagamento ao parceiro.
+ * Portanto o valor integral apurado é RECEITA da Bass Pago — e essa receita
+ * inclui as três partes: as tarifas cobradas, o overprice e a parcela que
+ * pertence ao BaaS.
+ *
+ * A parcela do parceiro é, depois, DESPESA da Bass Pago: ela sai do caixa.
+ *
+ *   RECEITA   = saldo integral apurado          (`saldoInicial`)
+ *   DESPESA   = valor/comissão devida ao BaaS   (`valorCliente`)
+ *   RESULTADO = Receita − Despesa               (= tarifas + overprice)
+ *
+ * Com o exemplo da especificação:
+ *
+ *   saldo apurado      R$ 100.000
+ *   tarifas Bass Pago  R$  10.000
+ *   overprice          R$  15.000
+ *   comissão BaaS      R$  75.000
+ *
+ *   Receita   R$ 100.000
+ *   Despesa   R$  75.000
+ *   Resultado R$  25.000
+ *
+ * ── O QUE MUDOU, E O QUE NÃO MUDOU ──────────────────────────────────────
+ *
+ * O RESULTADO é o mesmo de antes: continua sendo tarifas + overprice. Antes
+ * ele aparecia como uma receita LÍQUIDA de 25 mil, com a despesa de 75 mil
+ * excluída do resultado por um filtro em `lib/financeiro.ts`. Agora ele
+ * aparece pelos dois lados, BRUTOS — 100 mil de receita, 75 mil de despesa —,
+ * e o pagamento ao BaaS deixa de ficar fora do resultado.
+ *
+ * A diferença importa porque "receita" e "margem" são perguntas diferentes, e
+ * a tela antiga respondia a segunda com o nome da primeira: o faturamento
+ * aparecia como um quarto do que a empresa de fato apurou no período.
+ * ========================================================================= */
+
+/**
+ * RECEITA da Bass Pago no lançamento: o saldo INTEGRAL apurado.
+ *
+ * Inclui a parcela do parceiro de propósito — ela entrou na conta da Bass
+ * Pago, e sai dela como despesa. Devolver apenas tarifas + overprice seria
+ * devolver a margem, não a receita.
  */
-export function receitaBassPago(c: Calculo): number {
-  return centavos(c.totalTarifas + c.overpriceValor)
+export function receitaBaas(c: Calculo): number {
+  return centavos(c.saldoInicial)
+}
+
+/**
+ * DESPESA da Bass Pago no lançamento: a comissão devida ao parceiro.
+ *
+ * É o mesmo número que `valorCliente` — saldo remanescente menos overprice —,
+ * nomeado pelo PAPEL CONTÁBIL que ele passa a ter. `valorCliente` descreve de
+ * quem é o dinheiro; `despesaBaas` descreve o que ele faz no resultado.
+ */
+export function despesaBaas(c: Calculo): number {
+  return centavos(c.valorCliente)
+}
+
+/**
+ * RESULTADO do lançamento: Receita − Despesa.
+ *
+ * Aritmeticamente igual a `totalTarifas + overpriceValor`, e a igualdade é
+ * uma INVARIANTE da cascata, não uma coincidência: o saldo apurado se parte
+ * em exatamente três pedaços (tarifas, overprice, comissão), e os dois
+ * primeiros são o que a Bass Pago retém.
+ *
+ * Calculado pela subtração, e não pela soma, porque é a subtração que a tela
+ * mostra e que o painel financeiro reproduz — se as duas pontas divergirem por
+ * arredondamento, é esta que tem de fechar.
+ */
+export function resultadoBaas(c: Calculo): number {
+  return centavos(receitaBaas(c) - despesaBaas(c))
 }
 
 /* ========================================================================= *

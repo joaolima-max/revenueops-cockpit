@@ -19,24 +19,39 @@ import { prisma } from '@/lib/prisma'
 import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/float'
 import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
 import {
-  calcularMrr, contagensParceiros, receitaPorNatureza, sustentacaoVigente,
+  calcularMrr, contagensParceiros, evolucaoParceiros, receitaPorNatureza,
+  sustentacaoVigente,
   type Mrr, type ContagensParceiros,
 } from '@/lib/financeiro'
 import {
   avaliarMeta, ehMetaDePipeline,
   type Avaliacao, type MetaDirecao, type MetaUnidade,
 } from '@/lib/metas'
-import { intervaloMes, periodoAtual, ultimosPeriodos } from '@/lib/periodo'
+import {
+  intervaloMes, intervaloParcial, janelaComparavel, periodoAtual,
+  periodoEmCurso, ultimosPeriodos, diaDoMes, diasNoMes,
+} from '@/lib/periodo'
 
 // Reexportados porque muitas telas já os importavam daqui. A implementação
 // mora em lib/periodo.ts, para que lib/financeiro.ts possa usá-la sem ciclo.
-export { intervaloMes, periodoAtual, ultimosPeriodos }
+export {
+  intervaloMes, intervaloParcial, janelaComparavel, periodoAtual,
+  periodoEmCurso, ultimosPeriodos, diaDoMes, diasNoMes,
+}
 
 export interface KpisPeriodo {
   periodo: string
   /** Falso quando não há nenhum lançamento no período — a tela mostra vazio. */
   temDados: boolean
   diasLancados: number
+  /**
+   * Até que dia do mês esta apuração foi: `null` = mês inteiro.
+   *
+   * Existe para que a tela possa DECLARAR a janela em vez de o leitor supor.
+   * Sem isto, "R$ 10 mi" no dia 7 e "R$ 10 mi" no dia 30 são indistinguíveis
+   * — e é exatamente essa ambiguidade que tornava a variação mensal enganosa.
+   */
+  ateDia: number | null
   tpv: number | null
   receitaTarifaria: number | null
   qtdTransacoes: number | null
@@ -84,11 +99,27 @@ async function vigenciasFloat(): Promise<VigenciaMultiplicador[]> {
 /**
  * KPIs de um mês, todos derivados do lançamento diário.
  *
- * O Float precisa do dia seguinte ao fim do mês para saber o que dormiu na
- * virada, por isso a janela busca um dia a mais e depois recorta.
+ * O Float precisa do dia seguinte ao fim da janela para saber o que dormiu na
+ * virada, por isso a consulta busca um dia a mais e depois recorta.
+ *
+ * ── `ateDia`: A JANELA PARCIAL ──────────────────────────────────────────
+ *
+ * Trunca a apuração no dia informado (inclusivo), para que o mês corrente
+ * possa ser comparado com a MESMA janela do mês anterior. Ausente = mês
+ * inteiro, que é o comportamento de sempre e o de todo período fechado.
+ *
+ * É aqui que o truncamento acontece, e não na tela, por uma razão: todos os
+ * KPIs derivam dos mesmos lançamentos, e recortar o conjunto na origem mantém
+ * TPV, receita, transações, MED, saldo médio e Float coerentes entre si. Cada
+ * tela cortando o seu número produziria indicadores que não fecham — o saldo
+ * médio de 7 dias com o TPV de 30, por exemplo.
+ *
+ * Ver `lib/periodo.ts` para por que a janela é de dias de CALENDÁRIO.
  */
-export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
-  const { inicio, fim } = intervaloMes(periodo)
+export async function kpisDoPeriodo(
+  periodo: string, ateDia?: number | null,
+): Promise<KpisPeriodo> {
+  const { inicio, fim } = intervaloParcial(periodo, ateDia)
   const fimComVirada = new Date(fim.getTime() + 86_400_000)
 
   const [lancamentos, vigencias] = await Promise.all([
@@ -104,6 +135,7 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
   if (doMes.length === 0) {
     return {
       periodo, temDados: false, diasLancados: 0,
+      ateDia: ateDia ?? null,
       tpv: null, receitaTarifaria: null, qtdTransacoes: null, qtdMed: null,
       saldoMedio: null, float: null, takeRate: null, percentMed: null,
       clientesAtivos: null,
@@ -125,6 +157,7 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
     periodo,
     temDados: true,
     diasLancados: doMes.length,
+    ateDia: ateDia ?? null,
     tpv,
     receitaTarifaria,
     qtdTransacoes,
@@ -135,6 +168,113 @@ export async function kpisDoPeriodo(periodo: string): Promise<KpisPeriodo> {
     percentMed: qtdTransacoes > 0 ? (qtdMed / qtdTransacoes) * 100 : null,
     clientesAtivos,
   }
+}
+
+/* ========================================================================= *
+ * COMPARAÇÃO MENSAL EQUIVALENTE — a correção das setas
+ *
+ * ── O DEFEITO ───────────────────────────────────────────────────────────
+ *
+ * O Cockpit e o Conselho comparavam o acumulado PARCIAL do mês corrente com o
+ * mês anterior INTEIRO. No dia 7, R$ 10 mi de 7 dias eram medidos contra R$ 40
+ * mi de 30 dias, e a seta saía vermelha com −75%.
+ *
+ * Isso não era um KPI ruim: era um KPI errado. Todo começo de mês, todos os
+ * indicadores ficavam negativos, independentemente do desempenho — e um
+ * indicador que é negativo por construção não informa nada.
+ *
+ * ── A CORREÇÃO ──────────────────────────────────────────────────────────
+ *
+ * Quando o período de referência está EM CURSO, os dois lados usam a MESMA
+ * janela de dias de calendário:
+ *
+ *   dia 07  →  01–07 do mês atual   vs   01–07 do mês anterior
+ *   dia 15  →  01–15 do mês atual   vs   01–15 do mês anterior
+ *
+ * Quando o período está FECHADO, os dois meses são comparados INTEIROS — não
+ * há o que truncar, e truncar jogaria fora dado real.
+ *
+ * ── POR QUE UMA FUNÇÃO SÓ ───────────────────────────────────────────────
+ *
+ * Cockpit, Conselho e qualquer outra tela que mostre variação mensal chamam
+ * ESTA função. Cada tela escolhendo a sua base comparável é como as duas
+ * passam a discordar — e já aconteceu neste produto, com o `anterior` sendo
+ * calculado por um `find` repetido em dois arquivos.
+ *
+ * APLICA-SE SÓ A KPI MENSAL/PERIÓDICO. Indicadores com outra lógica temporal
+ * correta — o pacing de Metas, que já compara contra o tempo decorrido, ou a
+ * série diária do gráfico operacional — não passam por aqui.
+ * ========================================================================= */
+
+export interface ComparacaoMensal {
+  /** O período de referência, apurado na janela (parcial se em curso). */
+  atual: KpisPeriodo
+  /**
+   * O período anterior COM DADO, apurado na MESMA janela. `null` quando não
+   * existe nenhum mês anterior com lançamento — e aí nenhuma variação é
+   * exibida, em vez de uma variação contra zero.
+   */
+  anterior: KpisPeriodo | null
+  /** A janela usada nos dois lados: `null` = meses inteiros. */
+  ateDia: number | null
+  /** O período em curso? Decide se a tela declara "até o dia N". */
+  emCurso: boolean
+}
+
+/**
+ * Rótulo da janela, para a tela DECLARAR o que está comparando.
+ *
+ * Sem ele, "+33,3%" é um número sem referência — e foi a ausência dessa
+ * referência que deixou a comparação errada passar tanto tempo invisível.
+ */
+export function rotuloComparacao(c: ComparacaoMensal): string {
+  if (!c.anterior) return 'sem mês anterior com dado'
+  if (c.ateDia === null) return 'vs mês anterior'
+  const dia = String(c.ateDia).padStart(2, '0')
+  return `01–${dia} vs 01–${dia} do mês anterior`
+}
+
+/**
+ * A comparação mensal equivalente de um período.
+ *
+ * `serie` são os KPIs já apurados dos meses anteriores, do mais antigo ao mais
+ * recente, INCLUINDO o período de referência no fim — é o formato que o
+ * Cockpit e o Conselho já montam para as sparklines, e reaproveitá-lo evita
+ * N consultas só para descobrir qual foi o último mês com dado.
+ *
+ * O mês comparável é o último ANTERIOR COM DADO, não necessariamente o
+ * imediatamente anterior: um mês sem nenhum lançamento compararia contra zero,
+ * o que `variacao` já recusa — mas pular para o mês anterior com dado dá uma
+ * base honesta em vez de nenhuma.
+ *
+ * REAPURA o mês comparável na janela parcial. É uma consulta a mais, e é
+ * inevitável: a série vem com os meses INTEIROS (é o que a sparkline precisa),
+ * e usar o valor inteiro como base é precisamente o defeito.
+ */
+export async function comparacaoMensal(
+  periodo: string, serie: KpisPeriodo[], hoje: Date = new Date(),
+): Promise<ComparacaoMensal> {
+  const ateDia = janelaComparavel(periodo, hoje)
+  const emCurso = periodoEmCurso(periodo, hoje)
+
+  const atual = await kpisDoPeriodo(periodo, ateDia)
+
+  // O último mês anterior COM DADO. A série inclui o período de referência no
+  // fim, então ele é descartado antes da busca.
+  const anteriorInteiro = [...serie]
+    .filter((k) => k.periodo !== periodo)
+    .reverse()
+    .find((k) => k.temDados) ?? null
+
+  if (!anteriorInteiro) return { atual, anterior: null, ateDia, emCurso }
+
+  // Mês inteiro de um lado e janela parcial do outro é o defeito. Quando há
+  // janela, o comparável é REAPURADO nela.
+  const anterior = ateDia === null
+    ? anteriorInteiro
+    : await kpisDoPeriodo(anteriorInteiro.periodo, ateDia)
+
+  return { atual, anterior, ateDia, emCurso }
 }
 
 export interface LinhasReceita {
@@ -447,79 +587,167 @@ export function realizadoPorTipo(
 }
 
 /* ========================================================================= *
- * OBSERVAÇÕES DIÁRIAS — insumo das velas
+ * OBSERVAÇÕES DIÁRIAS — SAIU
+ *
+ * `ObservacaoDiaria`, `observacoesDiarias` e `atividadeOperacionalDiaria`
+ * foram removidas nesta rodada, junto com o gráfico que eram as únicas a
+ * servir.
+ *
+ * Elas recortavam a série por QUANTIDADE DE DIAS LANÇADOS (`slice(-90)`) sobre
+ * uma janela de PERÍODOS MENSAIS. Com o filtro de 7/30/90 dias, a janela
+ * passou a ser de calendário e com piso em 01/10 — duas regras diferentes para
+ * a mesma série, e é assim que dois gráficos do mesmo dado passam a discordar.
+ *
+ * Quem produz a série diária agora é `serieDiaria`, logo abaixo, e ela é a
+ * única: os nove gráficos de resolução diária leem dela.
  * ========================================================================= */
 
-export interface ObservacaoDiaria {
-  data: Date
-  tpv: number
-  receitaTarifaria: number
-  qtdTransacoes: number
-  qtdMed: number
+/* ========================================================================= *
+ * SÉRIES DO COCKPIT — a janela de 7, 30 e 90 dias
+ *
+ * ── A DATA MÍNIMA ───────────────────────────────────────────────────────
+ *
+ * A "Evolução Atividade Operacional Diária" — e, com ela, toda série de
+ * resolução DIÁRIA do Cockpit — começa em 01/10/2026. Antes dessa data o
+ * lançamento diário não era a fonte confiável que é hoje, e o pedido é
+ * explícito: não exibir dado anterior e não inventar nada para preencher.
+ *
+ * É uma CONSTANTE, não uma data móvel. "O dia 1º de outubro mais recente"
+ * pareceria mais esperto e seria errado: em novembro de 2027 o piso saltaria
+ * para 01/10/2027 e apagaria um ano de operação real. O piso marca quando a
+ * base passou a valer — um fato do passado, que não se move.
+ *
+ * CONSEQUÊNCIA VISÍVEL, e ela é correta: enquanto houver menos de 90 dias
+ * desde o piso, as três janelas devolvem o mesmo recorte. A tela DECLARA isso
+ * (`limitada`) em vez de deixar o leitor concluir que 30 e 90 dias são a
+ * mesma coisa.
+ *
+ * ── POR QUE A JANELA É DE CALENDÁRIO ────────────────────────────────────
+ *
+ * "Últimos 30 dias" é um intervalo de datas, não "os últimos 30 registros".
+ * A versão anterior cortava por quantidade de dias LANÇADOS (`slice(-dias)`),
+ * e isso fazia a janela esticar no tempo conforme os fins de semana sem
+ * operação — "30 dias" podia cobrir seis semanas de calendário. Dias sem
+ * lançamento continuam FORA da série (não viram zero), mas não alongam mais a
+ * janela.
+ * ========================================================================= */
+
+/**
+ * O PISO da série diária do Cockpit: 01/10/2026.
+ *
+ * Exportado para que a tela possa declará-lo e os testes possam prendê-lo.
+ */
+export const DATA_MINIMA_ATIVIDADE = new Date(Date.UTC(2026, 9, 1))
+
+/** As três janelas que o Cockpit oferece. Conjunto FECHADO. */
+export const RANGES_DIAS = [7, 30, 90] as const
+export type RangeDias = typeof RANGES_DIAS[number]
+
+export const RANGE_PADRAO: RangeDias = 30
+
+/**
+ * Interpreta `range=7d|30d|90d` (ou "7", "30", "90") da query string.
+ *
+ * Devolve `null` para qualquer outra coisa — e quem chama cai no padrão em vez
+ * de aceitar uma janela arbitrária. Sem o conjunto fechado, `range=100000d`
+ * varreria a tabela inteira a pedido de quem montasse a URL.
+ */
+export function rangeDias(valor: string | null | undefined): RangeDias | null {
+  if (!valor) return null
+  const n = Number(String(valor).replace(/d$/i, ''))
+  return (RANGES_DIAS as readonly number[]).includes(n) ? (n as RangeDias) : null
+}
+
+const DIA_MS = 86_400_000
+
+/** Meia-noite UTC do dia da data. O grão das colunas DATE. */
+function meiaNoiteUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+}
+
+export interface JanelaDiaria {
+  /** Primeiro dia da janela, inclusivo. Nunca antes de `DATA_MINIMA_ATIVIDADE`. */
+  inicio: Date
+  /** Limite superior EXCLUSIVO: o dia seguinte a hoje. */
+  fim: Date
+  /** Dias de calendário que a janela de fato cobre. */
+  dias: number
+  /** A janela pedida foi ENCURTADA pelo piso de 01/10? */
+  limitada: boolean
+  /** Quantos dias foram pedidos. Para a tela poder dizer o que cortou. */
+  pedidos: RangeDias
 }
 
 /**
- * A série DIÁRIA do Lançamento Diário, dentro de uma janela de períodos.
+ * A janela de N dias terminando HOJE, respeitando o piso.
  *
- * Alimenta a "Evolução Atividade Operacional Diária" do Cockpit: TPV, receita,
- * transações e MED, dia a dia, do jeito que foram lançados.
- *
- * Só dias EXISTENTES entram. Dia sem lançamento NÃO vira zero — zero seria
- * afirmar que o dia teve movimento nenhum, quando o que houve foi ausência de
- * lançamento. São coisas diferentes, e o gráfico não deve confundi-las.
+ * `hoje` é parâmetro para a função ser determinística nos testes — a mesma
+ * razão de `calcularPacing` receber a data.
  */
-export async function observacoesDiarias(periodos: string[]): Promise<ObservacaoDiaria[]> {
-  if (periodos.length === 0) return []
+export function janelaDiaria(
+  dias: RangeDias, hoje: Date = new Date(),
+): JanelaDiaria {
+  const hojeUtc = meiaNoiteUtc(hoje)
+  // N dias INCLUINDO hoje: a janela de 7 dias é hoje e os 6 anteriores.
+  const desejado = new Date(hojeUtc.getTime() - (dias - 1) * DIA_MS)
+  const limitada = desejado.getTime() < DATA_MINIMA_ATIVIDADE.getTime()
+  const inicio = limitada ? DATA_MINIMA_ATIVIDADE : desejado
+  const fim = new Date(hojeUtc.getTime() + DIA_MS)
 
-  const ordenados = [...periodos].sort()
-  const inicio = intervaloMes(ordenados[0]).inicio
-  const fim = intervaloMes(ordenados[ordenados.length - 1]).fim
-
-  const dias = await prisma.lancamentoDiario.findMany({
-    where: { data: { gte: inicio, lt: fim } },
-    select: {
-      data: true, tpv: true, receitaTarifaria: true,
-      qtdTransacoes: true, qtdMed: true,
-    },
-    orderBy: { data: 'asc' },
-  })
-
-  return dias
+  return {
+    inicio,
+    fim,
+    dias: Math.max(0, Math.round((fim.getTime() - inicio.getTime()) / DIA_MS)),
+    limitada,
+    pedidos: dias,
+  }
 }
 
-export interface AtividadeDiaria {
+export interface PontoDiario {
   /** "dd/mm" — o rótulo do eixo. O ano está no subtítulo do gráfico. */
   rotulo: string
-  /** ISO curto, para o tooltip dizer a data completa. */
+  /** Data completa, para o tooltip. */
   dia: string
   tpv: number
   receita: number
   transacoes: number
   med: number
-  /** MED sobre transações, em pontos percentuais. Null quando não houve
-   *  transação no dia — dividir por zero daria 0%, que é outra afirmação. */
+  /** MED sobre transações, em pontos percentuais. Null sem transação no dia. */
   medPercentual: number | null
+  saldo: number
+  /** Fotografia do dia. Null quando o dia não informou. */
+  clientesAtivos: number | null
+  /** Receita ÷ TPV do dia. Null sem TPV — dividir por zero daria 0%. */
+  takeRate: number | null
 }
 
 /**
- * ATIVIDADE OPERACIONAL DIÁRIA — os últimos `dias` dias LANÇADOS.
+ * A SÉRIE DIÁRIA do Cockpit, na janela escolhida.
  *
- * Conta dias com lançamento, não dias de calendário: a janela é "os últimos 90
- * registros", e não "os últimos 90 dias corridos, com buracos". Um fim de
- * semana sem operação não deve consumir espaço do gráfico nem virar um vale
- * que ninguém viveu.
+ * Uma consulta serve TODOS os gráficos de resolução diária — TPV, receita,
+ * transações, MED, saldo, clientes ativos e take rate. Uma consulta por
+ * gráfico pagaria sete idas ao banco pelo mesmo conjunto de linhas.
  *
- * MED vem nas DUAS unidades. O indicador é um só (ver `realizadoPorTipo`), e é
- * a unidade que decide a leitura: a linha do gráfico usa o percentual, que é
- * como a operação lê MED, e o tooltip mostra também a quantidade — sem que
- * nenhuma das duas seja recalculada em dois lugares.
+ * Só dias EXISTENTES entram. Dia sem lançamento NÃO vira zero — zero
+ * afirmaria que o dia teve movimento nenhum, quando o que houve foi ausência
+ * de lançamento. São coisas diferentes, e o gráfico não deve confundi-las.
  */
-export async function atividadeOperacionalDiaria(
-  periodos: string[], dias = 90,
-): Promise<AtividadeDiaria[]> {
-  const obs = await observacoesDiarias(periodos)
+export async function serieDiaria(
+  dias: RangeDias, hoje: Date = new Date(),
+): Promise<PontoDiario[]> {
+  const j = janelaDiaria(dias, hoje)
+  if (j.dias <= 0) return []
 
-  return obs.slice(-dias).map((d) => ({
+  const linhas = await prisma.lancamentoDiario.findMany({
+    where: { data: { gte: j.inicio, lt: j.fim } },
+    select: {
+      data: true, tpv: true, receitaTarifaria: true, qtdTransacoes: true,
+      qtdMed: true, saldoEmConta: true, clientesAtivos: true,
+    },
+    orderBy: { data: 'asc' },
+  })
+
+  return linhas.map((d) => ({
     rotulo: d.data.toLocaleDateString('pt-BR', {
       day: '2-digit', month: '2-digit', timeZone: 'UTC',
     }),
@@ -529,7 +757,123 @@ export async function atividadeOperacionalDiaria(
     transacoes: d.qtdTransacoes,
     med: d.qtdMed,
     medPercentual: d.qtdTransacoes > 0 ? (d.qtdMed / d.qtdTransacoes) * 100 : null,
+    saldo: d.saldoEmConta,
+    clientesAtivos: d.clientesAtivos,
+    takeRate: d.tpv > 0 ? (d.receitaTarifaria / d.tpv) * 100 : null,
   }))
+}
+
+export interface PontoMensalCockpit {
+  /** "YYYY-MM". */
+  mes: string
+  baasAtivos: number
+  whiteLabelsAtivos: number
+  mrr: number
+}
+
+/**
+ * A SÉRIE MENSAL do Cockpit, nos meses que a janela TOCA.
+ *
+ * ── POR QUE TRÊS GRÁFICOS NÃO SÃO DIÁRIOS ───────────────────────────────
+ *
+ * BaaS ativos, White Labels ativos e MRR não têm resolução diária e não há
+ * como inventá-la. "Parceiros ativos" é uma contagem de cadastro, reconstruída
+ * do histórico de `ativo` das condições comerciais (ver `evolucaoParceiros`);
+ * o MRR é apurado sobre a carteira vigente no fim do mês. Desenhá-los dia a
+ * dia produziria 90 pontos idênticos — uma linha reta fingindo tendência, que
+ * é exatamente o que o produto já recusa em outros lugares.
+ *
+ * Então eles respondem ao filtro pela JANELA, com a resolução que têm: os
+ * meses que o intervalo escolhido atravessa. 90 dias dão uma leitura
+ * trimestral; 7 dias tocam um mês só, e aí o gráfico diz que a série tem
+ * resolução mensal em vez de desenhar um ponto solto.
+ *
+ * O PISO DE 01/10 NÃO SE APLICA AQUI. Ele é uma afirmação sobre quando o
+ * LANÇAMENTO DIÁRIO passou a ser confiável; a história das condições
+ * comerciais é anterior e continua válida. Aplicá-lo colapsaria estes três
+ * gráficos a um único mês sem nenhuma razão de dado.
+ */
+export async function serieMensalCockpit(
+  dias: RangeDias, hoje: Date = new Date(),
+): Promise<PontoMensalCockpit[]> {
+  const j = janelaDiaria(dias, hoje)
+
+  // Os meses que a janela atravessa, do mais antigo ao mais novo. A janela é
+  // de calendário, então basta caminhar de mês em mês entre as duas pontas.
+  const meses: string[] = []
+  const cursor = new Date(Date.UTC(j.inicio.getUTCFullYear(), j.inicio.getUTCMonth(), 1))
+  const ultimo = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1))
+  while (cursor.getTime() <= ultimo.getTime()) {
+    meses.push(
+      `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`,
+    )
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  }
+  if (meses.length === 0) return []
+
+  const [parceiros, mrrs] = await Promise.all([
+    evolucaoParceiros(meses),
+    // O MRR é apurado POR MÊS, e não repetido: `calcularMrr` respeita a data
+    // de início da sustentação de cada parceiro, então o valor muda conforme
+    // os contratos entram em vigor. Repetir o número de hoje em todos os meses
+    // — como a versão anterior fazia — produzia uma linha reta que o gráfico
+    // tinha de detectar e recusar.
+    Promise.all(meses.map((m) => calcularMrr(m))),
+  ])
+
+  return meses.map((m, i) => ({
+    mes: m,
+    baasAtivos: parceiros[i]?.baasAtivos ?? 0,
+    whiteLabelsAtivos: parceiros[i]?.whiteLabelsAtivos ?? 0,
+    mrr: mrrs[i]?.total ?? 0,
+  }))
+}
+
+export interface SeriesCockpit {
+  range: RangeDias
+  janela: {
+    inicio: string
+    fim: string
+    dias: number
+    limitada: boolean
+    pedidos: number
+    /** O piso, em ISO, para a tela poder citá-lo. */
+    minimo: string
+  }
+  diario: PontoDiario[]
+  mensal: PontoMensalCockpit[]
+}
+
+/**
+ * TUDO o que os gráficos do Cockpit precisam para uma janela, numa chamada.
+ *
+ * É esta função que a página e a API `/api/dashboard/series` usam — a mesma,
+ * para que a primeira renderização (servidor) e a troca de janela (cliente)
+ * nunca possam divergir. Duas montagens do mesmo payload é como a tela passa a
+ * mostrar um número diferente depois de o usuário clicar em "30 dias".
+ */
+export async function seriesCockpit(
+  dias: RangeDias = RANGE_PADRAO, hoje: Date = new Date(),
+): Promise<SeriesCockpit> {
+  const j = janelaDiaria(dias, hoje)
+  const [diario, mensal] = await Promise.all([
+    serieDiaria(dias, hoje),
+    serieMensalCockpit(dias, hoje),
+  ])
+
+  return {
+    range: dias,
+    janela: {
+      inicio: j.inicio.toISOString().slice(0, 10),
+      fim: new Date(j.fim.getTime() - DIA_MS).toISOString().slice(0, 10),
+      dias: j.dias,
+      limitada: j.limitada,
+      pedidos: j.pedidos,
+      minimo: DATA_MINIMA_ATIVIDADE.toISOString().slice(0, 10),
+    },
+    diario,
+    mensal,
+  }
 }
 
 /* ========================================================================= *

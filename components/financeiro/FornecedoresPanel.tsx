@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import PageHeader from '@/components/dashboard/PageHeader'
 import Panel from '@/components/ui/Panel'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -23,8 +22,17 @@ const FORM_VAZIO = {
   razaoSocial: '', cnpj: '', chavePix: '', descricaoServico: '', categoriaId: '',
 }
 
-/** Cadastro de fornecedor: razão social, CNPJ, chave PIX, serviço e categoria. */
-export default function FornecedoresClient({ podeGerenciar }: { podeGerenciar: boolean }) {
+/**
+ * FORNECEDORES — aba de Financeiro › Cadastros Financeiros.
+ *
+ * Era uma PÁGINA própria e virou aba, pela mesma razão de Categorias: os dois
+ * cadastros se consultam juntos, e ocupavam dois itens do sidebar para isso.
+ * Nenhuma funcionalidade saiu — criar, editar, inativar, reativar, excluir e
+ * buscar continuam exatamente como estavam.
+ *
+ * Cadastro de fornecedor: razão social, CNPJ, chave PIX, serviço e categoria.
+ */
+export default function FornecedoresPanel({ podeGerenciar }: { podeGerenciar: boolean }) {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [busca, setBusca] = useState('')
@@ -130,12 +138,19 @@ export default function FornecedoresClient({ podeGerenciar }: { podeGerenciar: b
   const lbl = 'bp-field-label'
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Fornecedores"
-        sub={`${fornecedores.filter((f) => f.ativo).length} ativos`}
-        actions={podeGerenciar ? <Button variant="primary" onClick={abrirNovo}>Novo fornecedor</Button> : undefined}
-      />
+    <div className="space-y-6">
+      {/* A AÇÃO fica aqui, e não no cabeçalho da página: "Novo fornecedor" só
+          faz sentido na aba de Fornecedores, e no cabeçalho ela apareceria
+          também sobre Categorias e Centros de Custo. */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <p className="t-sm text-muted">
+          {fornecedores.filter((f) => f.ativo).length} ativos · quem presta serviço
+          à Bass Pago e aparece nas despesas.
+        </p>
+        {podeGerenciar && (
+          <Button variant="primary" onClick={abrirNovo}>Novo fornecedor</Button>
+        )}
+      </div>
 
       <Panel padded={false}>
         <div className="p-3">

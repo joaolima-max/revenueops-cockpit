@@ -3,11 +3,27 @@
  *
  * Um lançamento produz TRÊS registros, e no máximo um de cada:
  *
- *   1. LANÇAMENTO FINANCEIRO de RECEITA — o que a Bass Pago cobrou
- *      (tarifas + overprice);
- *   2. CONTA A RECEBER — o título dessa receita;
- *   3. LANÇAMENTO FINANCEIRO de DESPESA — o valor residual devido ao cliente,
- *      que é o que alimenta Contas a Pagar.
+ *   1. LANÇAMENTO FINANCEIRO de RECEITA — o saldo INTEGRAL apurado no
+ *      período. É receita da Bass Pago porque o saldo estava na conta dela;
+ *   2. CONTA A RECEBER — o que se COBRA do parceiro, isto é, as tarifas;
+ *   3. LANÇAMENTO FINANCEIRO de DESPESA — a comissão devida ao parceiro, que
+ *      é o que alimenta Contas a Pagar.
+ *
+ * ── RECEITA (1) E TÍTULO (2) TÊM VALORES DIFERENTES, DE PROPÓSITO ───────
+ *
+ * A RECEITA é o saldo integral: 100 mil, no exemplo da especificação. O
+ * TÍTULO A RECEBER é o que a Bass Pago cobra do parceiro: as tarifas, 10 mil.
+ *
+ * Não é inconsistência. O resto do saldo apurado JÁ ESTÁ na conta da Bass
+ * Pago — não há o que receber dele. Emitir um recebível de 100 mil criaria um
+ * título para dinheiro que já entrou, e ele apareceria em Contas a Receber
+ * como cobrança pendente para sempre. O que de fato muda de mão são as
+ * tarifas; o overprice é realizado pagando menos ao parceiro, e a comissão
+ * sai como despesa no registro 3.
+ *
+ * A projeção de caixa depende dessa distinção: ver `lib/previsao.ts`, que
+ * conta o AR como entrada futura e a comissão como saída futura, sem contar o
+ * saldo integral duas vezes.
  *
  * IDEMPOTÊNCIA PELO BANCO. As três FKs em `LancamentoBaas` são UNIQUE, e a
  * geração roda dentro de uma transação que só grava os ids ao fim. Chamar
@@ -83,17 +99,22 @@ export interface DadosGeracao {
    */
   tarifas: number
   /**
-   * Tarifas + overprice — a RECEITA que a Bass Pago realiza no período, e o
-   * valor do lançamento financeiro.
+   * O saldo INTEGRAL apurado no período — a RECEITA da Bass Pago, e o valor
+   * do lançamento financeiro de receita.
    *
-   * Os dois números são diferentes de propósito, e a diferença é o overprice:
-   * ele é receita nossa, mas NÃO é faturado ao parceiro — é realizado pagando
-   * a ele menos. Por isso entra no lançamento (que é o que a Receita do
-   * período soma) e fica fora do título a receber (que é o que se cobra).
+   * Inclui as tarifas, o overprice E a comissão do parceiro. O saldo estava na
+   * conta da Bass Pago, e é dela que sai o pagamento ao BaaS: por isso o
+   * integral é receita, e a comissão é despesa (ver `despesa`, abaixo).
    */
   receita: number
-  /** Saldo remanescente − overprice. O que é devido ao cliente. */
-  valorCliente: number
+  /**
+   * A COMISSÃO devida ao parceiro — saldo remanescente menos o overprice.
+   *
+   * É DESPESA da Bass Pago, e entra no Resultado como tal. Até a v27 ela
+   * existia como lançamento de despesa mas era excluída do resultado por um
+   * filtro; essa exclusão saiu.
+   */
+  despesa: number
   criadoPorId: string
   /**
    * Cliente da carteira cujo `numeroConta` casa com a conta do lançamento.
@@ -192,12 +213,15 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     const vencimento = d.periodoFim
     const receita = centavos(d.receita)
     const tarifas = centavos(d.tarifas)
-    const cliente = centavos(d.valorCliente)
+    const comissao = centavos(d.despesa)
 
-    /* ── 1. RECEITA da Bass Pago ───────────────────────────────────────── */
+    /* ── 1. RECEITA da Bass Pago — o saldo INTEGRAL apurado ────────────── */
+    // "Apuração BaaS", e não "Tarifa BaaS": o valor deixou de ser a tarifa e
+    // passou a ser o saldo inteiro do período. Manter o rótulo antigo faria a
+    // linha de 100 mil dizer que é a tarifa de 10 mil.
     const dadosReceita = {
       tipo: 'RECEITA' as const,
-      descricao: descricao(d, 'Tarifa BaaS'),
+      descricao: descricao(d, 'Apuração BaaS'),
       categoriaId: catReceita,
       valor: receita,
       data: vencimento,
@@ -216,9 +240,22 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     /* ── 2. CONTA A RECEBER — sempre nasce ─────────────────────────────── */
     const dadosAR = devedorDoTitulo(d.clienteId, d.condicaoId)
 
-    // O TÍTULO COBRA AS TARIFAS, não a receita inteira. O overprice é
-    // realizado no outro lado — pagando menos ao parceiro —, e cobrá-lo aqui
-    // seria cobrar duas vezes o mesmo valor.
+    /**
+     * O TÍTULO COBRA AS TARIFAS — e continua cobrando, sob a regra nova.
+     *
+     * A RECEITA do registro 1 é o saldo integral (100 mil); o título é o que
+     * de fato se COBRA do parceiro (10 mil). Os dois números são diferentes de
+     * propósito:
+     *
+     *   - o resto do saldo JÁ ESTÁ na conta da Bass Pago. Um recebível de 100
+     *     mil seria cobrança de dinheiro que já entrou, e ficaria pendente em
+     *     Contas a Receber para sempre;
+     *   - o overprice é realizado pagando MENOS ao parceiro, não cobrando mais
+     *     dele — cobrá-lo aqui seria cobrar duas vezes o mesmo valor;
+     *   - a comissão do parceiro vai para o outro lado, como despesa (3).
+     *
+     * O rótulo segue "Tarifa BaaS" porque é exatamente o que o título é.
+     */
     const comum = {
       descricao: descricao(d, 'Tarifa BaaS'),
       // `ContaReceber.tipo` é o rótulo que a tela mostra como badge — a
@@ -235,17 +272,18 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
       : await tx.contaReceber.create({ data: { ...comum, ...dadosAR } })
     const contaReceberId: string = ar.id
 
-    /* ── 3. DESPESA — o residual devido ao cliente ─────────────────────── */
+    /* ── 3. DESPESA — a comissão devida ao parceiro ────────────────────── */
     // Status PENDENTE: o título nasce em aberto, para ser complementado e
     // baixado em Contas a Pagar.
     const dadosAP = {
       tipo: 'DESPESA' as const,
-      // "ao PARCEIRO": o residual é devido ao BaaS/White Label, que não é
-      // cliente da carteira. O rótulo antigo dizia "cliente" e confundia os
-      // dois lados do lançamento.
-      descricao: descricao(d, 'Repasse BaaS'),
+      // "Comissão", e não "Repasse": sob a regra nova este valor É despesa da
+      // Bass Pago e entra no Resultado como tal. "Repasse" descrevia um
+      // dinheiro de passagem, que era justamente a leitura que o justificava
+      // ficar fora do resultado.
+      descricao: descricao(d, 'Comissão BaaS'),
       categoriaId: catDespesa,
-      valor: cliente,
+      valor: comissao,
       data: vencimento,
       dataVencimento: vencimento,
       status: 'PENDENTE' as const,
@@ -476,9 +514,14 @@ export async function sincronizarTitulosFaltantes(
         periodoFim: lb.periodoFim,
         // Os valores GRAVADOS no lançamento, não um recálculo a partir do
         // cadastro atual: o snapshot é o que define o que se cobra.
+        //
+        // A RECEITA é o `saldoInicial` gravado — o saldo integral apurado —, e
+        // não `totalTarifas + overpriceValor`, que é a MARGEM. Era assim que a
+        // receita era calculada até a v27, quando a comissão do parceiro ficava
+        // fora do resultado; a regra nova registra os dois lados brutos.
         tarifas: lb.totalTarifas,
-        receita: lb.totalTarifas + lb.overpriceValor,
-        valorCliente: lb.valorCliente,
+        receita: lb.saldoInicial,
+        despesa: lb.valorCliente,
         criadoPorId,
         clienteId: await clientePelaConta(lb.numeroConta),
       })

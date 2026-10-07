@@ -350,6 +350,15 @@ model User {
   condicoesHistorico CondicaoComercialHistorico[] @relation("CondicaoHistoricoAutor")
   followUps          FollowUp[]                   @relation("FollowUpResponsavel")
 
+  // PREVISAO — criador e responsavel sao relacoes SEPARADAS de proposito: o
+  // criador fica registrado para auditoria, e quem responde pelo orcamento ou
+  // pela despesa pode ser outra pessoa.
+  orcamentosCriados      Orcamento[]       @relation("OrcamentoCriador")
+  orcamentosResponsavel  Orcamento[]       @relation("OrcamentoResponsavel")
+  despesasFuturasCriadas DespesaFutura[]   @relation("DespesaFuturaCriador")
+  despesasFuturasResp    DespesaFutura[]   @relation("DespesaFuturaResponsavel")
+  receitasPrevistas      ReceitaPrevista[] @relation("ReceitaPrevistaCriador")
+
   @@index([departamento, active])
 }
 
@@ -462,13 +471,27 @@ model Deal {
 
   /// Funil e etapa em que o card esta AGORA. Nulos apenas ate o backfill da
   /// migration v11 rodar; depois disso todo Deal mora em algum funil.
-  funilId   String?
-  funil     PipelineFunil? @relation(fields: [funilId], references: [id], onDelete: Restrict)
-  etapaId   String?
-  etapa     PipelineEtapa? @relation(fields: [etapaId], references: [id], onDelete: Restrict)
+  funilId String?
+  funil   PipelineFunil? @relation(fields: [funilId], references: [id], onDelete: Restrict)
+  etapaId String?
+  etapa   PipelineEtapa? @relation(fields: [etapaId], references: [id], onDelete: Restrict)
+
+  /// QUANDO O CARD ENTROU NA ETAPA ATUAL. E o marco zero do SLA.
+  ///
+  /// NAO e `createdAt`: o relogio do SLA reinicia a cada mudanca de etapa, e
+  /// medir a partir da criacao do card faria um card que acabou de chegar em
+  /// Proposta aparecer como vencido por causa do tempo que passou em
+  /// Prospeccao. Tambem NAO e `updatedAt`, que qualquer edicao mexe.
+  ///
+  /// E denormalizado de proposito. O historico canonico continua sendo
+  /// `PipelineMovimentacao` — esta coluna e derivada dele e existe para que o
+  /// quadro nao precise de uma subconsulta de "ultima movimentacao" por card
+  /// para desenhar o indicador. A migration a preenche a partir do historico,
+  /// e `lib/sla.ts` sabe recalcula-la do historico quando preciso.
+  etapaEntradaEm DateTime?
   /// Preenchido quando o card passa para um funil de pos-venda.
-  clienteId String?
-  cliente   Cliente?       @relation(fields: [clienteId], references: [id])
+  clienteId      String?
+  cliente        Cliente?  @relation(fields: [clienteId], references: [id])
 
   movimentacoes       PipelineMovimentacao[]
   comentarios         DealComentario[]
@@ -480,6 +503,9 @@ model Deal {
 
   @@index([funilId, etapaId])
   @@index([resultado])
+  /// O quadro varre os cards abertos de um funil para avaliar SLA; sem o
+  /// indice, cada leitura ordenaria a tabela inteira pela entrada na etapa.
+  @@index([etapaId, etapaEntradaEm])
   @@index([segmentoComercialId])
   /// Sem o indice, cada leitura do quadro varreria a tabela para descartar os
   /// cards excluidos.
@@ -569,6 +595,8 @@ model Cliente {
   /// convivem porque converter a coluna enum reescreveria historico.
   segmentoComercial   SegmentoComercial?    @relation(fields: [segmentoComercialId], references: [id])
   segmentoComercialId String?
+
+  receitasPrevistas ReceitaPrevista[]
 
   @@index([gestorId])
   @@index([segmentoComercialId])
@@ -840,6 +868,16 @@ model PipelineEtapa {
   cor       String?
   ativo     Boolean       @default(true)
   tipo      EtapaTipo     @default(NORMAL)
+  /// SLA DA ETAPA, em dias corridos. Nulo = etapa SEM SLA, e nulo e o default:
+  /// um default numerico faria toda etapa ja existente nascer com um prazo que
+  /// ninguem definiu, e cards passariam a vencer SLA retroativamente.
+  ///
+  /// Mora na etapa, nao numa tabela de configuracao separada, porque a etapa
+  /// JA pertence a exatamente um funil — a configuracao "por funil + etapa"
+  /// e a propria linha. Uma tabela a parte precisaria de um UNIQUE para
+  /// impedir duas configuracoes para a mesma etapa, que e o que a coluna da de
+  /// graca.
+  slaDias   Int?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -1187,6 +1225,10 @@ model CategoriaFinanceira {
   lancamentos  LancamentoFinanceiro[]
   fornecedores Fornecedor[]
 
+  orcamentos        Orcamento[]
+  despesasFuturas   DespesaFutura[]
+  receitasPrevistas ReceitaPrevista[]
+
   @@unique([nome, tipo])
   @@index([tipo, ativo])
   @@index([natureza])
@@ -1204,7 +1246,8 @@ model Fornecedor {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
-  lancamentos LancamentoFinanceiro[]
+  lancamentos     LancamentoFinanceiro[]
+  despesasFuturas DespesaFutura[]
 
   @@index([ativo])
   @@index([categoriaId])
@@ -1252,6 +1295,14 @@ model LancamentoFinanceiro {
   fornecedorId String?
   fornecedor   Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
 
+  /// CENTRO DE CUSTO do lancamento. Opcional, e opcional de proposito: ha
+  /// lancamento que nao pertence a area nenhuma (um imposto da empresa), e
+  /// exigir um centro de custo obrigaria a inventar um "Geral" que nao
+  /// significa nada. Quando preenchido, e por aqui que Orcado x Realizado por
+  /// centro de custo encontra o realizado.
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id], onDelete: SetNull)
+
   /// BaaS / White Label ao qual a RECEITA pertence. Opcional: um lancamento sem
   /// vinculo continua valido, so nao entra em "Receita por BaaS/White Label".
   /// O vinculo e fotografado no lancamento e NAO e reescrito quando a condicao
@@ -1270,6 +1321,10 @@ model LancamentoFinanceiro {
   baasReceita    LancamentoBaas? @relation("LancamentoBaasReceita")
   baasContaPagar LancamentoBaas? @relation("LancamentoBaasContaPagar")
 
+  /// A despesa futura que ESTE lancamento concretizou, quando houve. E o que
+  /// impede a mesma saida de ser contada duas vezes no caixa projetado.
+  despesaFutura DespesaFutura? @relation("LancamentoDespesaFutura")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1281,6 +1336,7 @@ model LancamentoFinanceiro {
   @@index([dataVencimento])
   @@index([fornecedorId])
   @@index([condicaoId])
+  @@index([centroCustoId])
 }
 
 /// Nota fiscal, comprovante de pagamento, print. Os bytes vivem no MESMO
@@ -1335,6 +1391,8 @@ model CondicaoComercial {
   produtos        CondicaoProduto[]
   lancamentosBaas LancamentoBaas[]
   contasReceber   ContaReceber[]
+
+  receitasPrevistas ReceitaPrevista[]
 
   @@index([tipo, ativo])
 }
@@ -1510,4 +1568,230 @@ enum StatusLancamentoBaas {
   /// gravada com ele — apaga-lo exigiria reescrever esses registros —, mas
   /// nao e mais atribuido por nenhum caminho de codigo.
   FECHADO
+}
+
+// ===========================================================================
+// PREVISAO FINANCEIRA — orcamento, despesas futuras, receitas previstas (v28)
+//
+// O que estas quatro entidades acrescentam ao produto e o LADO PREVISTO do
+// financeiro. O lado REALIZADO ja existe e NAO e duplicado aqui: ele continua
+// sendo `LancamentoFinanceiro` (competencia), `ContaReceber` (titulo do
+// cliente) e `LancamentoBaas` (apuracao do parceiro). Previsto x Realizado e
+// uma COMPARACAO entre duas bases distintas, nunca uma copia de uma na outra —
+// e e isso que impede que o realizado tenha duas versoes.
+//
+// Nenhuma destas tabelas guarda indicador calculado. Orcado, realizado, saldo,
+// % utilizado, desvio e forecast sao derivados em `lib/previsao.ts` a cada
+// leitura, pela mesma razao que o resto do sistema nao persiste KPI: um numero
+// gravado envelhece sem avisar.
+// ===========================================================================
+
+/// Em que ponto do ciclo a previsao esta.
+///
+/// Coerente com o vocabulario do sistema (RASCUNHO em LancamentoBaas,
+/// PENDENTE/PAGO/CANCELADO em LancamentoFinanceiro) sem reaproveitar nenhum
+/// deles: "pago" nao e um estado de previsao, e "previsto" nao e um estado de
+/// lancamento. Enums separados porque os ciclos de vida sao diferentes.
+///
+/// REALIZADO e DECLARACAO, nao apuracao. O realizado que entra nos
+/// indicadores vem sempre dos lancamentos; este status serve para a pessoa
+/// marcar que aquela linha de previsao ja foi cumprida e tira-la da projecao
+/// de caixa — sem ele, uma despesa futura ja paga continuaria sendo descontada
+/// do caixa projetado depois de ter saido de verdade.
+enum StatusPrevisao {
+  PREVISTO
+  CONFIRMADO
+  REALIZADO
+  CANCELADO
+}
+
+/// Ciclo do orcamento. RASCUNHO nao entra em nenhum indicador: e orcamento
+/// sendo montado, e soma-lo mostraria um teto que ninguem aprovou.
+enum StatusOrcamento {
+  RASCUNHO
+  APROVADO
+  ENCERRADO
+}
+
+/// CENTRO DE CUSTO — a area que consome ou gera o dinheiro.
+///
+/// Estrutura PLANA, de proposito: sem pai, sem arvore e sem rateio. Centro de
+/// custo hierarquico obriga a decidir se o numero de um no inclui os filhos, e
+/// essa decisao tem de ser tomada de novo em cada tela — foi assim que a
+/// taxonomia de Categorias virou plana nesta mesma base.
+model CentroCusto {
+  id        String  @id @default(cuid())
+  nome      String  @unique
+  /// Codigo curto da area ("COM", "TEC"). Opcional e apenas descritivo: quem
+  /// identifica a linha e o id.
+  codigo    String?
+  descricao String?
+  ativo     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentos        Orcamento[]
+  despesasFuturas   DespesaFutura[]
+  receitasPrevistas ReceitaPrevista[]
+  lancamentos       LancamentoFinanceiro[]
+
+  @@index([ativo, nome])
+}
+
+/// ORCAMENTO de um periodo, por centro de custo e categoria.
+///
+/// O grao e (periodo, centro de custo, categoria, tipo) — e e UNIQUE. Duas
+/// linhas para o mesmo recorte seriam dois tetos para o mesmo gasto, e o
+/// "% utilizado" passaria a depender de qual das duas a tela somou primeiro.
+///
+/// `periodo` e "YYYY-MM", o mesmo formato de `Meta.periodo` e de todo o resto
+/// do sistema. Trimestre e ano nao sao granularidades proprias: sao a soma dos
+/// meses que os compoem, feita na leitura.
+model Orcamento {
+  id      String         @id @default(cuid())
+  periodo String
+  tipo    TipoLancamento
+
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id], onDelete: Restrict)
+
+  /// Categoria orcada. Opcional: existe orcamento de area inteira, sem
+  /// detalhamento por categoria.
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  /// Valor ORCADO. Nunca o realizado — esse e apurado dos lancamentos.
+  valor      Float
+  observacao String?
+
+  /// Quem responde pelo orcamento. Nao e o criador: o criador fica na
+  /// auditoria, e quem responde pode ser outra pessoa.
+  responsavelId String?
+  responsavel   User?   @relation("OrcamentoResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  status StatusOrcamento @default(RASCUNHO)
+
+  criadoPorId String
+  criadoPor   User   @relation("OrcamentoCriador", fields: [criadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([periodo, tipo, centroCustoId, categoriaId])
+  @@index([periodo, tipo])
+  @@index([centroCustoId])
+  @@index([categoriaId])
+  @@index([status])
+}
+
+/// DESPESA FUTURA — a saida que ainda nao foi lancada.
+///
+/// NAO e um `LancamentoFinanceiro` de status PENDENTE. A diferenca importa: o
+/// lancamento pendente JA ACONTECEU (tem competencia, entra na Despesa do
+/// periodo e em Contas a Pagar); a despesa futura e expectativa, nao toca o
+/// resultado contabil, e serve a projecao de caixa. Confundir as duas faria a
+/// Despesa do mes incluir o que ainda nem foi contratado.
+///
+/// Quando a despesa efetivamente ocorre, ela e lancada em Lancamentos e esta
+/// linha e marcada REALIZADA — e so entao sai da projecao. `lancamentoId`
+/// grava o vinculo quando existe, para que a mesma saida nao seja contada
+/// duas vezes no caixa projetado.
+model DespesaFutura {
+  id        String @id @default(cuid())
+  descricao String
+
+  fornecedorId String?
+  fornecedor   Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id], onDelete: Restrict)
+
+  valor        Float
+  /// Quando se espera que a saida ocorra. E a data que a projecao de caixa
+  /// usa — nao ha "competencia" numa despesa que ainda nao aconteceu.
+  dataPrevista DateTime @db.Date
+
+  /// Como a despesa se repete. MESMO enum dos lancamentos: recorrencia nao
+  /// tem duas gramaticas no sistema.
+  ///
+  /// Diferente de `LancamentoFinanceiro`, a recorrencia aqui NAO e
+  /// materializada em N linhas: a projecao expande na leitura, limitada a
+  /// janela consultada. Materializar obrigaria a escolher um horizonte na
+  /// gravacao, e uma folha de pagamento "indefinida" nao tem horizonte.
+  recorrencia    PeriodicidadeLancamento @default(UNICA)
+  /// Ultimo mes coberto pela recorrencia. Nulo = sem prazo definido.
+  recorrenciaFim DateTime?               @db.Date
+
+  responsavelId String?
+  responsavel   User?   @relation("DespesaFuturaResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  observacao String?
+  status     StatusPrevisao @default(PREVISTO)
+
+  /// O lancamento que concretizou esta despesa, quando houve. Garante que a
+  /// saida nao seja contada duas vezes na projecao de caixa.
+  lancamentoId String?               @unique
+  lancamento   LancamentoFinanceiro? @relation("LancamentoDespesaFutura", fields: [lancamentoId], references: [id], onDelete: SetNull)
+
+  criadoPorId String
+  criadoPor   User   @relation("DespesaFuturaCriador", fields: [criadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dataPrevista])
+  @@index([status, dataPrevista])
+  @@index([centroCustoId])
+  @@index([categoriaId])
+  @@index([fornecedorId])
+}
+
+/// RECEITA PREVISTA — o faturamento esperado de um periodo.
+///
+/// Mesma separacao da despesa futura: previsto e uma base, realizado e outra.
+/// O realizado desta linha NAO e digitado — e apurado dos lancamentos de
+/// receita do periodo, pelo mesmo caminho que a Visao Geral usa. Um campo
+/// "valor realizado" preenchido a mao criaria uma segunda versao do
+/// faturamento, divergente da primeira no primeiro ajuste de lancamento.
+model ReceitaPrevista {
+  id        String @id @default(cuid())
+  descricao String
+  /// "YYYY-MM" — o periodo da expectativa. Receita se preve por mes, nao por
+  /// dia: ninguem orca faturamento para o dia 12.
+  periodo   String
+
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  /// Parceiro BaaS / White Label a que a previsao se refere, quando aplicavel.
+  condicaoId String?
+  condicao   CondicaoComercial? @relation(fields: [condicaoId], references: [id], onDelete: SetNull)
+
+  /// Cliente da carteira, quando a previsao e dele.
+  clienteId String?
+  cliente   Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id], onDelete: Restrict)
+
+  valorPrevisto Float
+  observacao    String?
+  status        StatusPrevisao @default(PREVISTO)
+
+  criadoPorId String
+  criadoPor   User   @relation("ReceitaPrevistaCriador", fields: [criadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([periodo])
+  @@index([status, periodo])
+  @@index([condicaoId])
+  @@index([clienteId])
+  @@index([centroCustoId])
+  @@index([categoriaId])
 }

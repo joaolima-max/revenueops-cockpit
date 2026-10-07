@@ -19,7 +19,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { calcular, receitaBassPago, centavos } from '../lib/lancamento-baas'
+import {
+  calcular, receitaBaas, despesaBaas, resultadoBaas, centavos,
+} from '../lib/lancamento-baas'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
 import { devedorDoTitulo, CATEGORIA_RECEITA_BAAS, CATEGORIA_DESPESA_BAAS } from '../lib/baas-titulos'
@@ -62,21 +64,39 @@ test('§12: NAO INVERTER — o AR e o menor, o AP e o maior', () => {
 
 test('§12: NAO SOMAR os dois como uma receita unica', () => {
   // AR + AP = 77.516,25, que nao e receita nenhuma: e a soma de uma cobranca
-  // com uma divida. A receita da Bass Pago e outra coisa.
+  // com uma divida. A receita da Bass Pago e o saldo integral apurado.
   const somaErrada = centavos(CENARIO.totalTarifas + CENARIO.valorCliente)
   assert.equal(somaErrada, 77_516.25)
-  assert.notEqual(somaErrada, receitaBassPago(CENARIO))
-  assert.notEqual(somaErrada, CENARIO.saldoInicial)
+  assert.notEqual(somaErrada, receitaBaas(CENARIO))
+  assert.notEqual(somaErrada, resultadoBaas(CENARIO))
 })
 
-test('LANCAMENTOS registra a RECEITA: tarifas + overprice', () => {
-  // O lancamento financeiro e o que a Receita do periodo soma, e a receita
-  // inclui o overprice. O titulo a receber cobra menos — a diferenca e
-  // exatamente o overprice retido.
-  assert.equal(receitaBassPago(CENARIO), 32_548.75)
+test('LANCAMENTOS registra a RECEITA: o saldo INTEGRAL apurado', () => {
+  // v28: a receita deixou de ser a margem (tarifas + overprice) e passou a ser
+  // o saldo inteiro — ele estava na conta da Bass Pago, e e dela que sai o
+  // pagamento ao parceiro.
+  assert.equal(receitaBaas(CENARIO), CENARIO.saldoInicial)
+  assert.equal(receitaBaas(CENARIO), 100_000)
+
+  // A DESPESA e a comissao do parceiro.
+  assert.equal(despesaBaas(CENARIO), CENARIO.valorCliente)
+
+  // E o RESULTADO continua sendo tarifas + overprice — o numero nao mudou,
+  // mudou a forma de chegar nele.
+  assert.equal(resultadoBaas(CENARIO), 32_548.75)
   assert.equal(
-    centavos(receitaBassPago(CENARIO) - CENARIO.totalTarifas),
-    CENARIO.overpriceValor,
+    resultadoBaas(CENARIO),
+    centavos(CENARIO.totalTarifas + CENARIO.overpriceValor),
+  )
+})
+
+test('o TITULO A RECEBER continua cobrando so as tarifas', () => {
+  // A receita e o integral, mas o AR nao: o resto do saldo JA ESTA na conta da
+  // Bass Pago, e emitir recebivel dele criaria cobranca de dinheiro recebido.
+  assert.ok(CENARIO.totalTarifas < receitaBaas(CENARIO))
+  assert.equal(
+    centavos(receitaBaas(CENARIO) - CENARIO.totalTarifas - CENARIO.overpriceValor),
+    CENARIO.valorCliente,
   )
 })
 
@@ -184,12 +204,17 @@ test('editar o volume muda os TRES valores, de forma coerente', () => {
   const depois = calcular(100_000, [{ nome: 'PIX', preco: 0.10, volume: 200_000 }], 25)
 
   assert.notEqual(antes.totalTarifas, depois.totalTarifas)
-  assert.notEqual(receitaBassPago(antes), receitaBassPago(depois))
+  assert.notEqual(resultadoBaas(antes), resultadoBaas(depois))
   assert.notEqual(antes.valorCliente, depois.valorCliente)
 
-  // E os dois continuam fechando com o saldo.
+  // A RECEITA e a mesma nos dois: o saldo apurado nao muda quando o volume
+  // muda — o que muda e como ele se reparte entre margem e comissao.
+  assert.equal(receitaBaas(antes), receitaBaas(depois))
+
+  // E a identidade continua fechando: receita = resultado + despesa.
   for (const c of [antes, depois]) {
-    assert.equal(centavos(receitaBassPago(c) + c.valorCliente), 100_000)
+    assert.equal(centavos(resultadoBaas(c) + despesaBaas(c)), receitaBaas(c))
+    assert.equal(receitaBaas(c), 100_000)
   }
 })
 
@@ -199,7 +224,8 @@ test('o mesmo lancamento recalculado duas vezes da o MESMO resultado', () => {
   const a = calcular(100_000, [{ nome: 'PIX', preco: 0.10, volume: 100_000 }], 25)
   const b = calcular(100_000, [{ nome: 'PIX', preco: 0.10, volume: 100_000 }], 25)
   assert.deepEqual(a, b)
-  assert.equal(receitaBassPago(a), receitaBassPago(b))
+  assert.equal(receitaBaas(a), receitaBaas(b))
+  assert.equal(resultadoBaas(a), resultadoBaas(b))
 })
 
 /* ========================================================================= *
@@ -290,10 +316,29 @@ test('o detalhe mostra a cascata inteira, etapa por etapa', () => {
   const d = ler('components/financeiro/DetalheBaas.tsx')
   for (const etapa of [
     'Saldo inicial da conta', 'Total de Tarifas', 'Saldo após tarifas',
-    'Overprice', 'Valor residual devido ao parceiro',
+    'Overprice', 'Comissão devida ao parceiro',
   ]) {
     assert.ok(d.includes(etapa), `a etapa "${etapa}" saiu do detalhe`)
   }
+})
+
+test('o detalhe declara a CONTABILIZACAO, nao so a cascata', () => {
+  // A cascata responde "como o numero foi formado"; a contabilizacao responde
+  // "o que ele faz no resultado". Com receita e despesa BRUTAS, a margem deixa
+  // de estar a vista — ninguem le 100.000 e 75.000 e conclui 25.000 sem fazer
+  // a conta. Entao a conta aparece feita.
+  const d = ler('components/financeiro/DetalheBaas.tsx')
+  assert.ok(d.includes('Saldo integral apurado'), 'a receita nao diz que e o integral')
+  assert.ok(d.includes('Comissão devida ao parceiro'), 'a despesa nao diz que e comissao')
+  assert.ok(d.includes('Resultado do lançamento'), 'o resultado nao e declarado')
+  assert.ok(d.includes('Receita − comissão do parceiro'), 'a formula do resultado saiu')
+
+  // E a receita vem do saldo, nao da margem.
+  assert.ok(d.includes('const receita = l.saldoInicial'), 'a receita voltou a ser a margem')
+  assert.ok(
+    !d.includes('const receita = l.totalTarifas + l.overpriceValor'),
+    'a receita voltou a ser tarifas + overprice',
+  )
 })
 
 test('o detalhe diz o que cada modulo recebeu', () => {
@@ -350,15 +395,29 @@ test('a descricao gerada e CURTA: "<o que> — <parceiro>"', () => {
 
 test('os tres registros tem descricoes distinguiveis e curtas', () => {
   const t = ler('lib/baas-titulos.ts')
-  // Receita e titulo a receber dizem "Tarifa BaaS" — sao a mesma cobranca
-  // vista de dois lugares. O repasse diz outra coisa, porque e outro fluxo.
-  assert.equal(
-    (t.match(/descricao\(d, 'Tarifa BaaS'\)/g) ?? []).length, 2,
-    'o lancamento de receita e o titulo a receber devem dizer "Tarifa BaaS"',
-  )
-  assert.ok(t.includes("descricao(d, 'Repasse BaaS')"), 'o titulo a pagar')
 
-  // Os rotulos longos sairam.
+  // v28 — OS TRES RÓTULOS, e cada um diz exatamente o que a linha vale:
+  //
+  //   "Apuração BaaS" (receita)  → o saldo INTEGRAL apurado no período;
+  //   "Tarifa BaaS"   (AR)       → só as tarifas, que é o que se cobra;
+  //   "Comissão BaaS" (despesa)  → o valor devido ao parceiro.
+  //
+  // A receita deixou de dizer "Tarifa BaaS" porque deixou de ser a tarifa:
+  // manter o rótulo faria a linha de 100 mil dizer que é a tarifa de 10 mil.
+  assert.ok(t.includes("descricao(d, 'Apuração BaaS')"), 'a receita perdeu o rotulo')
+  assert.ok(t.includes("descricao(d, 'Tarifa BaaS')"), 'o titulo a receber perdeu o rotulo')
+  assert.ok(t.includes("descricao(d, 'Comissão BaaS')"), 'a despesa perdeu o rotulo')
+
+  // Os TRES sao distinguiveis: nenhum rotulo aparece em dois registros.
+  for (const rotulo of ['Apuração BaaS', 'Tarifa BaaS', 'Comissão BaaS']) {
+    assert.equal(
+      (t.match(new RegExp(`descricao\\(d, '${rotulo}'\\)`, 'g')) ?? []).length, 1,
+      `o rotulo "${rotulo}" deixou de identificar um registro so`,
+    )
+  }
+
+  // Os rotulos longos e os revogados sairam.
   assert.ok(!t.includes("'Repasse ao parceiro'"), 'o rotulo longo do repasse voltou')
   assert.ok(!t.includes("'Lançamento BaaS')"), 'o rotulo antigo da receita voltou')
+  assert.ok(!t.includes("descricao(d, 'Repasse BaaS')"), 'o rotulo "Repasse" voltou')
 })

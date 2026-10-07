@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  kpisDoPeriodo, indicadoresEstrutura, atividadeOperacionalDiaria,
+  kpisDoPeriodo, indicadoresEstrutura, seriesCockpit,
+  comparacaoMensal, rotuloComparacao,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
-import { evolucaoParceiros } from '@/lib/financeiro'
 import { formatMesRef } from '@/lib/utils'
 import {
   figuraMoeda, figuraQuantidade, figuraPercentual, figuraContagem, variacao,
@@ -36,24 +36,56 @@ export default async function DashboardPage() {
    *
    * O Cockpit voltou a ser o que ele é: o que aconteceu, e como evoluiu.
    */
-  const [kpis, estrutura, serie, parceiros, diario] = await Promise.all([
-    kpisDoPeriodo(periodo),
+  const [estrutura, serie, series] = await Promise.all([
     indicadoresEstrutura(periodo),
+    // Os 12 meses alimentam as SPARKLINES dos KPIs e a base comparável. Não
+    // alimentam mais os gráficos: eles têm janela própria (ver `series`).
     Promise.all(periodos.map((p) => kpisDoPeriodo(p))),
-    // Série de BaaS e White Labels ativos, RECONSTRUÍDA do histórico de
-    // `ativo` das condições comerciais — não é o número de hoje repetido.
-    evolucaoParceiros(periodos),
-    // Série DIÁRIA da "Evolução Atividade Operacional Diária": TPV, receita,
-    // transações e MED, dia a dia. Recortada no servidor (90 dias lançados)
-    // para não mandar um ano de observações ao navegador.
-    atividadeOperacionalDiaria(periodos),
+    /**
+     * AS SÉRIES DOS GRÁFICOS, na janela PADRÃO.
+     *
+     * Renderizadas no servidor para que a primeira pintura já tenha dado — sem
+     * isto, os doze gráficos abririam vazios e preencheriam depois, o que no
+     * Cockpit lê como "o sistema não tem dado".
+     *
+     * A troca de janela acontece no cliente, por `/api/dashboard/series`, que
+     * chama ESTA MESMA função. Duas montagens do payload é como a tela passa a
+     * mostrar um número diferente depois do clique.
+     */
+    seriesCockpit(),
   ])
 
-  /** Mês anterior com dado — base honesta para variação. Nada é extrapolado. */
-  const anterior = [...serie].slice(0, -1).reverse().find((k) => k.temDados) ?? null
+  /**
+   * COMPARAÇÃO EQUIVALENTE — a correção das setas.
+   *
+   * O mês corrente está sempre pela metade, e comparar o seu acumulado parcial
+   * com o mês anterior INTEIRO fazia toda seta ficar vermelha no começo de
+   * cada mês: no dia 7, 7 dias eram medidos contra 30. Agora os dois lados
+   * usam a MESMA janela de dias — 01–07 contra 01–07 —, e `kpis` é a apuração
+   * truncada nessa janela.
+   *
+   * A regra mora em `comparacaoMensal` (lib/kpi), e o Conselho chama a mesma
+   * função: duas telas calculando a própria base comparável é como elas
+   * passam a discordar.
+   */
+  const comparacao = await comparacaoMensal(periodo, serie)
+  const kpis = comparacao.atual
+  const anterior = comparacao.anterior
+
+  /**
+   * A SPARKLINE usa a série de meses INTEIROS, de propósito.
+   *
+   * Ela é a trajetória histórica, e truncar cada mês no dia de hoje
+   * reescreveria doze meses fechados para caber numa janela que só se aplica
+   * ao corrente. A última barra fica mais baixa que as outras porque o mês
+   * ainda não acabou — e isso é verdade, não distorção.
+   */
   const spark = (pick: (k: KpisPeriodo) => number | null) => serie.map((k) => pick(k) ?? 0)
   const varDe = (pick: (k: KpisPeriodo) => number | null) =>
     anterior ? variacao(pick(kpis), pick(anterior)) : null
+
+  /** O que a comparação está medindo, escrito. */
+  const notaComparacao = rotuloComparacao(comparacao)
 
   /**
    * NÍVEL 1 — o resultado do mês.
@@ -70,7 +102,9 @@ export default async function DashboardPage() {
       delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv), note: 'Lançamento diário' },
     { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
       delta: varDe((k) => k.qtdTransacoes), spark: spark((k) => k.qtdTransacoes),
-      note: `Mês vigente · ${formatMesRef(periodo)}` },
+      note: comparacao.emCurso && comparacao.ateDia !== null
+        ? `${formatMesRef(periodo)} · até o dia ${String(comparacao.ateDia).padStart(2, '0')}`
+        : `Mês vigente · ${formatMesRef(periodo)}` },
     { label: 'Saldo médio em conta', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio),
       delta: varDe((k) => k.saldoMedio), spark: spark((k) => k.saldoMedio), note: 'Média do período' },
   ]
@@ -103,34 +137,6 @@ export default async function DashboardPage() {
     { label: 'White Labels ativos', fig: figuraContagem(estrutura.whiteLabelsAtivos),
       note: 'Condições BaaS' },
   ]
-
-  /**
-   * Só séries com FONTE REAL, todas do mesmo lançamento diário. O Float saiu
-   * do Cockpit, e "previsto" não existe em lugar nenhum do sistema — um
-   * gráfico de previsto × realizado seria uma barra zerada ao lado da série
-   * verdadeira.
-   *
-   * `clientesAtivos` é FOTOGRAFIA: o valor do último dia do mês que informou o
-   * número, nunca a soma dos dias (ver `clientesAtivosDoMes`). Meses sem
-   * informação entram como zero no gráfico porque a série precisa de um ponto;
-   * `hasSeries` garante que um período inteiro sem dado não desenhe nada.
-   */
-  const chartData = periodos.map((p, i) => {
-    const k: KpisPeriodo = serie[i]
-    return {
-      mes: p,
-      receitaTarifaria: k.receitaTarifaria ?? 0,
-      tpv: k.tpv ?? 0,
-      takeRate: k.takeRate ?? 0,
-      qtdTransacoes: k.qtdTransacoes ?? 0,
-      saldoMedio: k.saldoMedio ?? 0,
-      qtdMed: k.qtdMed ?? 0,
-      percentMed: k.percentMed ?? 0,
-      clientesAtivos: k.clientesAtivos ?? 0,
-      baasAtivos: parceiros[i]?.baasAtivos ?? 0,
-      whiteLabelsAtivos: parceiros[i]?.whiteLabelsAtivos ?? 0,
-    }
-  })
 
   const hoje = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -170,6 +176,21 @@ export default async function DashboardPage() {
         ))}
       </HairlineGrid>
 
+      {/* A JANELA DA COMPARAÇÃO, DECLARADA.
+          As setas comparam janelas EQUIVALENTES — 01–07 contra 01–07 do mês
+          anterior —, e não o mês parcial contra o mês anterior inteiro, que
+          era o que fazia toda seta ficar vermelha no começo do mês. Sem esta
+          linha, "+33,3%" é um número sem referência, e foi justamente a
+          ausência de referência que deixou o defeito anterior invisível. */}
+      {anterior && (
+        <p className="t-sm text-subtle -mt-2">
+          Variações comparam {notaComparacao}
+          {comparacao.ateDia !== null && (
+            <> — o mês corrente está em curso, e a janela é a mesma nos dois lados</>
+          )}.
+        </p>
+      )}
+
       <HairlineGrid cols={2}>
         {qualificadores.map((c) => (
           <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta} note={c.note} size="sm" />
@@ -188,11 +209,10 @@ export default async function DashboardPage() {
         </HairlineGrid>
       </section>
 
-      <DashboardCharts
-        chartData={chartData}
-        mrrEvolution={periodos.map((p) => ({ mes: p, mrr: estrutura.mrr.total }))}
-        diario={diario}
-      />
+      {/* OS GRÁFICOS TÊM JANELA PRÓPRIA, de 7, 30 ou 90 dias, cada um a sua.
+          O payload inicial é a janela padrão, já apurada no servidor; a troca
+          busca em `/api/dashboard/series`, que usa a mesma função. */}
+      <DashboardCharts series={series} />
     </div>
   )
 }

@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import Panel from '@/components/ui/Panel'
 import TransferirModal from '@/components/pipeline/TransferirModal'
 import CardDetalheModal, { TOM_RESULTADO } from '@/components/pipeline/CardDetalheModal'
+import SlaIndicador from '@/components/pipeline/SlaIndicador'
 import { RESULTADO_LABEL } from '@/lib/pipeline'
 import { SEGMENTO_CRM_LABELS, SEGMENTO_LABELS } from '@/lib/utils'
 import type { AcessoFunil, FunilResumo, EtapaResumo, Card, ResultadoCard } from '@/components/pipeline/tipos'
@@ -200,9 +201,17 @@ export default function PipelineClient({ leads, podeAdministrar }: {
         title="Pipeline"
         sub={`${cards.length} ${cards.length === 1 ? 'negócio' : 'negócios'} · `
           + `${porResultado.EM_ANDAMENTO} em andamento · ${porResultado.GANHO} ganhos · ${porResultado.PERDIDO} perdidos`}
-        actions={podeAdministrar
-          ? <Link href="/dashboard/pipeline/funis"><Button>Gerenciar funis</Button></Link>
-          : undefined}
+        actions={podeAdministrar ? (
+          <span className="inline-flex gap-2">
+            {/* A CONFIGURAÇÃO DE SLA é alcançada daqui, e não mora no quadro:
+                são dezenas de campos numéricos que se definem uma vez, contra
+                um quadro que se opera todo dia. */}
+            <Link href="/dashboard/pipeline/configuracoes/sla">
+              <Button>Configurar SLA</Button>
+            </Link>
+            <Link href="/dashboard/pipeline/funis"><Button>Gerenciar funis</Button></Link>
+          </span>
+        ) : undefined}
       />
 
       {/* Seletor de funis — só os que a alçada do usuário deixa ver. */}
@@ -325,7 +334,21 @@ export default function PipelineClient({ leads, podeAdministrar }: {
                         )}
                       </div>
 
-                      <p className="t-label text-subtle mt-1.5">{card.owner.name}</p>
+                      {/* RESPONSÁVEL e SLA na MESMA LINHA.
+                          O indicador não ganha linha própria de propósito: o
+                          card já tem título, lead, resultado, segmento e
+                          responsável, e uma sexta linha o faria crescer e
+                          empurrar os vizinhos da coluna. Os dois juntos cabem,
+                          e são a mesma pergunta — "quem está com isso, e há
+                          quanto tempo". */}
+                      <div className="flex items-center justify-between gap-2 mt-1.5 min-w-0">
+                        <p className="t-label text-subtle truncate">{card.owner.name}</p>
+                        <SlaIndicador
+                          entradaEm={card.etapaEntradaEm}
+                          slaDias={etapa.slaDias}
+                          className="flex-none"
+                        />
+                      </div>
 
                       <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-[180ms]">
                         <button onClick={() => setDetalhe(card.id)}

@@ -130,12 +130,44 @@ export const INCLUDE_CARD = {
 export const SELECT_CARD_BASE = {
   id: true, title: true, etapaId: true, funilId: true,
   resultado: true, resultadoEm: true, createdAt: true, updatedAt: true,
+  // O marco zero do SLA. Sem ele o quadro nao tem como desenhar o indicador —
+  // e medir pelo `createdAt` acusaria atraso de quem acabou de receber o card.
+  etapaEntradaEm: true,
 } satisfies Prisma.DealSelect
+
+/**
+ * Os tipos de movimentacao que MUDAM A ETAPA do card — e portanto reiniciam o
+ * relogio do SLA.
+ *
+ * MUDANCA_RESULTADO fica fora: o card nao sai do lugar quando o desfecho muda,
+ * e reiniciar o SLA ali daria ao responsavel um prazo novo por ter marcado o
+ * card como ganho. EXCLUSAO_CARD tambem: o card saiu do quadro, nao tem mais
+ * etapa a cumprir.
+ */
+const TIPOS_QUE_MOVEM_ETAPA = [
+  'CRIACAO', 'MOVIMENTO_ETAPA', 'TRANSFERENCIA_FUNIL',
+] as const
 
 /**
  * Grava a movimentacao e a trilha de auditoria na MESMA transacao da mudanca
  * do card — um card que mudou de lugar sem historico seria pior que nenhum
  * historico, porque parece completo.
+ *
+ * ── E GRAVA O MARCO ZERO DO SLA ─────────────────────────────────────────
+ *
+ * Toda movimentacao que muda de etapa ATUALIZA `Deal.etapaEntradaEm`, aqui
+ * dentro, na mesma transacao.
+ *
+ * Nao e conveniencia: e a garantia. Sao TRES caminhos que movem um card —
+ * criacao (`/api/deals`), movimento (`.../mover`) e transferencia de funil
+ * (`.../transferir`) —, e todos passam por esta funcao. Carimbar o relogio em
+ * cada um deles seria tres lugares para esquecer, e o sintoma do esquecimento
+ * e silencioso: o card ficaria com o relogio da etapa ANTERIOR, e o SLA
+ * acusaria atraso de quem acabou de receber o card.
+ *
+ * Na mesma transacao porque o historico e o marco zero descrevem o mesmo fato:
+ * um gravado sem o outro deixaria a coluna derivada divergindo da tabela que a
+ * origina.
  */
 export async function registrarMovimentacao(
   tx: Prisma.TransactionClient,
@@ -154,7 +186,7 @@ export async function registrarMovimentacao(
     resultadoNovo?: ResultadoCard | null
   },
 ) {
-  return tx.pipelineMovimentacao.create({
+  const movimentacao = await tx.pipelineMovimentacao.create({
     data: {
       dealId: m.dealId,
       tipo: m.tipo,
@@ -168,6 +200,24 @@ export async function registrarMovimentacao(
       resultadoNovo: m.resultadoNovo ?? null,
     },
   })
+
+  /**
+   * O RELOGIO DO SLA REINICIA AQUI.
+   *
+   * `createdAt` da movimentacao, e nao `new Date()`: os dois valores sao do
+   * mesmo instante na pratica, mas usar o da linha gravada mantem a coluna
+   * derivada EXATAMENTE igual ao historico que a origina. Com dois relogios
+   * independentes, a diferenca de milissegundos apareceria na primeira
+   * reconstrucao de passagens por etapa.
+   */
+  if ((TIPOS_QUE_MOVEM_ETAPA as readonly string[]).includes(m.tipo)) {
+    await tx.deal.update({
+      where: { id: m.dealId },
+      data: { etapaEntradaEm: movimentacao.createdAt },
+    })
+  }
+
+  return movimentacao
 }
 
 /**

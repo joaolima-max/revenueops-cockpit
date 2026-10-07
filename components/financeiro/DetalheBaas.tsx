@@ -89,8 +89,17 @@ function Etapa({
  */
 export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
   const volumeTotal = l.itens.reduce((a, i) => a + i.volume, 0)
-  /** A receita da Bass Pago: tarifas + overprice. */
-  const receita = l.totalTarifas + l.overpriceValor
+  /**
+   * A CONTABILIZAÇÃO do lançamento, pelos três números que ela produz.
+   *
+   * RECEITA é o saldo INTEGRAL apurado: ele estava na conta da Bass Pago, e é
+   * dela que sai o pagamento ao parceiro. DESPESA é a comissão devida ao BaaS.
+   * RESULTADO é a diferença — e é igual a tarifas + overprice, que era o
+   * número que até a v27 aparecia sozinho, com o nome de receita.
+   */
+  const receita = l.saldoInicial
+  const despesa = l.valorCliente
+  const resultado = receita - despesa
 
   return (
     <>
@@ -178,7 +187,7 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
                   nota={l.overpricePercent === null
                     ? 'Parceiro sem overprice'
                     : `${l.overpricePercent}% do saldo após tarifas`} />
-                <Etapa rotulo="Valor residual devido ao parceiro" valor={l.valorCliente}
+                <Etapa rotulo="Comissão devida ao parceiro" valor={l.valorCliente}
                   sinal="=" forte />
               </div>
             </Panel>
@@ -194,7 +203,8 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
           {/* ── O QUE CADA MÓDULO RECEBEU ────────────────────────────────
               Três números que vão para três lugares, e é a pergunta que a
               tela de Lançamentos levanta: por que o título a receber não é
-              igual ao lançamento? Porque o overprice é retido, não faturado. */}
+              igual ao lançamento? Porque a receita é o saldo integral, e o
+              título cobra só o que de fato muda de mão. */}
           <section className="space-y-3">
             <PanelHeader
               title="O que foi gerado"
@@ -204,7 +214,7 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
               <HairlineCell className="gap-2">
                 <p className="t-label text-subtle">Lançamentos · receita</p>
                 <Figure figura={figuraMoeda(receita)} size="sm" />
-                <p className="t-label text-subtle/70">Tarifas + overprice</p>
+                <p className="t-label text-subtle/70">Saldo integral apurado</p>
               </HairlineCell>
               <HairlineCell className="gap-2">
                 <p className="t-label text-subtle">Contas a Receber</p>
@@ -213,19 +223,41 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
               </HairlineCell>
               <HairlineCell className="gap-2">
                 <p className="t-label text-subtle">Contas a Pagar</p>
-                <Figure figura={figuraMoeda(l.valorCliente)} size="sm" />
-                <p className="t-label text-subtle/70">Residual devido ao parceiro</p>
+                <Figure figura={figuraMoeda(despesa)} size="sm" />
+                <p className="t-label text-subtle/70">Comissão devida ao parceiro</p>
               </HairlineCell>
             </HairlineGrid>
 
-            {l.overpriceValor > 0 && (
-              <p className="t-sm text-subtle">
-                O overprice de{' '}
+            {/* ── O RESULTADO, declarado ───────────────────────────────────
+                Com receita e despesa brutas, a margem deixa de estar à vista:
+                ninguém lê "100.000" e "75.000" e conclui "25.000" sem fazer a
+                conta. Então a conta é mostrada feita. */}
+            <HairlineGrid cols={2}>
+              <HairlineCell className="gap-2">
+                <p className="t-label text-subtle">Resultado do lançamento</p>
+                <Figure figura={figuraMoeda(resultado)} size="sm" />
+                <p className="t-label text-subtle/70">Receita − comissão do parceiro</p>
+              </HairlineCell>
+              <HairlineCell className="gap-2">
+                <p className="t-label text-subtle">O que a Bass Pago retém</p>
+                <Figure figura={figuraMoeda(l.totalTarifas + l.overpriceValor)} size="sm" />
+                <p className="t-label text-subtle/70">Tarifas + overprice</p>
+              </HairlineCell>
+            </HairlineGrid>
+
+            <p className="t-sm text-subtle">
+              O saldo apurado estava na conta da Bass Pago, então entra{' '}
+              <span className="text-fg">integral</span> como receita; a comissão de{' '}
+              <span className="tabular-nums text-fg">{moedaCheia(despesa)}</span>{' '}
+              devida ao parceiro é contabilizada como despesa. O resultado é a
+              diferença entre os dois.
+              {l.overpriceValor > 0 && (
+                <> O overprice de{' '}
                 <span className="tabular-nums text-fg">{moedaCheia(l.overpriceValor)}</span>{' '}
-                não é faturado ao parceiro: ele é realizado pagando a ele menos. Por isso
-                entra na receita do período e fica fora do título a receber.
-              </p>
-            )}
+                não é faturado ao parceiro — é realizado pagando a ele menos —, e por
+                isso fica fora do título a receber.</>
+              )}
+            </p>
           </section>
 
     </>

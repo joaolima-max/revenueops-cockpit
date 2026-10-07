@@ -42,8 +42,11 @@ export const ICONS: Record<string, ReactNode> = {
   'financeiro.lancamentos': I.forecast,
   'financeiro.contas': I.financeiro,
   'financeiro.pagar': I.tarefas,
-  'financeiro.categorias': I.parametros,
-  'financeiro.fornecedores': I.clientes,
+  // Um item para os três cadastros (categorias, fornecedores, centros de
+  // custo). O ícone de "parâmetros" é o que o produto já usava para cadastro
+  // de classificação.
+  'financeiro.cadastros': I.parametros,
+  'financeiro.previsao': I.forecast,
   'financeiro.condicoes': I.metricas,
   'financeiro.baas': I.lancamentoBaas,
   'admin.usuarios': I.usuarios,

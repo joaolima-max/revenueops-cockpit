@@ -189,16 +189,82 @@ test('RECEITA tem Metas e Lançamento Diário — e só', () => {
   )
 })
 
-test('FINANCEIRO tem os OITO menus da especificação, nessa ordem', () => {
-  // Contas a PAGAR antes de Contas a RECEBER, e Lançamentos BaaS fechando.
+test('FINANCEIRO tem os SETE menus da especificação, nessa ordem', () => {
+  /**
+   * A ORDEM É A DA LEITURA DO AMBIENTE:
+   *
+   *   Visão Geral        o que aconteceu
+   *   Lançamentos        o registro do que aconteceu
+   *   Contas a Pagar     o que vence        (antes de Receber, como sempre)
+   *   Contas a Receber   o que entra
+   *   Previsão           o que se espera que aconteça
+   *   Cadastros          o que classifica tudo acima
+   *   Condições BaaS     o contrato do parceiro
+   *   Lançamentos BaaS   a apuração que produz os três registros
+   *
+   * ── O QUE MUDOU NA v28 ─────────────────────────────────────────────────
+   *
+   * CATEGORIAS e FORNECEDORES eram dois itens e viraram UM — "Cadastros
+   * Financeiros" —, com Centros de Custo como terceira aba. Eram dois cliques
+   * de menu para dois cadastros que se consultam juntos.
+   *
+   * PREVISÃO entrou, entre Contas a Receber e Cadastros: ela fecha o bloco do
+   * dinheiro (realizado → previsto) e vem antes dos cadastros, que são
+   * infraestrutura.
+   *
+   * Oito menus viraram oito de novo — um saiu, um entrou.
+   */
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
       'Visão Geral', 'Lançamentos', 'Contas a Pagar', 'Contas a Receber',
-      'Categorias', 'Fornecedores', 'Condições BaaS', 'Lançamentos BaaS',
+      'Previsão', 'Cadastros Financeiros', 'Condições BaaS', 'Lançamentos BaaS',
     ],
   )
+})
+
+test('CATEGORIAS e FORNECEDORES nao sao mais itens do sidebar', () => {
+  // O objetivo principal do pedido: nao deixar os dois ocupando dois itens.
+  const financeiro = MODULES.find((m) => m.key === 'financeiro')!
+  const rotulos = financeiro.features.map((f) => f.label)
+  assert.ok(!rotulos.includes('Categorias'), 'Categorias voltou a ser um item')
+  assert.ok(!rotulos.includes('Fornecedores'), 'Fornecedores voltou a ser um item')
+})
+
+test('as TRES APIs de cadastro continuam REGISTRADAS', () => {
+  /**
+   * ESTE TESTE EXISTE PARA IMPEDIR UM BURACO DE SEGURANÇA SILENCIOSO.
+   *
+   * Caminho de API não registrado é caminho LIBERADO para qualquer usuário
+   * autenticado (ver `checkAccess`). Ao fundir dois menus em um, a tentação é
+   * apagar as duas entradas e criar uma nova com uma API só — e isso abriria
+   * `/api/financeiro/categorias` e `/api/financeiro/fornecedores` para todo
+   * mundo, sem nenhum sinal na tela.
+   */
+  const cadastros = activeFeatures().find((f) => f.key === 'financeiro.cadastros')!
+  assert.ok(cadastros, 'Cadastros Financeiros nao esta registrado')
+  for (const api of [
+    '/api/financeiro/categorias',
+    '/api/financeiro/fornecedores',
+    '/api/financeiro/centros-custo',
+  ]) {
+    assert.ok(cadastros.api?.includes(api), `${api} ficou sem registro de acesso`)
+  }
+})
+
+test('PREVISAO esta em FINANCEIRO e exige as chaves proprias', () => {
+  const previsao = activeFeatures().find((f) => f.key === 'financeiro.previsao')!
+  assert.ok(previsao, 'Previsao nao esta registrada')
+  assert.equal(previsao.moduleKey, 'financeiro')
+  assert.equal(previsao.route, '/dashboard/financeiro/previsao')
+  assert.deepEqual(previsao.permissao, ['view_previsao', 'manage_previsao'])
+
+  // SEM `exact`: a Previsao tem subcaminhos, e e por prefixo que eles herdam
+  // esta autorizacao. Com `exact`, as seis sub-rotas ficariam sem registro —
+  // e caminho nao registrado e caminho liberado.
+  assert.ok(!previsao.exact, 'Previsao com `exact` deixaria as sub-rotas abertas')
+  assert.ok(previsao.api?.includes('/api/previsao'), 'a API de Previsao ficou sem registro')
 })
 
 test('Lançamentos BaaS está em FINANCEIRO, nunca em RECEITA', () => {

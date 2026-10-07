@@ -23,7 +23,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { calcular, receitaBassPago } from '../lib/lancamento-baas'
+import {
+  calcular, receitaBaas, despesaBaas, resultadoBaas,
+} from '../lib/lancamento-baas'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
 
@@ -43,10 +45,18 @@ test('CRIAR chama gerarTitulos — o rascunho sem titulos acabou', () => {
 })
 
 test('CRIAR passa os TRES valores certos para os TRES destinos', () => {
-  // AR = tarifas; lançamento = receita (tarifas + overprice); AP = residual.
+  // v28 — AR = tarifas; lancamento de receita = saldo INTEGRAL apurado;
+  // lancamento de despesa = comissao do parceiro.
   assert.ok(POST.includes('tarifas: calc.totalTarifas'), 'o AR deixou de cobrar as tarifas')
-  assert.ok(POST.includes('receita: receitaBassPago(calc)'), 'o lancamento perdeu a receita')
-  assert.ok(POST.includes('valorCliente: calc.valorCliente'), 'o AP perdeu o residual')
+  assert.ok(POST.includes('receita: receitaBaas(calc)'), 'o lancamento perdeu a receita integral')
+  assert.ok(POST.includes('despesa: despesaBaas(calc)'), 'a despesa perdeu a comissao')
+
+  // A RECEITA nao pode voltar a ser a margem: era isso que fazia o
+  // faturamento aparecer como um quarto do apurado.
+  assert.ok(
+    !POST.includes('receita: resultadoBaas(calc)'),
+    'a receita voltou a ser a margem',
+  )
 })
 
 test('se a geracao falhar, o lancamento NAO e descartado nem o erro engolido', () => {
@@ -111,12 +121,15 @@ test('AR = TARIFAS; AP = RESIDUAL; e um nao e o outro', () => {
   assert.equal(ap, 67_451.25)
   assert.notEqual(ar, ap, 'AR e AP viraram o mesmo numero')
 
-  // A receita é outra coisa ainda: tarifas + overprice.
-  assert.equal(receitaBassPago(c), 32_548.75)
+  // A RECEITA e o saldo integral apurado; o RESULTADO e tarifas + overprice.
+  assert.equal(receitaBaas(c), 100_000)
+  assert.equal(despesaBaas(c), ap)
+  assert.equal(resultadoBaas(c), 32_548.75)
 
   // E a soma dos dois títulos não é receita de nada — nem do período, nem do
   // parceiro. É o erro que "não misturar os dois valores" previne.
-  assert.notEqual(ar + ap, receitaBassPago(c))
+  assert.notEqual(ar + ap, receitaBaas(c))
+  assert.notEqual(ar + ap, resultadoBaas(c))
 })
 
 test('a cascata FECHA: tarifas + overprice + residual = saldo', () => {
@@ -150,7 +163,14 @@ test('a sincronizacao NAO mexe em nada liquidado', () => {
 test('a sincronizacao usa os valores GRAVADOS — nao a tarifa de hoje', () => {
   const bloco = TITULOS.slice(TITULOS.indexOf('export async function sincronizarTitulosFaltantes'))
   assert.ok(bloco.includes('tarifas: lb.totalTarifas'), 'o reparo recalcula com preco atual')
-  assert.ok(bloco.includes('valorCliente: lb.valorCliente'))
+  assert.ok(bloco.includes('despesa: lb.valorCliente'), 'o reparo perdeu a comissao gravada')
+  // A RECEITA tambem vem do snapshot, e e o `saldoInicial` gravado — nao
+  // `totalTarifas + overpriceValor`, que e a margem.
+  assert.ok(bloco.includes('receita: lb.saldoInicial'), 'o reparo nao usa o saldo gravado')
+  assert.ok(
+    !bloco.includes('lb.totalTarifas + lb.overpriceValor'),
+    'o reparo voltou a gravar a margem como receita',
+  )
   assert.ok(
     !bloco.includes('calcular('),
     'o reparo voltou a recalcular do cadastro, reescrevendo o historico',

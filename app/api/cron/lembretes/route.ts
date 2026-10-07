@@ -7,6 +7,7 @@ import {
   lembretesDeTarefas, lembretesDeFollowUp, lembretesDeCompliance,
   lembretesDeTitulos, lembreteDeLancamentoAusente, diaUtc, diaIso,
 } from '@/lib/lembretes'
+import { alertasDeSla } from '@/lib/sla'
 
 /**
  * MOTOR DE LEMBRETES. Uma execução por dia, pelo cron da Vercel.
@@ -173,6 +174,89 @@ export async function GET(request: NextRequest) {
       financeiro, hoje,
     ),
   )
+
+  /* ── SLA DO PIPELINE — card parado além do prazo da etapa ──────────── */
+  /**
+   * ── POR QUE O ALERTA DE SLA VIVE NO CRON, E NÃO NO MOVIMENTO DO CARD ──
+   *
+   * Porque o evento que importa é a PASSAGEM DO TEMPO, não uma ação. Um card
+   * que vence o SLA vence porque ninguém o tocou — não há requisição nenhuma
+   * no instante do vencimento para pendurar o aviso.
+   *
+   * ── SÓ CARDS QUE PODEM VENCER ────────────────────────────────────────
+   *
+   * EM_ANDAMENTO, não excluído, com etapa, com responsável e numa etapa que
+   * tenha SLA. Cada filtro tira um falso positivo:
+   *
+   *   resultado != EM_ANDAMENTO  um card ganho ou perdido não tem prazo a
+   *                              cumprir — o processo acabou;
+   *   deletedAt != null          o card saiu do quadro;
+   *   etapa sem SLA              não há prazo contra o que medir;
+   *   sem responsável            não há a quem avisar, e mandar para "todo
+   *                              mundo" transformaria o alerta em ruído para
+   *                              quem não pode agir.
+   *
+   * O card sem dono continua visível no quadro com o indicador — é lá que essa
+   * ausência aparece.
+   *
+   * IDEMPOTENTE pela `chave`: `sla:<card>:<etapa>:<marco>:<destinatário>`. Um
+   * card vencido continua vencido todos os dias, e sem a chave o responsável
+   * receberia o mesmo aviso toda manhã até mover o card — um aviso que chega
+   * todo dia deixa de ser lido. Então sai UMA VEZ por etapa e por marco, e a
+   * etapa entra na chave porque o SLA reinicia a cada etapa (um card que vence
+   * em Proposta e vence de novo em Negociação recebe os dois avisos).
+   */
+  const cardsAbertos = await prisma.deal.findMany({
+    where: {
+      resultado: 'EM_ANDAMENTO',
+      deletedAt: null,
+      etapaId: { not: null },
+      etapa: { slaDias: { not: null }, ativo: true },
+    },
+    select: {
+      id: true, title: true, etapaEntradaEm: true, createdAt: true,
+      owner: { select: { id: true, name: true } },
+      lead: { select: { company: true, name: true } },
+      cliente: { select: { nome: true } },
+      etapa: { select: { id: true, nome: true, slaDias: true } },
+      funil: { select: { nome: true } },
+    },
+  })
+
+  const alertas = alertasDeSla(
+    cardsAbertos.map((c) => ({
+      id: c.id,
+      titulo: c.title,
+      // QUEM o alerta identifica, na ordem em que a pessoa reconhece: o
+      // cliente da carteira, a empresa do lead, o nome do lead, e o título do
+      // card como último recurso. "SLA vencido" sem dizer de quem obriga a
+      // abrir o card para saber de qual card se trata.
+      empresa: c.cliente?.nome ?? c.lead?.company ?? c.lead?.name ?? c.title,
+      funil: c.funil?.nome ?? 'sem funil',
+      etapa: c.etapa?.nome ?? 'sem etapa',
+      // O ID, e não o nome, vai para a chave de idempotência: renomear
+      // "Proposta" não deve reabrir avisos já enviados.
+      etapaId: c.etapa?.id ?? '',
+      responsavelId: c.owner.id,
+      responsavelNome: c.owner.name,
+      // Sem marco zero, cai no `createdAt` — é a única informação verdadeira
+      // sobre um card anterior ao registro de movimentações.
+      entradaEm: c.etapaEntradaEm ?? c.createdAt,
+      slaDias: c.etapa?.slaDias ?? null,
+    })),
+    hoje,
+  )
+
+  resultado.slaPipeline = await notificar(alertas.map((a) => ({
+    destinatarioId: a.destinatarioId,
+    titulo: a.titulo,
+    mensagem: a.mensagem,
+    origem: 'PIPELINE' as const,
+    entidade: 'Deal',
+    entidadeId: a.cardId,
+    href: '/dashboard/pipeline',
+    chave: a.chave,
+  })))
 
   return NextResponse.json({
     executadoEm: hoje.toISOString(),

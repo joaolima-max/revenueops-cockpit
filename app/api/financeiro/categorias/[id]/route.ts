@@ -71,10 +71,34 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const atual = await prisma.categoriaFinanceira.findUnique({ where: { id } })
   if (!atual) return NextResponse.json({ error: 'Categoria não encontrada.' }, { status: 404 })
 
-  const emUso = await prisma.lancamentoFinanceiro.count({ where: { categoriaId: id } })
-  if (emUso > 0) {
+  /**
+   * QUATRO TABELAS referenciam a categoria, não uma.
+   *
+   * Lançamentos sempre referenciaram. Orçamento, despesa futura e receita
+   * prevista entraram na v28, e as três usam `onDelete: Restrict` — sem
+   * conferi-las aqui, excluir uma categoria orçada estouraria um erro de
+   * constraint em vez da mensagem que diz o que fazer.
+   */
+  const [lancamentos, orcamentos, despesas, receitas] = await Promise.all([
+    prisma.lancamentoFinanceiro.count({ where: { categoriaId: id } }),
+    prisma.orcamento.count({ where: { categoriaId: id } }),
+    prisma.despesaFutura.count({ where: { categoriaId: id } }),
+    prisma.receitaPrevista.count({ where: { categoriaId: id } }),
+  ])
+
+  const vinculos = [
+    { n: lancamentos, nome: 'lançamento' },
+    { n: orcamentos, nome: 'orçamento' },
+    { n: despesas, nome: 'despesa futura' },
+    { n: receitas, nome: 'receita prevista' },
+  ].filter((v) => v.n > 0)
+
+  if (vinculos.length > 0) {
+    const lista = vinculos
+      .map((v) => `${v.n} ${v.nome}${v.n === 1 ? '' : 's'}`)
+      .join(', ')
     return NextResponse.json({
-      error: `A categoria ${atual.nome} tem ${emUso} lançamento${emUso === 1 ? '' : 's'}. Inative-a em vez de excluir.`,
+      error: `A categoria ${atual.nome} tem ${lista}. Inative-a em vez de excluir.`,
     }, { status: 409 })
   }
 

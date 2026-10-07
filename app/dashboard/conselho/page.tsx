@@ -6,6 +6,7 @@ import { podeVerConselho } from '@/lib/autorizacao'
 import { formatMesRef } from '@/lib/utils'
 import {
   kpisDoPeriodo, linhasReceita, indicadoresEstrutura, composicaoReceitaConselho,
+  comparacaoMensal, rotuloComparacao,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import {
@@ -51,8 +52,7 @@ export default async function ConselhoPage() {
 
   // MESMA função que o Cockpit e o Financeiro usam para estes três números.
   // Nenhuma consulta equivalente é repetida aqui.
-  const [kpis, receita, composicao, estrutura, serie] = await Promise.all([
-    kpisDoPeriodo(periodo),
+  const [receita, composicao, estrutura, serie] = await Promise.all([
     linhasReceita(periodo),
     // Os SEIS tipos oficiais do Conselho. Transacional é a tarifária — mesma
     // receita, o nome que o Conselho usa; não são duas linhas.
@@ -67,10 +67,23 @@ export default async function ConselhoPage() {
   const histFat = comDados.reduce((a, k) => a + (k.receitaTarifaria ?? 0) + (k.float ?? 0), 0)
   const temHistorico = comDados.length > 0
 
-  /** Mês anterior COM DADO. Sem ele, nenhuma variação é exibida. */
-  const anterior = [...serie].slice(0, -1).reverse().find((k) => k.temDados) ?? null
+  /**
+   * COMPARAÇÃO EQUIVALENTE — a MESMA função que o Cockpit usa.
+   *
+   * O mês corrente está sempre pela metade, e medi-lo contra o mês anterior
+   * INTEIRO fazia toda variação ficar negativa no começo de cada mês. Agora os
+   * dois lados usam a mesma janela de dias de calendário.
+   *
+   * `comparacaoMensal` é o único lugar que decide isso. Duas telas calculando
+   * a própria base comparável é como elas passam a discordar — e aqui o custo
+   * seria alto: o Conselho é onde os sócios leem o desempenho da empresa.
+   */
+  const comparacao = await comparacaoMensal(periodo, serie)
+  const kpis = comparacao.atual
+  const anterior = comparacao.anterior
   const varDe = (pick: (k: KpisPeriodo) => number | null) =>
     anterior ? variacao(pick(kpis), pick(anterior)) : null
+  const notaComparacao = rotuloComparacao(comparacao)
 
   /* NÍVEL 2 — os números estratégicos. */
   const estrategicos = [
@@ -153,13 +166,30 @@ export default async function ConselhoPage() {
 
       {/* ── NÍVEL 2 · NÚMEROS ESTRATÉGICOS ───────────────────────────────── */}
       <section className="space-y-4">
-        <PanelHeader title="Como estamos" sub={`Desempenho de ${formatMesRef(periodo)} contra o último mês com lançamento.`} />
+        {/* O SUBTÍTULO DECLARA A JANELA.
+            "contra o último mês com lançamento" era verdade mas incompleto: a
+            comparação é contra a MESMA janela de dias desse mês, não contra
+            ele inteiro. Dizer qual é a janela é o que torna a variação
+            verificável — e a ausência dessa frase foi o que deixou a
+            comparação desigual passar tanto tempo sem ser notada. */}
+        <PanelHeader
+          title="Como estamos"
+          sub={
+            comparacao.ateDia !== null
+              ? `Desempenho de ${formatMesRef(periodo)} até o dia `
+                + `${String(comparacao.ateDia).padStart(2, '0')}, contra a mesma janela `
+                + 'do último mês com lançamento.'
+              : `Desempenho de ${formatMesRef(periodo)} contra o último mês com lançamento.`
+          }
+        />
         <HairlineGrid cols={3}>
           {estrategicos.map((m) => (
             <HairlineCell key={m.label} className="gap-3">
               <p className="t-label text-subtle">{m.label}</p>
               <Figure figura={m.fig} />
-              <div className="min-h-[1.125rem]">{m.delta && <Delta v={m.delta} sufixo="vs. mês anterior" />}</div>
+              <div className="min-h-[1.125rem]">
+                {m.delta && <Delta v={m.delta} sufixo={notaComparacao} />}
+              </div>
             </HairlineCell>
           ))}
         </HairlineGrid>

@@ -1,23 +1,32 @@
 /**
- * APURAÇÃO DO RESULTADO — a tarifa BaaS conta uma vez, o repasse não conta.
+ * APURAÇÃO DO RESULTADO — a apuração BaaS conta uma vez, pelos dois lados.
  *
- * ── AS DUAS REGRAS ───────────────────────────────────────────────────────
+ * ── AS DUAS REGRAS (v28) ─────────────────────────────────────────────────
  *
- * 1. RECEITA = receitas lançadas, tarifas BaaS incluídas, contadas UMA VEZ.
+ * 1. RECEITA = receitas lançadas, apuração BaaS INTEGRAL incluída, contada
+ *    UMA VEZ.
  *
  *    O Lançamento BaaS gera três registros, e só um é receita: o
- *    `LancamentoFinanceiro` de tipo RECEITA. O título a receber é o MESMO
- *    dinheiro visto como cobrança, em outra tabela. Como a apuração soma
- *    `LancamentoFinanceiro` e nunca olha `ContaReceber`, há uma origem única —
- *    a dupla contagem é impossível por construção, não evitada por uma
- *    verificação que alguém poderia remover.
+ *    `LancamentoFinanceiro` de tipo RECEITA, que vale o saldo integral
+ *    apurado. O título a receber é outra coisa — o que se COBRA do parceiro —,
+ *    numa tabela diferente. Como a apuração soma `LancamentoFinanceiro` e
+ *    nunca olha `ContaReceber`, há uma origem única: a dupla contagem é
+ *    impossível por construção, não evitada por uma verificação que alguém
+ *    poderia remover.
  *
- * 2. DESPESA não inclui o repasse ao parceiro.
+ * 2. DESPESA INCLUI a comissão devida ao parceiro.
  *
- *    O residual devido ao BaaS/White Label existe como despesa porque é assim
- *    que Contas a Pagar o controla — e lá tem de continuar aparecendo. Mas o
- *    saldo da conta do parceiro nunca foi receita nossa, e devolvê-lo não é
- *    custo: somá-lo subtrairia do resultado um dinheiro que nunca entrou.
+ *    O saldo apurado estava na conta da Bass Pago e entra integral como
+ *    receita; a comissão sai do caixa dela e é despesa como qualquer outra.
+ *    Receita e despesa mudaram JUNTAS, e o resultado é o mesmo de antes — o
+ *    que mudou é que ele deixou de ser uma receita líquida e passou a ser a
+ *    diferença entre dois números brutos.
+ *
+ *    Até a v27 era o contrário: a receita era a margem e a comissão era
+ *    excluída da despesa por um filtro (`SEM_REPASSE_BAAS`). O filtro saiu, e
+ *    estes testes são o que impede que ele volte sozinho — ter os dois ao
+ *    mesmo tempo (receita bruta E comissão excluída) mostraria um lucro
+ *    quádruplo do real.
  *
  *   npm test
  */
@@ -26,7 +35,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { calcular, receitaBassPago } from '../lib/lancamento-baas'
+import {
+  calcular, receitaBaas, despesaBaas, resultadoBaas,
+} from '../lib/lancamento-baas'
 
 const ler = (p: string) => readFileSync(p, 'utf8')
 
@@ -92,13 +103,12 @@ const semComentarios = (txt: string) =>
  * O FILTRO — pelo VÍNCULO, nunca pelo nome da categoria
  * ========================================================================= */
 
-test('o repasse e identificado pela FK, nao pelo nome da categoria', () => {
-  // Categoria se renomeia na tela de Categorias — e foi renomeada nesta
-  // rodada ("Repasse a Cliente BaaS" → "BaaS"). Um filtro por nome quebraria
-  // em silencio e voltaria a subtrair o repasse do Resultado.
+test('a comissao e identificada pela FK, nao pelo nome da categoria', () => {
+  // Categoria se renomeia na tela de Categorias — e ja foi renomeada ("Repasse
+  // a Cliente BaaS" virou "BaaS"). Um filtro por nome quebraria em silencio.
   assert.ok(
-    FIN.includes('const SEM_REPASSE_BAAS = { baasContaPagar: null }'),
-    'o filtro do repasse deixou de usar o vinculo',
+    FIN.includes("const SO_COMISSAO_BAAS = { baasContaPagar: { isNot: null } }"),
+    'o marcador da comissao deixou de usar o vinculo',
   )
   const apuracao = corpoDaFuncao(FIN, 'resultadoDoPeriodo')
   for (const nome of ['Repasse a Cliente BaaS', "nome: 'BaaS'", 'categoria.nome']) {
@@ -106,36 +116,68 @@ test('o repasse e identificado pela FK, nao pelo nome da categoria', () => {
   }
 })
 
-test('o Resultado EXCLUI o repasse da despesa', () => {
-  const apuracao = corpoDaFuncao(FIN, 'resultadoDoPeriodo')
-  assert.ok(apuracao.includes('...SEM_REPASSE_BAAS'), 'o repasse voltou para a despesa')
-})
-
-test('a SERIE de 12 meses usa a MESMA regra do KPI', () => {
-  // Sem isto, o grafico contaria uma despesa que o indicador logo acima nao
-  // conta — e os dois discordariam na mesma tela.
-  const evolucao = corpoDaFuncao(FIN, 'evolucaoFinanceira')
-  assert.ok(evolucao.includes('...SEM_REPASSE_BAAS'), 'a serie divergiu do KPI')
-})
-
-test('o GASTO POR CATEGORIA fecha com o total de Despesas', () => {
-  // E a decomposicao da despesa: incluir o repasse faria as fatias somarem
-  // mais que o total mostrado dois tiles ao lado.
-  const gasto = corpoDaFuncao(FIN, 'gastoPorCategoria')
-  assert.ok(gasto.includes('...SEM_REPASSE_BAAS'), 'a decomposicao nao fecha com o KPI')
-})
-
-test('CONTAS A PAGAR continua mostrando o repasse — e la que ele e pago', () => {
-  const pagar = corpoDaFuncao(FIN, 'contasAPagar')
+test('o FILTRO QUE EXCLUIA a comissao da despesa NAO VOLTOU', () => {
+  // ESTE E O TESTE CENTRAL DA v28.
+  //
+  // `SEM_REPASSE_BAAS = { baasContaPagar: null }` era aplicado ao Resultado, ao
+  // gasto por categoria e a serie de 12 meses. Ele fazia sentido enquanto a
+  // receita BaaS era a MARGEM (25 mil): excluir a comissao mantinha a conta
+  // coerente.
+  //
+  // Com a receita BRUTA (100 mil), o mesmo filtro passa a ser um defeito
+  // grave: 100 mil de receita sem os 75 mil de comissao mostram um lucro
+  // quadruplo do real. Os dois lados tem de mudar juntos, sempre.
+  // Sobre o CODIGO, nao sobre os comentarios: a documentacao de
+  // `lib/financeiro.ts` CITA `SEM_REPASSE_BAAS` para explicar o que saiu e por
+  // que, e varrer o arquivo inteiro acusaria a propria explicacao como se
+  // fosse o defeito voltando.
   assert.ok(
-    !pagar.includes('SEM_REPASSE_BAAS'),
-    'o repasse sumiu de Contas a Pagar — o parceiro nao teria como ser pago',
+    !semComentarios(FIN).includes('SEM_REPASSE_BAAS'),
+    'o filtro que excluia a comissao da despesa voltou — com a receita bruta, '
+    + 'ele quadruplica o resultado',
   )
 })
 
-/* ========================================================================= *
- * A RECEITA BAAS CONTA UMA VEZ
- * ========================================================================= */
+test('o Resultado INCLUI a comissao na despesa', () => {
+  const apuracao = corpoDaFuncao(FIN, 'resultadoDoPeriodo')
+  // A agregacao por tipo roda sobre a janela CRUA, sem recorte de comissao.
+  assert.ok(
+    apuracao.includes('where: janela,'),
+    'a despesa do periodo voltou a ser filtrada',
+  )
+  // E a comissao e devolvida para a tela poder ABRIR o total — nao para
+  // esconde-la dele.
+  assert.ok(apuracao.includes('comissaoBaas:'), 'a comissao deixou de ser devolvida')
+})
+
+test('a SERIE de 12 meses usa a MESMA regra do KPI', () => {
+  // Sem isto, o grafico mostraria uma despesa que o indicador logo acima nao
+  // mostra — e os dois discordariam na mesma tela.
+  const evolucao = corpoDaFuncao(FIN, 'evolucaoFinanceira')
+  assert.ok(!evolucao.includes('SEM_REPASSE_BAAS'), 'a serie divergiu do KPI')
+  assert.ok(
+    !evolucao.includes('baasContaPagar'),
+    'a serie voltou a recortar a comissao',
+  )
+})
+
+test('o GASTO POR CATEGORIA fecha com o total de Despesas', () => {
+  // E a decomposicao da despesa: EXCLUIR a comissao faria as fatias somarem
+  // MENOS que o total mostrado dois tiles ao lado. Um grafico que nao fecha
+  // com o seu proprio KPI e pior que um grafico ausente — e a direcao do erro
+  // inverteu na v28, porque o total passou a incluir a comissao.
+  const gasto = corpoDaFuncao(FIN, 'gastoPorCategoria')
+  assert.ok(!gasto.includes('SEM_REPASSE_BAAS'), 'a decomposicao nao fecha com o KPI')
+  assert.ok(!gasto.includes('baasContaPagar'), 'a decomposicao voltou a recortar a comissao')
+})
+
+test('CONTAS A PAGAR continua mostrando a comissao — e la que ela e paga', () => {
+  const pagar = corpoDaFuncao(FIN, 'contasAPagar')
+  assert.ok(
+    !pagar.includes('SEM_REPASSE_BAAS') && !pagar.includes('baasContaPagar'),
+    'a comissao sumiu de Contas a Pagar — o parceiro nao teria como ser pago',
+  )
+})
 
 test('a apuracao NUNCA soma ContaReceber — e a origem unica da receita', () => {
   // `ContaReceber` e o mesmo dinheiro visto como cobranca. Soma-lo seria
@@ -147,15 +189,48 @@ test('a apuracao NUNCA soma ContaReceber — e a origem unica da receita', () =>
 
 test('a receita do lancamento BaaS e UM valor, nao dois', () => {
   const c = calcular(100_000, [{ nome: 'PIX', preco: 0.10, volume: 100_650 }], 25)
-  const receita = receitaBassPago(c)
 
-  // O lançamento financeiro vale a receita inteira; o título cobra as tarifas.
-  // Somar os dois seria contar o mesmo período duas vezes.
-  assert.equal(receita, 32_548.75)
-  assert.notEqual(receita, receita + c.totalTarifas)
+  // O lançamento financeiro vale o saldo INTEGRAL apurado; o título a receber
+  // cobra as tarifas. Somar os dois seria contar o mesmo período duas vezes.
+  assert.equal(receitaBaas(c), 100_000)
+  assert.notEqual(receitaBaas(c), receitaBaas(c) + c.totalTarifas)
 
-  // E o residual não é receita de ninguém.
-  assert.notEqual(receita, c.valorCliente)
+  // A comissão do parceiro não é receita de ninguém: é despesa.
+  assert.equal(despesaBaas(c), c.valorCliente)
+  assert.notEqual(receitaBaas(c), despesaBaas(c))
+
+  // E o resultado é a diferença — o mesmo número da regra anterior.
+  assert.equal(resultadoBaas(c), 32_548.75)
+})
+
+test('RECEITA BRUTA e COMISSAO so fecham o resultado JUNTAS', () => {
+  // O exemplo exato da especificacao.
+  //
+  //   saldo apurado     100.000
+  //   tarifas            10.000
+  //   overprice          15.000   (16,666…% de 90.000)
+  //   comissao BaaS      75.000
+  //
+  //   Receita   100.000
+  //   Despesa    75.000
+  //   Resultado  25.000
+  const c = calcular(100_000, [{ nome: 'Tarifas', preco: 10_000, volume: 1 }], 100 / 6)
+
+  assert.equal(c.totalTarifas, 10_000)
+  assert.equal(c.saldoRemanescente, 90_000)
+  assert.equal(c.overpriceValor, 15_000)
+  assert.equal(c.valorCliente, 75_000)
+
+  assert.equal(receitaBaas(c), 100_000)
+  assert.equal(despesaBaas(c), 75_000)
+  assert.equal(resultadoBaas(c), 25_000)
+
+  // O PERIGO: receita bruta com a comissao excluida da despesa. Era o estado
+  // intermediario em que a v28 cairia se so metade da mudanca tivesse sido
+  // feita, e o resultado sairia quadruplo.
+  const resultadoErrado = receitaBaas(c) - 0
+  assert.equal(resultadoErrado, 100_000)
+  assert.notEqual(resultadoErrado, resultadoBaas(c))
 })
 
 test('RESULTADO = RECEITAS − DESPESAS, e nada mais', () => {
@@ -167,24 +242,39 @@ test('RESULTADO = RECEITAS − DESPESAS, e nada mais', () => {
  * A REGRA FICA ESCRITA NA TELA
  * ========================================================================= */
 
-test('o Resultado traz o subtitulo EXATO pedido', () => {
+test('a tela declara a REGRA NOVA, e nao a antiga', () => {
+  // A frase antiga afirmava o contrario do que o sistema passou a fazer.
+  // Deixa-la na tela seria pior que nao ter frase nenhuma.
   assert.ok(
-    PAGINA.includes('Pagamentos para os BaaS não são contabilizados como despesas.'),
-    'o subtitulo do Resultado saiu da tela',
+    !PAGINA.includes('Pagamentos para os BaaS não são contabilizados como despesas.'),
+    'a tela ainda afirma a regra revogada',
+  )
+  assert.ok(
+    PAGINA.includes('comissão devida ao')
+    && PAGINA.includes('contabilizada como despesa'),
+    'a tela nao declara que a comissao e despesa',
   )
 })
 
 test('a tela declara o que entra em cada tile', () => {
-  assert.ok(PAGINA.includes('tarifas BaaS incluídas'), 'Receitas nao diz que inclui as tarifas')
-  assert.ok(PAGINA.includes('sem repasse a BaaS'), 'Despesas nao diz o que ficou de fora')
+  assert.ok(
+    PAGINA.includes('apuração BaaS integral incluída'),
+    'Receitas nao diz que inclui a apuracao integral',
+  )
+  assert.ok(
+    PAGINA.includes('comissão BaaS incluída'),
+    'Despesas nao diz que inclui a comissao',
+  )
+  assert.ok(!PAGINA.includes('sem repasse a BaaS'), 'o rotulo da regra antiga ficou')
 })
 
-test('o valor EXCLUIDO e informado, nao apenas omitido', () => {
-  // Quem somasse Contas a Pagar a mao encontraria uma diferenca e concluiria
-  // que o painel esta errado.
-  assert.ok(FIN.includes('repasseBaas'), 'o valor excluido deixou de ser devolvido')
-  assert.ok(PAGINA.includes('resultado.repasseBaas'), 'a tela nao declara o valor excluido')
-  assert.ok(PAGINA.includes('continua em Contas a Pagar'), 'a tela nao diz onde o valor ficou')
+test('a comissao INCLUIDA e aberta, nao apenas somada em silencio', () => {
+  // Num mes com apuracao de parceiro a comissao e quase toda a despesa. Quem
+  // ve so o total nao sabe se e custo operacional ou repasse — e a resposta
+  // muda completamente a leitura do mes.
+  assert.ok(FIN.includes('comissaoBaas'), 'a comissao deixou de ser devolvida')
+  assert.ok(PAGINA.includes('resultado.comissaoBaas'), 'a tela nao abre a comissao')
+  assert.ok(!PAGINA.includes('repasseBaas'), 'o campo antigo sobreviveu na tela')
 })
 
 /* ========================================================================= *

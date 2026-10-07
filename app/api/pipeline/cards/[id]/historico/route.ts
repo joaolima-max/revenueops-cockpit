@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { acessoAoCard } from '@/lib/pipeline-db'
+import { passagensPorEtapa } from '@/lib/sla'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -27,5 +28,51 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     orderBy: { createdAt: 'desc' },
   })
 
-  return NextResponse.json({ historico })
+  /**
+   * ── AS PASSAGENS POR ETAPA — o histórico de SLA ────────────────────────
+   *
+   * Quanto tempo o card passou em CADA etapa, e se cumpriu o prazo dela.
+   *
+   * RECONSTRUÍDO do histórico, não gravado: a duração é a diferença entre duas
+   * movimentações que já estão na tabela. Uma coluna `duracao` seria um
+   * terceiro registro do mesmo fato, e divergiria na primeira correção de
+   * histórico — e correções acontecem (um card movido por engano e devolvido).
+   *
+   * Só os movimentos que MUDAM DE ETAPA entram. Mudança de resultado não move o
+   * card de lugar: incluí-la criaria uma passagem de duração zero na mesma
+   * etapa, e o histórico mostraria o card "entrando em Proposta" duas vezes.
+   *
+   * ORDEM CRESCENTE aqui, ao contrário da lista acima: a duração de uma
+   * passagem é a distância até a PRÓXIMA, e reconstruí-la exige o tempo
+   * correndo para frente.
+   */
+  const movimentos = historico
+    .filter((m) => m.tipo === 'CRIACAO' || m.tipo === 'MOVIMENTO_ETAPA'
+      || m.tipo === 'TRANSFERENCIA_FUNIL')
+    .slice()
+    .reverse()
+
+  // O SLA é o CONFIGURADO HOJE. Isso é deliberado: mudar o prazo de uma etapa
+  // reavalia o histórico dela. A alternativa — fotografar o SLA em cada
+  // movimentação — faria a tela de configuração parecer não ter efeito sobre o
+  // passado. Ver `passagensPorEtapa`.
+  const etapaIds = [...new Set(movimentos.map((m) => m.etapaDestinoId))]
+  const etapas = etapaIds.length > 0
+    ? await prisma.pipelineEtapa.findMany({
+        where: { id: { in: etapaIds } },
+        select: { id: true, slaDias: true },
+      })
+    : []
+
+  const passagens = passagensPorEtapa(
+    movimentos.map((m) => ({
+      etapaDestinoId: m.etapaDestinoId,
+      etapaDestinoNome: m.etapaDestino.nome,
+      funilDestinoNome: m.funilDestino.nome,
+      createdAt: m.createdAt,
+    })),
+    new Map(etapas.map((e) => [e.id, e.slaDias])),
+  )
+
+  return NextResponse.json({ historico, passagens })
 }

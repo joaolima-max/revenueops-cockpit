@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button'
 import Badge, { type BadgeTone } from '@/components/ui/Badge'
 import { RESULTADO_LABEL, RESULTADOS } from '@/lib/pipeline'
 import { SEGMENTO_CRM_LABELS, SEGMENTO_LABELS, CANAL_LABELS } from '@/lib/utils'
+import { diasTexto } from '@/lib/sla'
 import type { ResultadoCard } from './tipos'
 
 /** Tom do badge de resultado. Cor comunica desfecho, não categoria. */
@@ -62,10 +63,37 @@ interface AcessoCard {
   criar: boolean; transferir: boolean; administrar: boolean
 }
 
+/**
+ * Uma PASSAGEM do card por uma etapa: quando entrou, quando saiu, quanto tempo
+ * ficou e se cumpriu o SLA dela.
+ *
+ * RECONSTRUÍDA no servidor a partir do histórico de movimentações — não é um
+ * registro próprio. A duração é a diferença entre duas movimentações que já
+ * estão gravadas, e uma coluna `duracao` seria um terceiro registro do mesmo
+ * fato, livre para divergir na primeira correção de histórico.
+ */
+interface Passagem {
+  etapaId: string
+  etapaNome: string
+  funilNome: string
+  entrouEm: string
+  /** `null` na etapa ATUAL: ela ainda não terminou. */
+  saiuEm: string | null
+  dias: number
+  slaDias: number | null
+  /**
+   * `null` quando a etapa não tem SLA — e não `false`: "não cumpriu" e "não
+   * havia prazo" são coisas diferentes, e colapsá-las faria toda etapa sem
+   * configuração aparecer como descumprida.
+   */
+  dentroDoSla: boolean | null
+}
+
 interface Resposta {
   card?: Detalhe
   historico?: Movimentacao[]
   comentarios?: Comentario[]
+  passagens?: Passagem[]
   acesso?: AcessoCard
   erro?: string
 }
@@ -109,6 +137,7 @@ export default function CardDetalheModal({
 }) {
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null)
   const [historico, setHistorico] = useState<Movimentacao[]>([])
+  const [passagens, setPassagens] = useState<Passagem[]>([])
   const [comentarios, setComentarios] = useState<Comentario[]>([])
   const [acesso, setAcesso] = useState<AcessoCard | null>(null)
   const [excluindo, setExcluindo] = useState(false)
@@ -137,6 +166,7 @@ export default function CardDetalheModal({
       setErro('')
       setDetalhe(d.card ?? null)
       setHistorico(d.historico ?? [])
+      setPassagens(d.passagens ?? [])
       setComentarios(d.comentarios ?? [])
       setAcesso(d.acesso ?? null)
     }
@@ -338,6 +368,60 @@ export default function CardDetalheModal({
                   </p>
                 )}
               </section>
+
+              {/* ── TEMPO POR ETAPA — o histórico de SLA ─────────────────
+                  Vem ANTES do histórico de movimentações de propósito: a
+                  pergunta "onde este card ficou parado" se responde com as
+                  durações, e o histórico cronológico é o detalhamento dela.
+
+                  Só aparece quando há mais de uma passagem OU quando a única
+                  tem SLA: num card recém-criado numa etapa sem prazo, a seção
+                  diria "0 dias em Prospecção" e nada mais. */}
+              {passagens.length > 0
+                && (passagens.length > 1 || passagens.some((p) => p.slaDias !== null)) && (
+                <section className="border-t border-line pt-5">
+                  <p className="t-label text-subtle mb-3">Tempo por etapa</p>
+                  <ul className="space-y-2">
+                    {passagens.map((p, i) => {
+                      const atual = p.saiuEm === null
+                      return (
+                        <li key={`${p.etapaId}-${i}`}
+                          className="flex items-center justify-between gap-3 flex-wrap">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="t-sm text-fg truncate" title={p.etapaNome}>
+                              {p.etapaNome}
+                            </span>
+                            {atual && <Badge tone="accent">atual</Badge>}
+                          </span>
+                          <span className="flex items-center gap-2 flex-none">
+                            <span className="t-sm text-muted tabular-nums">
+                              {diasTexto(p.dias)}
+                            </span>
+                            {p.slaDias === null ? (
+                              <span className="t-label text-subtle">sem SLA</span>
+                            ) : (
+                              <Badge tone={p.dentroDoSla ? 'pos' : 'neg'}>
+                                {p.dentroDoSla ? 'no prazo' : 'fora do prazo'}
+                                {' · '}
+                                {diasTexto(p.slaDias)}
+                              </Badge>
+                            )}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {/* A REGRA FICA ESCRITA: o SLA mostrado é o configurado HOJE,
+                      e mudá-lo reavalia o histórico. A alternativa — fotografar
+                      o prazo em cada movimentação — faria a tela de
+                      configuração parecer não ter efeito sobre o passado. */}
+                  <p className="t-label text-subtle/70 mt-3">
+                    O relógio reinicia a cada etapa. O prazo exibido é o configurado
+                    hoje — alterá-lo em Pipeline › Configurações › SLA reavalia estas
+                    passagens.
+                  </p>
+                </section>
+              )}
 
               {/* ── Histórico ───────────────────────────────────────────── */}
               <section className="border-t border-line pt-5">

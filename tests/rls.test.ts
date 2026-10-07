@@ -75,6 +75,21 @@ test('toda tabela do schema está coberta por RLS', () => {
   for (const m of posteriores) {
     assert.ok(cobertas.has(m), `${m} não está na v18 — tabela nova nasce sem RLS`)
   }
+
+  /**
+   * AS TABELAS DA v28 LIGAM RLS NA PROPRIA v28.
+   *
+   * Elas nao estao na v18 — nem poderiam, ela e anterior. O que este bloco
+   * garante e que nenhuma delas tenha nascido sem RLS: orcamento e previsao de
+   * faturamento sao exatamente o dado que nao pode vazar pelo PostgREST.
+   */
+  const v28 = readFileSync(join(RAIZ, 'supabase-migration-v28.sql'), 'utf8')
+  for (const t of ['CentroCusto', 'Orcamento', 'DespesaFutura', 'ReceitaPrevista']) {
+    assert.ok(
+      new RegExp(`ALTER TABLE "${t}"\\s+ENABLE ROW LEVEL SECURITY`).test(v28),
+      `${t} nasceu sem RLS — tabela nova e legivel pela chave anon`,
+    )
+  }
   assert.ok(modelosDoSchema().length > 0, 'o schema deveria ter modelos')
 })
 

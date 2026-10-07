@@ -35,6 +35,22 @@ export const ALL_PERMISSIONS = [
   { key: 'view_pedidos',     label: 'Ver Pedidos',              group: 'Financeiro' },
   { key: 'manage_pedidos',   label: 'Gerenciar Pedidos',        group: 'Financeiro' },
   { key: 'view_metricas',    label: 'Ver Métricas',             group: 'Financeiro' },
+  /**
+   * PREVISÃO — chaves COMUNS, não restritas.
+   *
+   * Seguem o atalho de ADMIN e o default por perfil, como `view_financeiro`:
+   * previsão é trabalho do Financeiro, não um dado de sócio. Entrar em
+   * `PERMISSOES_RESTRITAS` obrigaria a conceder a chave uma a uma a quem já
+   * responde pelo módulo, sem ganho de segurança.
+   *
+   * SÃO DUAS, e a separação é a mesma de Usuários: CONSULTAR o orçamento e o
+   * forecast é leitura executiva, que muita gente precisa; LANÇAR orçamento,
+   * despesa futura e receita prevista é decisão de quem responde pelo
+   * planejamento. Com uma chave só, quem precisasse ver o forecast ganharia o
+   * poder de reescrever o orçamento.
+   */
+  { key: 'view_previsao',    label: 'Ver Previsão',             group: 'Financeiro' },
+  { key: 'manage_previsao',  label: 'Gerenciar Previsão',       group: 'Financeiro' },
   // Operacional
   { key: 'view_incidentes',  label: 'Ver Incidentes',           group: 'Operacional' },
   { key: 'manage_incidentes',label: 'Gerenciar Incidentes',     group: 'Operacional' },
@@ -100,6 +116,57 @@ export function permissaoRestrita(key: string): boolean {
   return PERMISSOES_RESTRITAS.includes(key)
 }
 
+/**
+ * CHAVES INTRODUZIDAS NESTA RODADA — e por que isso importa para o acesso.
+ *
+ * ── O PROBLEMA, QUE JÁ ACONTECEU NESTE PRODUTO ──────────────────────────
+ *
+ * O JWT fotografa as permissões no login e vive 7 dias. O proxy decide no edge
+ * com essa foto, sem consultar o banco.
+ *
+ * Para uma chave que JÁ EXISTIA quando o token foi emitido, isso é seguro: se
+ * ela não está na lista, é porque não foi concedida. O comentário em `liberada`
+ * (lib/modules) diz exatamente isso — "chaves comuns têm atalho de ADMIN e
+ * fallback por perfil, então uma lista velha não as nega indevidamente".
+ *
+ * Para uma chave NOVA, o raciocínio se inverte. Considere um GESTOR com lista
+ * explícita de permissões, a quem a migration v28 concedeu `view_previsao`:
+ *
+ *   1. o JWT dele foi emitido ANTES da migration e não tem a chave;
+ *   2. a lista do token NÃO está vazia, então o fallback por perfil
+ *      (`DEFAULT_PERMISSIONS`) não é consultado;
+ *   3. ele não é ADMIN, então o atalho não se aplica;
+ *   4. `hasPermission` devolve `false` e o proxy redireciona;
+ *   5. a SIDEBAR mostra o item — ela lê do banco, num server component.
+ *
+ * O sintoma é o item visível levando a um redirect. É o mesmo defeito do
+ * `isPartner` e o mesmo do `view_conselho`, pela terceira vez, por um caminho
+ * novo: lista velha para uma chave que nasce ausente é RESTRITIVA, não
+ * permissiva.
+ *
+ * ── A CORREÇÃO ──────────────────────────────────────────────────────────
+ *
+ * O proxy NÃO DECIDE estas chaves (ver `liberada`). A autoridade é a página e
+ * a API, que leem a lista atual do banco a cada requisição. Não é afrouxamento:
+ * as duas continuam exigindo a chave, e agora com a lista CORRETA.
+ *
+ * ── QUANDO ESTA LISTA ESVAZIA ───────────────────────────────────────────
+ *
+ * Quando todo token emitido antes da v28 tiver expirado — 7 dias após o deploy.
+ * A partir daí ela pode ser zerada sem efeito nenhum, e o proxy volta a decidir
+ * as duas chaves pelo token, como faz com as demais chaves comuns.
+ *
+ * Deixá-la cheia para sempre também é inofensivo: o custo é uma consulta ao
+ * banco na página e na API, que elas já fazem de todo modo.
+ */
+export const PERMISSOES_RECENTES: readonly string[] = [
+  'view_previsao', 'manage_previsao',
+]
+
+export function permissaoRecente(key: string): boolean {
+  return PERMISSOES_RECENTES.includes(key)
+}
+
 export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   // Tudo MENOS as restritas: ser ADMIN não é ser sócio nem auditor.
   ADMIN: ALL_PERMISSIONS.map(p => p.key).filter(k => !permissaoRestrita(k)),
@@ -108,6 +175,9 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   OPERACIONAL: [
     'view_dashboard', 'view_carteira', 'view_forecast',
     'view_receita', 'view_metas', 'view_pedidos', 'view_metricas',
+    // LEITURA da Previsão, não escrita: lançar orçamento é decisão de quem
+    // responde pelo planejamento, e não consequência de ser do operacional.
+    'view_previsao',
     'view_incidentes', 'manage_incidentes', 'view_tarefas', 'manage_tarefas',
     'view_volumetria',
     'view_followup',
@@ -128,6 +198,9 @@ export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'view_leads', 'manage_leads', 'view_pipeline', 'manage_pipeline',
     'view_followup', 'manage_followup',
     'view_crm', 'view_volumetria', 'view_compliance',
+    // Gestor de carteira LÊ a previsão. Escrever continua sendo alçada
+    // concedida, não herdada do perfil.
+    'view_previsao',
   ],
 }
 

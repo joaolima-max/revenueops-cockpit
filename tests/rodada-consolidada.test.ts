@@ -61,11 +61,14 @@ test('a DESCRICAO continua distinguindo os tres', () => {
   // A categoria agrupa; a descricao diz qual e qual. Se as duas colapsassem,
   // tres linhas identicas apareceriam em Lancamentos.
   const t = ler('lib/baas-titulos.ts')
-  assert.equal(
-    (t.match(/descricao\(d, 'Tarifa BaaS'\)/g) ?? []).length, 2,
-    'receita e titulo a receber devem dizer "Tarifa BaaS"',
-  )
-  assert.ok(t.includes("descricao(d, 'Repasse BaaS')"), 'o repasse perdeu a descricao')
+  // v28 — os tres rotulos sao distintos, um por registro: a receita vale o
+  // saldo integral, o AR vale as tarifas e a despesa vale a comissao.
+  for (const rotulo of ['Apuração BaaS', 'Tarifa BaaS', 'Comissão BaaS']) {
+    assert.equal(
+      (t.match(new RegExp(`descricao\\(d, '${rotulo}'\\)`, 'g')) ?? []).length, 1,
+      `o rotulo "${rotulo}" deixou de identificar exatamente um registro`,
+    )
+  }
 })
 
 /* ========================================================================= *
