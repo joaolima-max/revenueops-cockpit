@@ -514,14 +514,38 @@ BEGIN
 
     novas := ARRAY[]::text[];
 
+    /*
+     * `array_append`, e NÃO `novas || 'view_previsao'`.
+     *
+     * O operador `||` entre `text[]` e um literal sem tipo é AMBÍGUO: o
+     * Postgres resolve o literal como ARRAY e tenta parseá-lo, estourando
+     *
+     *     22P02: malformed array literal: "view_previsao"
+     *     DETAIL: Array value must start with "{" or dimension information.
+     *
+     * `array_append(text[], text)` não tem essa ambiguidade — a assinatura diz
+     * que o segundo argumento é um elemento.
+     *
+     * Esta linha JÁ FALHOU numa tentativa de aplicação, e o motivo de ter
+     * passado nos testes locais vale registrar: nenhum usuário do banco de
+     * verificação tinha `manage_financeiro` na lista ANTES da migration rodar,
+     * então o ramo nunca era executado. SQL sem dado que o exercite não está
+     * testado — está apenas sintaticamente aceito.
+     */
     -- Quem ADMINISTRA o financeiro recebe as duas chaves.
     IF lista ? 'manage_financeiro' THEN
-      IF NOT (lista ? 'view_previsao')   THEN novas := novas || 'view_previsao';   END IF;
-      IF NOT (lista ? 'manage_previsao') THEN novas := novas || 'manage_previsao'; END IF;
+      IF NOT (lista ? 'view_previsao') THEN
+        novas := array_append(novas, 'view_previsao');
+      END IF;
+      IF NOT (lista ? 'manage_previsao') THEN
+        novas := array_append(novas, 'manage_previsao');
+      END IF;
     -- Quem apenas CONSULTA recebe só a de leitura: lançar orçamento é decisão
     -- de quem responde pelo planejamento, não consequência de ver o financeiro.
     ELSIF lista ? 'view_financeiro' THEN
-      IF NOT (lista ? 'view_previsao') THEN novas := novas || 'view_previsao'; END IF;
+      IF NOT (lista ? 'view_previsao') THEN
+        novas := array_append(novas, 'view_previsao');
+      END IF;
     END IF;
 
     IF array_length(novas, 1) IS NULL THEN
