@@ -19,9 +19,10 @@ import { prisma } from '@/lib/prisma'
 import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/float'
 import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
 import {
-  calcularMrr, contagensParceiros, evolucaoParceiros, receitaPorNatureza,
+  calcularMrr, contagensParceiros, evolucaoParceiros, primeiroMesComParceiros,
+  receitaPorNatureza, realizadoReceitaPrevisao,
   sustentacaoVigente,
-  type Mrr, type ContagensParceiros,
+  type Mrr, type ContagensParceiros, type RealizadoReceitaPrevisao,
 } from '@/lib/financeiro'
 import {
   avaliarMeta, ehMetaDePipeline,
@@ -257,7 +258,7 @@ export async function comparacaoMensal(
   const ateDia = janelaComparavel(periodo, hoje)
   const emCurso = periodoEmCurso(periodo, hoje)
 
-  const atual = await kpisDoPeriodo(periodo, ateDia)
+  const atualPedido = await kpisDoPeriodo(periodo, ateDia)
 
   // O último mês anterior COM DADO. A série inclui o período de referência no
   // fim, então ele é descartado antes da busca.
@@ -266,15 +267,39 @@ export async function comparacaoMensal(
     .reverse()
     .find((k) => k.temDados) ?? null
 
-  if (!anteriorInteiro) return { atual, anterior: null, ateDia, emCurso }
+  if (!anteriorInteiro) {
+    return { atual: atualPedido, anterior: null, ateDia, emCurso }
+  }
 
-  // Mês inteiro de um lado e janela parcial do outro é o defeito. Quando há
-  // janela, o comparável é REAPURADO nela.
-  const anterior = ateDia === null
+  /**
+   * A JANELA É IGUALADA NOS DOIS LADOS, e isso é mais que reapurar o
+   * comparável.
+   *
+   * No dia 31 de um mês, "os 31 dias decorridos" não existem em fevereiro —
+   * `intervaloParcial` capa no fim do mês e devolveria 28. Comparar 31 dias
+   * de março com 28 de fevereiro é o MESMO defeito que esta função existe
+   * para corrigir, só invertido.
+   *
+   * Então a janela efetiva é o MENOR dos dois tamanhos, e vale para os dois.
+   * É a regra de `parTemporal` (lib/comparacao-temporal), que é o serviço
+   * único de comparação do produto; aqui ela é aplicada ao mês comparável
+   * ESCOLHIDO, que pode não ser o imediatamente anterior.
+   *
+   * O preço é visível e é o certo: a comparação ignora 3 dias reais de março.
+   * O KPI do mês continua mostrando o mês inteiro — é só a base comparável
+   * que encurta, e `rotuloComparacao` declara a janela usada.
+   */
+  const dias = ateDia === null
+    ? null
+    : Math.min(ateDia, diasNoMes(anteriorInteiro.periodo))
+
+  const atual = dias === ateDia ? atualPedido : await kpisDoPeriodo(periodo, dias)
+
+  const anterior = dias === null
     ? anteriorInteiro
-    : await kpisDoPeriodo(anteriorInteiro.periodo, ateDia)
+    : await kpisDoPeriodo(anteriorInteiro.periodo, dias)
 
-  return { atual, anterior, ateDia, emCurso }
+  return { atual, anterior, ateDia: dias, emCurso }
 }
 
 export interface LinhasReceita {
@@ -586,6 +611,38 @@ export function realizadoPorTipo(
   }
 }
 
+/**
+ * Os tipos de meta cuja receita realizada NÃO sai do Lançamento Diário.
+ *
+ * As três linhas que alimentam a Previsão de Receita têm fonte própria —
+ * `LancamentoBaas` para a apuração dos parceiros e a natureza SETUP das
+ * categorias para implantação. Serviços não tem fonte, e por isso o realizado
+ * dele é ausente, nunca zero (ver `realizadoReceitaPrevisao`).
+ *
+ * Exportada pela mesma razão de `META_TIPOS_PIPELINE`: a API de metas precisa
+ * saber quais tipos têm realizado apurável, e uma segunda cópia da lista lá é
+ * como as duas divergem.
+ */
+export const META_TIPOS_RECEITA_PREVISAO: readonly string[] = [
+  'RECEITA_LANCAMENTOS_WL_BAAS', 'RECEITA_SERVICOS', 'RECEITA_SETUP',
+]
+
+export function ehMetaDeReceitaDaPrevisao(tipo: string): boolean {
+  return META_TIPOS_RECEITA_PREVISAO.includes(tipo)
+}
+
+/** O realizado de uma das três, a partir da apuração já buscada. */
+export function realizadoDeMetaDeReceita(
+  r: RealizadoReceitaPrevisao, tipo: string,
+): number | null {
+  switch (tipo) {
+    case 'RECEITA_LANCAMENTOS_WL_BAAS': return r.lancamentosWlBaas
+    case 'RECEITA_SERVICOS': return r.servicos
+    case 'RECEITA_SETUP': return r.setup
+    default: return null
+  }
+}
+
 /* ========================================================================= *
  * OBSERVAÇÕES DIÁRIAS — SAIU
  *
@@ -605,16 +662,29 @@ export function realizadoPorTipo(
 /* ========================================================================= *
  * SÉRIES DO COCKPIT — a janela de 7, 30 e 90 dias
  *
- * ── A DATA MÍNIMA ───────────────────────────────────────────────────────
+ * ── A DATA MÍNIMA: 01/06/2026 ───────────────────────────────────────────
  *
  * A "Evolução Atividade Operacional Diária" — e, com ela, toda série de
- * resolução DIÁRIA do Cockpit — começa em 01/10/2026. Antes dessa data o
- * lançamento diário não era a fonte confiável que é hoje, e o pedido é
- * explícito: não exibir dado anterior e não inventar nada para preencher.
+ * resolução DIÁRIA do Cockpit — começa em 01/06/2026.
  *
- * É uma CONSTANTE, não uma data móvel. "O dia 1º de outubro mais recente"
- * pareceria mais esperto e seria errado: em novembro de 2027 o piso saltaria
- * para 01/10/2027 e apagaria um ano de operação real. O piso marca quando a
+ * ERA 01/10/2026, e o piso de outubro existia por um motivo que deixou de
+ * valer: de fevereiro a setembro cada mês tinha UM lançamento só, gravado no
+ * último dia, com o valor do MÊS INTEIRO. Uma série diária alimentada por
+ * esses registros desenharia 29 dias vazios e um pico de R$ 30 milhões — e é
+ * por isso que o piso cortava tudo antes de outubro.
+ *
+ * A normalização histórica (migration v29) distribuiu esses consolidados dia
+ * a dia, com soma idêntica ao original. Junho é o primeiro mês em que existe
+ * TPV real, então é de junho que a base passa a sustentar leitura diária.
+ *
+ * FEVEREIRO A MAIO FICAM FORA, e não por capricho: eles só têm quantidade de
+ * transações — TPV, receita e MED são zero, e zero ali é ausência de
+ * apuração, não resultado. Os lançamentos continuam no banco (nada foi
+ * apagado); o que o piso diz é que a série diária não começa neles.
+ *
+ * É uma CONSTANTE, não uma data móvel. "O dia 1º de junho mais recente"
+ * pareceria mais esperto e seria errado: em julho de 2027 o piso saltaria
+ * para 01/06/2027 e apagaria um ano de operação real. O piso marca quando a
  * base passou a valer — um fato do passado, que não se move.
  *
  * CONSEQUÊNCIA VISÍVEL, e ela é correta: enquanto houver menos de 90 dias
@@ -633,11 +703,11 @@ export function realizadoPorTipo(
  * ========================================================================= */
 
 /**
- * O PISO da série diária do Cockpit: 01/10/2026.
+ * O PISO da série diária do Cockpit: 01/06/2026.
  *
  * Exportado para que a tela possa declará-lo e os testes possam prendê-lo.
  */
-export const DATA_MINIMA_ATIVIDADE = new Date(Date.UTC(2026, 9, 1))
+export const DATA_MINIMA_ATIVIDADE = new Date(Date.UTC(2026, 5, 1))
 
 /** As três janelas que o Cockpit oferece. Conjunto FECHADO. */
 export const RANGES_DIAS = [7, 30, 90] as const
@@ -672,7 +742,7 @@ export interface JanelaDiaria {
   fim: Date
   /** Dias de calendário que a janela de fato cobre. */
   dias: number
-  /** A janela pedida foi ENCURTADA pelo piso de 01/10? */
+  /** A janela pedida foi ENCURTADA pelo piso de 01/06? */
   limitada: boolean
   /** Quantos dias foram pedidos. Para a tela poder dizer o que cortou. */
   pedidos: RangeDias
@@ -788,15 +858,36 @@ export interface PontoMensalCockpit {
  * trimestral; 7 dias tocam um mês só, e aí o gráfico diz que a série tem
  * resolução mensal em vez de desenhar um ponto solto.
  *
- * O PISO DE 01/10 NÃO SE APLICA AQUI. Ele é uma afirmação sobre quando o
- * LANÇAMENTO DIÁRIO passou a ser confiável; a história das condições
- * comerciais é anterior e continua válida. Aplicá-lo colapsaria estes três
- * gráficos a um único mês sem nenhuma razão de dado.
+ * O PISO DE 01/06 NÃO SE APLICA AQUI. Ele é uma afirmação sobre quando o
+ * LANÇAMENTO DIÁRIO passou a sustentar leitura diária; a história das
+ * condições comerciais é outra coisa e tem o seu próprio começo.
+ *
+ * ── O PISO DESTA SÉRIE É A DISPONIBILIDADE REAL DO DADO ─────────────────
+ *
+ * E isto é a correção de um defeito visível. Os três gráficos desenhavam ZERO
+ * em todo mês anterior ao cadastro das condições comerciais — em Production,
+ * as 20 condições foram criadas em 01–02/10/2026, então a série mostrava uma
+ * rampa de 0 para 9 entre setembro e outubro, como se nove parceiros tivessem
+ * entrado num mês.
+ *
+ * Nenhum entrou. A Bass Pago já tinha parceiros; o CADASTRO deles é que é
+ * novo. Zero não era o número — era a ausência de registro desenhada como
+ * número, que é exactamente o que o produto recusa na série diária (dia sem
+ * lançamento fica fora, não vira zero).
+ *
+ * Então a série começa em `primeiroMesComParceiros()` e nada é desenhado
+ * antes: nem zero, nem estimativa, nem repetição do primeiro valor conhecido.
+ * Quando isso deixa um ponto só, o gráfico diz que a série é curta — ver
+ * `SerieMensalCurta` — em vez de inventar o segundo ponto para ter uma linha.
  */
 export async function serieMensalCockpit(
   dias: RangeDias, hoje: Date = new Date(),
 ): Promise<PontoMensalCockpit[]> {
   const j = janelaDiaria(dias, hoje)
+
+  const disponivelDe = await primeiroMesComParceiros()
+  // Sem nenhuma condição cadastrada não há série — e não há zero tampouco.
+  if (!disponivelDe) return []
 
   // Os meses que a janela atravessa, do mais antigo ao mais novo. A janela é
   // de calendário, então basta caminhar de mês em mês entre as duas pontas.
@@ -804,9 +895,9 @@ export async function serieMensalCockpit(
   const cursor = new Date(Date.UTC(j.inicio.getUTCFullYear(), j.inicio.getUTCMonth(), 1))
   const ultimo = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1))
   while (cursor.getTime() <= ultimo.getTime()) {
-    meses.push(
-      `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`,
-    )
+    const mes = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`
+    // Comparação de strings "YYYY-MM" é ordenação cronológica.
+    if (mes >= disponivelDe) meses.push(mes)
     cursor.setUTCMonth(cursor.getUTCMonth() + 1)
   }
   if (meses.length === 0) return []
@@ -842,6 +933,15 @@ export interface SeriesCockpit {
   }
   diario: PontoDiario[]
   mensal: PontoMensalCockpit[]
+  /**
+   * De que mês a série MENSAL passa a existir — o cadastro mais antigo de
+   * condição comercial. `null` sem nenhuma condição cadastrada.
+   *
+   * A tela declara isto. Sem a frase, um usuário que escolhe 90 dias e vê um
+   * ponto só nos três gráficos mensais concluiria que estão quebrados, quando
+   * o que há é um mês de histórico — ver `serieMensalCockpit`.
+   */
+  mensalDisponivelDe: string | null
 }
 
 /**
@@ -856,9 +956,10 @@ export async function seriesCockpit(
   dias: RangeDias = RANGE_PADRAO, hoje: Date = new Date(),
 ): Promise<SeriesCockpit> {
   const j = janelaDiaria(dias, hoje)
-  const [diario, mensal] = await Promise.all([
+  const [diario, mensal, mensalDisponivelDe] = await Promise.all([
     serieDiaria(dias, hoje),
     serieMensalCockpit(dias, hoje),
+    primeiroMesComParceiros(),
   ])
 
   return {
@@ -873,6 +974,7 @@ export async function seriesCockpit(
     },
     diario,
     mensal,
+    mensalDisponivelDe,
   }
 }
 
@@ -1025,16 +1127,23 @@ export async function metasDoPeriodo(periodo: string): Promise<MetaVsRealizado[]
     kpisDoPeriodo(periodo),
   ])
 
-  // As metas de pipeline têm outra fonte (Lead e Deal). A consulta só acontece
-  // se existir alguma meta desse tipo no período — não se paga por nada.
+  // As metas de pipeline têm outra fonte (Lead e Deal), e as três de receita
+  // da Previsão têm a sua. As consultas só acontecem se existir alguma meta
+  // daquele tipo no período — não se paga por nada.
   const temPipeline = metas.some((m) => ehMetaDePipeline(m.tipo))
-  const pipeline = temPipeline ? await realizadoPipeline(periodo) : null
+  const temReceita = metas.some((m) => ehMetaDeReceitaDaPrevisao(m.tipo))
+  const [pipeline, receita] = await Promise.all([
+    temPipeline ? realizadoPipeline(periodo) : null,
+    temReceita ? realizadoReceitaPrevisao(periodo) : null,
+  ])
 
   return metas.map((m) => {
     // O realizado depende da unidade da meta — ver `realizadoPorTipo`.
     const realizado = ehMetaDePipeline(m.tipo)
       ? (pipeline ? realizadoDeMetaPipeline(pipeline, m.tipo, m.unidade) : null)
-      : (realizadoPorTipo(kpis, m.unidade)[m.tipo] ?? null)
+      : ehMetaDeReceitaDaPrevisao(m.tipo)
+        ? (receita ? realizadoDeMetaDeReceita(receita, m.tipo) : null)
+        : (realizadoPorTipo(kpis, m.unidade)[m.tipo] ?? null)
     const avaliacao = avaliarMeta(m.valor, realizado, m.direcao)
     return {
       tipo: m.tipo,

@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       origem: 'CERTIFICADO' as const,
       entidade: 'CertificadoEnvio',
       entidadeId: envio.id,
-      href: '/dashboard/certificados',
+      href: '/dashboard/carteira/certificados',
     })))
   }
 

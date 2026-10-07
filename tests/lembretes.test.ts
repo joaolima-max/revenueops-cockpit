@@ -223,8 +223,8 @@ test('pagar e receber tem origem, rota e entidade proprias', () => {
   const [r] = lembretesDeTitulos([titulo], ['u1'], HOJE, 'RECEBER')
   assert.equal(p.origem, 'CONTA_PAGAR')
   assert.equal(r.origem, 'CONTA_RECEBER')
-  assert.equal(p.href, '/dashboard/financeiro/contas-pagar')
-  assert.equal(r.href, '/dashboard/financeiro/contas-receber')
+  assert.equal(p.href, '/dashboard/financeiro/cp-cr')
+  assert.equal(r.href, '/dashboard/financeiro/cp-cr/receber')
   assert.notEqual(p.chave, r.chave, 'mesmo id em tabelas diferentes nao pode colidir')
 })
 

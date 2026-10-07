@@ -263,7 +263,7 @@ export default function DespesasClient({
                   {l.lancamento && (
                     <span className="t-label text-pos">
                       Já lançada em{' '}
-                      <Link href="/dashboard/financeiro/lancamentos"
+                      <Link href="/dashboard/financeiro/cp-cr/lancamentos"
                         className="underline">Lançamentos</Link>
                       {' '}· {formatDate(l.lancamento.data)} · {moedaCheia(l.lancamento.valor)}
                     </span>
@@ -310,7 +310,7 @@ export default function DespesasClient({
           lançamento pendente já aconteceu — tem competência, entra na Despesa do período
           e aparece em Contas a Pagar, faltando apenas pagar. A despesa futura é
           expectativa: quando ela ocorre, é lançada em{' '}
-          <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft">
+          <Link href="/dashboard/financeiro/cp-cr/lancamentos" className="text-accent-soft">
             Lançamentos
           </Link>{' '}
           e só então sai da projeção — manter as duas somaria a mesma saída duas vezes.

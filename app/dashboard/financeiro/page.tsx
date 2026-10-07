@@ -265,7 +265,7 @@ export default async function FinanceiroVisaoGeralPage({
           title="Contas a pagar do período"
           sub="Despesas vistas pela data de vencimento."
           actions={
-            <Link href="/dashboard/financeiro/contas-pagar"
+            <Link href="/dashboard/financeiro/cp-cr"
               className="t-sm text-accent-soft hover:underline">Abrir Contas a Pagar →</Link>
           }
         />
@@ -285,7 +285,7 @@ export default async function FinanceiroVisaoGeralPage({
         <PanelHeader title="Onde cada número é lançado" sub="Uma fonte por informação." />
         <ul className="mt-4 space-y-2 t-sm text-muted">
           <li>
-            <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft hover:underline">Lançamentos</Link>
+            <Link href="/dashboard/financeiro/cp-cr/lancamentos" className="text-accent-soft hover:underline">Lançamentos</Link>
             {' '}— receita, despesa, resultado, Float, Setup, Sustentação e o vínculo com BaaS/White Label.
           </li>
           <li>
@@ -297,11 +297,11 @@ export default async function FinanceiroVisaoGeralPage({
             {' '}— mensalidade de API dos clientes.
           </li>
           <li>
-            <Link href="/dashboard/financeiro/contas-receber" className="text-accent-soft hover:underline">Contas a Receber</Link>
+            <Link href="/dashboard/financeiro/cp-cr/receber" className="text-accent-soft hover:underline">Contas a Receber</Link>
             {' '}— inadimplência.
           </li>
           <li>
-            <Link href="/dashboard/financeiro/contas-pagar" className="text-accent-soft hover:underline">Contas a Pagar</Link>
+            <Link href="/dashboard/financeiro/cp-cr" className="text-accent-soft hover:underline">Contas a Pagar</Link>
             {' '}— os mesmos lançamentos de despesa, pela data de vencimento.
           </li>
         </ul>

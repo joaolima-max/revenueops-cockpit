@@ -1,6 +1,23 @@
 # Índice Estrutural — Documentação RevenueOps Cockpit
 
-> **Comece por [`RODADA-V23.md`](./RODADA-V23.md)** — a rodada mais recente:
+> **Comece por [`RODADA-V29.md`](./RODADA-V29.md)** — a rodada mais recente:
+> o **histórico diário foi normalizado** — de fevereiro a setembro cada mês
+> tinha um lançamento só, com o valor do mês inteiro, e os oito consolidados
+> foram distribuídos dia a dia com **soma idêntica ao original** (migration
+> v29, com conferência que aborta em qualquer divergência); o piso dos gráficos
+> desceu de 01/10 para **01/06/2026**, e as janelas de 30 e 90 dias passaram a
+> medir o que prometem; a **sidebar** foi consolidada — 7 seções e 24 itens
+> viraram **6 e 19**, sem perder nenhuma tela: **CP / CR** (Contas a Pagar +
+> Contas a Receber + Lançamentos), **Condições BaaS** (absorveu Lançamentos
+> BaaS) e **Clientes** (absorveu Volumetria e Certificados), e o Cockpit virou
+> **Home**; a Previsão ganhou **receita prevista automática** (MRR projetado +
+> quatro metas de receita), com a origem de cada parcela e navegação profunda;
+> **três tipos novos de meta** (Lançamentos WL/BaaS, Serviços, Setup); um
+> **serviço central de comparação temporal** com quatro granularidades, em que
+> as duas janelas têm sempre o mesmo tamanho; e os **três gráficos mensais**
+> deixaram de desenhar zero onde o que havia era ausência de cadastro.
+>
+> Antes dela, [`RODADA-V23.md`](./RODADA-V23.md):
 > o **Conselho foi corrigido** — o proxy barrava o sócio porque lia `isPartner`
 > de um token de 7 dias que não tinha o campo, e a autoridade passou para a
 > página, que lê do banco; **Usuários** ganham alçadas próprias

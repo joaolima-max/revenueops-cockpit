@@ -599,3 +599,135 @@ export const RECORRENCIA_LABEL: Record<Recorrencia, string> = {
   PARCELADA: 'Parcelada',
 }
 
+/* ========================================================================= *
+ * RECEITA PREVISTA — a composição, e os rótulos que a tela usa
+ *
+ * A FÓRMULA:
+ *
+ *   RECEITA PREVISTA = MRR PROJETADO
+ *                    + META DE RECEITA TARIFÁRIA
+ *                    + META DE RECEITA DE LANÇAMENTOS WL/BAAS
+ *                    + META DE RECEITA DE SERVIÇOS
+ *                    + META DE RECEITA DE SETUP
+ *                    + RECEITAS PREVISTAS LANÇADAS
+ *
+ * ── POR QUE ESTES SEIS, E POR QUE ELES NÃO SE SOBREPÕEM ─────────────────
+ *
+ * MRR PROJETADO é CONTRATO: sustentação das condições comerciais mais
+ * mensalidade de API da carteira inteira. Vem do cadastro, não de alvo — já
+ * está assinado.
+ *
+ * AS QUATRO METAS são DECISÃO: as linhas de receita que ninguém assina com
+ * antecedência. Cada uma é uma fonte distinta de faturamento —
+ *
+ *   tarifária            a tarifa sobre o TPV PRÓPRIO (Lançamento Diário)
+ *   lançamentos WL/BaaS  a apuração dos PARCEIROS (Lançamento BaaS)
+ *   serviços             serviços contratados
+ *   setup                implantação
+ *
+ * — e nenhuma delas é sustentação nem mensalidade de API. Metar sustentação
+ * seria contar duas vezes o mesmo contrato, uma pelo MRR e outra pela meta;
+ * é a dupla contagem mais provável desta conta, e é por isso que está escrita
+ * aqui e no enum `MetaTipo`.
+ *
+ * RECEITAS PREVISTAS LANÇADAS é o cadastro manual que já existia
+ * (`ReceitaPrevista`). Ele continua inteiro — lançar, editar, filtrar por
+ * centro de custo — e entra como SEXTO componente em vez de ser somado à
+ * parte. Fosse somado à parte, a tela teria dois totais de "receita prevista"
+ * e ninguém saberia qual usar; fosse removido, uma função existente morreria
+ * na consolidação.
+ *
+ * Quando não há linha lançada — que é o caso hoje — o total é exatamente a
+ * fórmula de cinco termos.
+ *
+ * ── METAS EM PERCENTUAL FICAM FORA ──────────────────────────────────────
+ *
+ * Uma meta de receita pode ser gravada com unidade PERCENTUAL (o cadastro
+ * aceita), e um percentual não tem o que somar em reais. Ela é IGNORADA na
+ * composição e DECLARADA como ignorada — somá-la como se fosse valor
+ * acrescentaria "3" a um total em milhões.
+ * ========================================================================= */
+
+export const COMPONENTES_RECEITA_PREVISTA = [
+  'MRR_PROJETADO',
+  'META_TARIFARIA',
+  'META_LANCAMENTOS_WL_BAAS',
+  'META_SERVICOS',
+  'META_SETUP',
+  'RECEITAS_LANCADAS',
+] as const
+
+export type ComponenteReceita = typeof COMPONENTES_RECEITA_PREVISTA[number]
+
+export const COMPONENTE_RECEITA_LABEL: Record<ComponenteReceita, string> = {
+  MRR_PROJETADO: 'MRR projetado',
+  META_TARIFARIA: 'Meta de receita tarifária',
+  META_LANCAMENTOS_WL_BAAS: 'Meta de receita de lançamentos WL/BaaS',
+  META_SERVICOS: 'Meta de receita de serviços',
+  META_SETUP: 'Meta de receita de setup',
+  RECEITAS_LANCADAS: 'Receitas previstas lançadas',
+}
+
+/** O tipo de meta que alimenta cada componente. `null` nos dois que não são meta. */
+export const META_DO_COMPONENTE: Record<ComponenteReceita, string | null> = {
+  MRR_PROJETADO: null,
+  META_TARIFARIA: 'RECEITA_TARIFARIA',
+  META_LANCAMENTOS_WL_BAAS: 'RECEITA_LANCAMENTOS_WL_BAAS',
+  META_SERVICOS: 'RECEITA_SERVICOS',
+  META_SETUP: 'RECEITA_SETUP',
+  RECEITAS_LANCADAS: null,
+}
+
+/**
+ * Uma LINHA de composição de um componente — a origem auditável.
+ *
+ * É o que responde "de onde saiu este número" sem abrir outra tela: o MRR
+ * projetado se abre em sustentação BaaS, sustentação White Label e as duas
+ * mensalidades de API; cada meta se abre no período e no valor gravados.
+ */
+export interface LinhaOrigemReceita {
+  label: string
+  valor: number
+  /** Onde conferir. `null` quando o componente não tem tela própria. */
+  rota?: string | null
+}
+
+export interface ComponenteReceitaPrevista {
+  chave: ComponenteReceita
+  label: string
+  valor: number
+  /** De onde o número sai, em uma frase. A tela mostra isto, não deduz. */
+  origem: string
+  /** A tela onde o número é mantido. `null` quando não há uma. */
+  rota: string | null
+  /** A composição interna, quando há. */
+  linhas: LinhaOrigemReceita[]
+  /**
+   * A FONTE do componente não existe para este período.
+   *
+   * Diferente de valor zero: "meta de setup não cadastrada" e "meta de setup
+   * de R$ 0" são afirmações distintas, e a tela precisa poder separá-las em
+   * vez de mostrar R$ 0,00 nas duas.
+   */
+  ausente: boolean
+}
+
+export interface ReceitaPrevistaComposta {
+  periodo: string
+  total: number
+  componentes: ComponenteReceitaPrevista[]
+  /** Quantos componentes estão sem fonte cadastrada. */
+  ausentes: number
+  /**
+   * Metas do período gravadas em PERCENTUAL, que a composição ignorou.
+   *
+   * Declaradas para que o total não pareça errado a quem cadastrou a meta —
+   * ver o cabeçalho desta seção.
+   */
+  ignoradasPorUnidade: string[]
+}
+
+/** O total de uma composição. Soma única, em centavos. */
+export function totalDaComposicao(componentes: ComponenteReceitaPrevista[]): number {
+  return centavos(componentes.reduce((a, c) => a + c.valor, 0))
+}

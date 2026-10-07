@@ -94,7 +94,7 @@ export default async function ForecastPage({
               + 'de previsão e nenhum conteúdo.'
             }
             action={
-              <Link href="/dashboard/financeiro/lancamentos">
+              <Link href="/dashboard/financeiro/cp-cr/lancamentos">
                 <Button>Ver os lançamentos</Button>
               </Link>
             }

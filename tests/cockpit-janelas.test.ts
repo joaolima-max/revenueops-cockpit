@@ -1,14 +1,20 @@
 /**
- * COCKPIT — a janela de 7, 30 e 90 dias, e o piso de 01/10.
+ * COCKPIT — a janela de 7, 30 e 90 dias, e o piso de 01/06.
  *
  * ── AS DUAS REGRAS ───────────────────────────────────────────────────────
  *
- * 1. A SÉRIE DIÁRIA COMEÇA EM 01/10/2026 e nada anterior é exibido.
+ * 1. A SÉRIE DIÁRIA COMEÇA EM 01/06/2026 e nada anterior é exibido.
  *
- *    O piso é uma CONSTANTE, não uma data móvel. "O 1º de outubro mais
- *    recente" pareceria mais esperto e seria errado: em novembro de 2027 o
- *    piso saltaria para 01/10/2027 e apagaria um ano de operação real. O piso
- *    marca quando a base passou a valer — um fato do passado, que não se move.
+ *    Era 01/10/2026 até a normalização histórica (migration v29). O piso de
+ *    outubro existia porque fevereiro a setembro tinham UM lançamento por mês,
+ *    com o valor do mês inteiro — e uma série diária alimentada por isso
+ *    desenharia 29 dias vazios e um pico. Distribuídos dia a dia, junho passou
+ *    a ser o primeiro mês com TPV real.
+ *
+ *    O piso é uma CONSTANTE, não uma data móvel. "O 1º de junho mais recente"
+ *    pareceria mais esperto e seria errado: em julho de 2027 o piso saltaria
+ *    para 01/06/2027 e apagaria um ano de operação real. O piso marca quando a
+ *    base passou a valer — um fato do passado, que não se move.
  *
  * 2. CADA GRÁFICO TEM A SUA JANELA, e o período vem do BACKEND.
  *
@@ -38,14 +44,37 @@ import {
 const RAIZ = join(import.meta.dirname, '..')
 const ler = (p: string) => readFileSync(join(RAIZ, p), 'utf8')
 
+/**
+ * O FONTE SEM COMENTÁRIOS.
+ *
+ * Estes testes afirmam a AUSÊNCIA de coisas no código — um gráfico removido,
+ * um id que não deve voltar. Sem isto, o comentário que EXPLICA a remoção
+ * ("`id: 'atividade'` saiu porque…") faria o teste falhar, e a documentação
+ * do produto passaria a ser proibida no arquivo que ela documenta.
+ */
+const semComentarios = (fonte: string) => fonte
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 
 /* ========================================================================= *
  * O PISO DE 01/10
  * ========================================================================= */
 
-test('a data minima da serie diaria e 01/10/2026', () => {
-  assert.equal(iso(DATA_MINIMA_ATIVIDADE), '2026-10-01')
+test('a data minima da serie diaria e 01/06/2026', () => {
+  /**
+   * ERA 01/10/2026, e o piso de outubro existia por um motivo que deixou de
+   * valer: de fevereiro a setembro cada mes tinha UM lancamento, no ultimo
+   * dia, com o valor do MES INTEIRO. Uma serie diaria alimentada por isso
+   * desenharia 29 dias vazios e um pico de R$ 1,4 bilhao.
+   *
+   * A migration v29 distribuiu esses consolidados dia a dia, com soma
+   * identica ao original. JUNHO e o primeiro mes com TPV real, e e dele que a
+   * base passa a sustentar leitura diaria — fevereiro a maio so tem
+   * quantidade de transacoes.
+   */
+  assert.equal(iso(DATA_MINIMA_ATIVIDADE), '2026-06-01')
 })
 
 test('o piso e CONSTANTE, nao calculado a partir de hoje', () => {
@@ -53,7 +82,7 @@ test('o piso e CONSTANTE, nao calculado a partir de hoje', () => {
   // operacao real na virada de outubro de 2027. O piso e um fato do passado.
   const K = ler('lib/kpi.ts')
   assert.ok(
-    K.includes('export const DATA_MINIMA_ATIVIDADE = new Date(Date.UTC(2026, 9, 1))'),
+    K.includes('export const DATA_MINIMA_ATIVIDADE = new Date(Date.UTC(2026, 5, 1))'),
     'o piso deixou de ser uma constante',
   )
   // E nao e derivado do relogio.
@@ -77,27 +106,44 @@ test('a janela NUNCA comeca antes do piso', () => {
   }
 })
 
-test('com menos de 90 dias desde o piso, as tres janelas coincidem — e a tela DECLARA', () => {
-  // ESTE E O ESTADO ATUAL DO SISTEMA, e ele e correto: em 07/10/2026 existem 7
-  // dias desde o piso, entao 7, 30 e 90 devolvem os mesmos 7 dias.
-  //
-  // O que NAO pode acontecer e isso passar em silencio: um usuario que escolhe
-  // 90 dias e ve 7 pontos concluiria que o grafico esta quebrado. Por isso
-  // `limitada` existe e a tela a usa.
+test('com o piso em junho, as tres janelas sao DIFERENTES ja em outubro', () => {
+  /**
+   * ESTE E O GANHO DA NORMALIZACAO, e e o que o pedido chamava de "os
+   * graficos nao podem mais comecar artificialmente em 01/10".
+   *
+   * Com o piso em 01/10, em 07/10/2026 as tres janelas devolviam os MESMOS 7
+   * dias e duas delas vinham `limitada`. Com o piso em junho, 30 e 90 dias
+   * medem o que prometem — ha historico para elas.
+   */
   const hoje = new Date('2026-10-07T12:00:00Z')
-  const janelas = RANGES_DIAS.map((d) => janelaDiaria(d, hoje))
+  const [j7, j30, j90] = RANGES_DIAS.map((d) => janelaDiaria(d, hoje))
 
-  for (const j of janelas) {
-    assert.equal(iso(j.inicio), '2026-10-01')
-    assert.equal(j.dias, 7)
+  assert.equal(iso(j7.inicio), '2026-10-01')
+  assert.equal(j7.dias, 7)
+
+  assert.equal(iso(j30.inicio), '2026-09-08')
+  assert.equal(j30.dias, 30)
+
+  assert.equal(iso(j90.inicio), '2026-07-10')
+  assert.equal(j90.dias, 90)
+
+  // NENHUMA foi encurtada pelo piso: ha mais de 90 dias de base desde junho.
+  for (const j of [j7, j30, j90]) {
+    assert.equal(j.limitada, false, `${j.pedidos} dias nao deveria estar limitada`)
   }
-  // 7 dias nao foi encurtado; 30 e 90 foram.
-  assert.equal(janelas[0].limitada, false, '7 dias nao deveria estar limitada')
-  assert.equal(janelas[1].limitada, true, '30 dias deveria declarar o corte')
-  assert.equal(janelas[2].limitada, true, '90 dias deveria declarar o corte')
 
   // E `pedidos` preserva o que foi PEDIDO, para a tela poder dizer o que cortou.
-  assert.deepEqual(janelas.map((j) => j.pedidos), [7, 30, 90])
+  assert.deepEqual([j7, j30, j90].map((j) => j.pedidos), [7, 30, 90])
+})
+
+test('o piso AINDA encurta, quando a janela pedida o atravessa', () => {
+  // `limitada` nao morreu: em 20/06/2026 uma janela de 90 dias comecaria em
+  // marco, e o piso a corta em 01/06. A tela continua precisando declarar.
+  const hoje = new Date('2026-06-20T12:00:00Z')
+  const j90 = janelaDiaria(90, hoje)
+  assert.equal(iso(j90.inicio), '2026-06-01')
+  assert.equal(j90.dias, 20)
+  assert.equal(j90.limitada, true)
 })
 
 test('passados 90 dias do piso, as tres janelas sao DIFERENTES', () => {
@@ -114,7 +160,7 @@ test('passados 90 dias do piso, as tres janelas sao DIFERENTES', () => {
   for (const j of [j7, j30, j90]) assert.equal(j.limitada, false)
 
   // O piso continua respeitado, e segue sendo a mesma data.
-  assert.equal(iso(DATA_MINIMA_ATIVIDADE), '2026-10-01')
+  assert.equal(iso(DATA_MINIMA_ATIVIDADE), '2026-06-01')
 })
 
 /* ========================================================================= *
@@ -354,17 +400,40 @@ test('os TRES graficos sem grao diario estao marcados como mensais', () => {
   }
 })
 
-test('os NOVE graficos de grao diario estao marcados como diarios', () => {
+test('os OITO graficos de grao diario estao marcados como diarios', () => {
   const defs = CHARTS.slice(
     CHARTS.indexOf('const CHART_DEFS: ChartDef[] = ['),
     CHARTS.indexOf('const DEFAULT_ORDER'),
   )
-  for (const id of ['tpv', 'receita', 'transacoes', 'saldo', 'med', 'clientes', 'takerate', 'atividade']) {
+  for (const id of ['tpv', 'receita', 'transacoes', 'saldo', 'med', 'clientes', 'takerate']) {
     const linha = defs.split('\n').find((l) => l.includes(`id: '${id}'`))
     assert.ok(linha?.includes("resolucao: 'diaria'"), `${id} deveria ser diario`)
   }
   // E o operacional diario tambem.
   assert.ok(CHARTS.includes("id: 'diario'"), 'o grafico operacional diario saiu')
+})
+
+test('"Atividade Operacional" SAIU — nao ha dois graficos para a mesma pergunta', () => {
+  /**
+   * Havia DOIS graficos lendo a mesma `serieDiaria`: "Atividade Operacional"
+   * (transacoes, MEDs e clientes ativos) e "Evolucao Atividade Operacional
+   * Diaria" (TPV, receita, transacoes e MED). O segundo e estritamente mais
+   * informativo.
+   *
+   * Dois graficos do mesmo dado no mesmo painel nao dao duas leituras: dao a
+   * duvida de qual dos dois e o certo.
+   */
+  const sem = semComentarios(CHARTS)
+  assert.ok(!sem.includes("id: 'atividade'"), 'a definicao do grafico voltou')
+  assert.ok(!sem.includes('atividade: (id)'), 'o renderizador do grafico voltou')
+  assert.ok(!sem.includes("case 'atividade'"), 'o delta do grafico voltou')
+
+  // O QUE FICOU: o diario de largura inteira, com o titulo que o pedido manda
+  // preservar.
+  assert.ok(CHARTS.includes("title: 'Evolução Atividade Operacional Diária'"))
+
+  // E NENHUMA METRICA SE PERDEU: clientes ativos tem o seu proprio grafico.
+  assert.ok(CHARTS.includes("id: 'clientes'"))
 })
 
 test('serie mensal de UM ponto nao desenha um pixel solto', () => {
@@ -435,11 +504,152 @@ test('a reordenacao dos graficos continua existindo', () => {
   assert.ok(CHARTS.includes('setReordering'), 'a reordenacao saiu')
   // E a chave do localStorage foi VERSIONADA: uma ordem salva com a lista
   // antiga deixaria buracos no grid.
-  assert.ok(CHARTS.includes("LS_KEY = 'dashboard_chart_order_v6'"), 'a chave nao foi versionada')
+  // A LISTA de graficos mudou nesta rodada — "Atividade Operacional" saiu —,
+  // e uma ordem salva com o id antigo deixaria um buraco no grid, porque
+  // `charts['atividade']` nao existe mais.
+  assert.ok(CHARTS.includes("LS_KEY = 'dashboard_chart_order_v7'"), 'a chave nao foi versionada')
 })
 
 test('o seletor NAO aparece em modo de reordenar', () => {
   // O card inteiro vira alvo de arraste, e um botao dentro de um elemento
   // arrastavel engole o clique na metade das tentativas.
   assert.ok(CHARTS.includes('{!reordering && ('), 'o seletor disputa com o arraste')
+})
+
+/* ========================================================================= *
+ * OS TRÊS GRÁFICOS MENSAIS — o piso é a DISPONIBILIDADE, não a janela
+ *
+ * ── O DEFEITO QUE ISTO CORRIGE ───────────────────────────────────────────
+ *
+ * "Evolução de BaaS Ativos", "Evolução de White Labels Ativos" e "Evolução do
+ * MRR" desenhavam ZERO em todo mês anterior ao cadastro das condições
+ * comerciais. Em Production as 20 condições foram criadas em 01–02/10/2026 —
+ * então os gráficos mostravam uma rampa de 0 para 9 entre setembro e outubro,
+ * como se nove parceiros tivessem entrado num mês.
+ *
+ * Nenhum entrou. A Bass Pago já tinha parceiros; o CADASTRO deles é que é
+ * novo. Zero não era o número: era a ausência de registro desenhada como
+ * número — exatamente o que a série diária já recusa (dia sem lançamento fica
+ * fora, não vira zero).
+ * ========================================================================= */
+
+test('a serie mensal comeca na DISPONIBILIDADE REAL, nunca em zero', () => {
+  const K = ler('lib/kpi.ts')
+  const bloco = K.slice(
+    K.indexOf('export async function serieMensalCockpit'),
+    K.indexOf('export interface SeriesCockpit'),
+  )
+
+  // O piso vem do CADASTRO, não da janela.
+  assert.ok(
+    bloco.includes('await primeiroMesComParceiros()'),
+    'a serie mensal voltou a comecar no inicio da janela',
+  )
+  // Mês anterior à disponibilidade NÃO entra — nem como zero.
+  assert.ok(bloco.includes('if (mes >= disponivelDe) meses.push(mes)'))
+  // Sem nenhuma condição cadastrada, a série é VAZIA — não é uma linha de zeros.
+  assert.ok(bloco.includes('if (!disponivelDe) return []'))
+})
+
+test('a disponibilidade sai de `createdAt`, nao de `sustentacaoInicio`', () => {
+  /**
+   * `createdAt` é quando o REGISTRO passou a existir, que é exatamente a
+   * pergunta: desde quando o sistema tem como responder. `sustentacaoInicio` é
+   * a vigência do contrato, e `evolucaoParceiros` já a respeita ao montar cada
+   * ponto — usá-la aqui faria a série começar antes de existir cadastro.
+   */
+  const F = ler('lib/financeiro.ts')
+  const bloco = F.slice(
+    F.indexOf('export async function primeiroMesComParceiros'),
+    F.indexOf('export async function primeiroMesComParceiros') + 700,
+  )
+  assert.ok(bloco.includes("orderBy: { createdAt: 'asc' }"))
+  assert.ok(bloco.includes('select: { createdAt: true }'))
+  assert.ok(!bloco.includes('sustentacaoInicio'))
+  // `null` quando nao ha condicao nenhuma — nunca uma data inventada.
+  assert.ok(bloco.includes('if (!primeira) return null'))
+})
+
+test('o payload DECLARA de que mes a serie mensal existe', () => {
+  /**
+   * Sem a declaração, um usuário que escolhe 90 dias e vê um ponto só nos três
+   * gráficos concluiria que estão quebrados — quando o que há é um mês de
+   * histórico.
+   */
+  const K = ler('lib/kpi.ts')
+  assert.ok(K.includes('mensalDisponivelDe: string | null'))
+  assert.ok(K.includes('primeiroMesComParceiros(),'))
+  assert.ok(K.includes('mensalDisponivelDe,'))
+})
+
+test('a tela distingue JANELA curta de HISTORICO curto', () => {
+  /**
+   * A conduta de quem lê muda: janela curta se resolve ampliando para 90 dias;
+   * histórico curto não. Mandar "escolha 90 dias" quando o cadastro começou
+   * neste mês é mandar o usuário a um lugar onde não há nada.
+   */
+  assert.ok(CHARTS.includes('function SerieMensalCurta({ nome, disponivelDe }'))
+  assert.ok(CHARTS.includes("'Histórico ainda de um mês'"))
+  assert.ok(CHARTS.includes('não há mês anterior para'))
+  assert.ok(CHARTS.includes('o que falta é '))
+  // E os TRES mensais passam a disponibilidade.
+  const quantos = (CHARTS.match(/disponivelDe=\{serieDe\(id\)\.mensalDisponivelDe/g) ?? []).length
+  assert.equal(quantos, 3, 'algum dos tres graficos mensais parou de declarar')
+})
+
+test('o rodape dos mensais cita o primeiro mes com cadastro', () => {
+  const bloco = CHARTS.slice(CHARTS.indexOf('function rodapeDe(id: string)'))
+  assert.ok(bloco.includes('s.mensalDisponivelDe'))
+  assert.ok(bloco.includes('o primeiro mês com condição cadastrada'))
+})
+
+test('as mensagens de serie vazia nao culpam mais a janela', () => {
+  // "Nenhum BaaS ativo NA JANELA" sugeria que ampliar resolveria. O que
+  // existe, ou nao, e cadastro.
+  assert.ok(!CHARTS.includes('Nenhum BaaS ativo na janela'))
+  assert.ok(!CHARTS.includes('Nenhum White Label ativo na janela'))
+  assert.ok(CHARTS.includes('nos meses com cadastro'))
+})
+
+/* ========================================================================= *
+ * A VARIAÇÃO DOS GRÁFICOS — dia contra dia anterior
+ * ========================================================================= */
+
+test('o delta diario compara os DOIS ULTIMOS dias, sem descartar zeros', () => {
+  /**
+   * A versão anterior filtrava os zeros ANTES de pegar os dois últimos
+   * valores: se o dia 05 tivesse saldo zero, "a variação do dia 06" comparava
+   * 06 com 04 — e o rodapé continuava dizendo "no dia". Dois dias de
+   * distância apresentados como um.
+   *
+   * Zero é um valor: um dia com zero MED é um dia sem MED, não um dia sem
+   * lançamento — e dia sem lançamento já fica fora da série.
+   */
+  const bloco = CHARTS.slice(
+    CHARTS.indexOf('function deltaDiario(id: string'),
+    CHARTS.indexOf('function deltaMensal(id: string'),
+  )
+  const sem = semComentarios(bloco)
+  assert.ok(!sem.includes("v !== 0"), 'o filtro de zero voltou ao delta diario')
+  assert.ok(sem.includes('serie[serie.length - 1]'))
+  assert.ok(sem.includes('serie[serie.length - 2]'))
+})
+
+test('o delta diario EXIGE que os dois dias sejam vizinhos', () => {
+  // A serie pode ter buracos (dia sem lancamento). Se o ultimo par nao for de
+  // dias de calendario vizinhos, a comparacao nao e "dia vs dia anterior" e a
+  // seta nao e desenhada.
+  assert.ok(CHARTS.includes('function diasVizinhos(anterior: string, posterior: string)'))
+  assert.ok(CHARTS.includes('if (!diasVizinhos(penultimo.dia, ultimo.dia)) return null'))
+  assert.ok(CHARTS.includes('return b - a === 86_400_000'))
+})
+
+test('o delta mensal tambem parou de descartar zeros', () => {
+  // Uma contagem de parceiros que caiu a zero e informacao, e descarta-la
+  // fazia o grafico comparar outubro com agosto chamando de "no mes".
+  const bloco = CHARTS.slice(
+    CHARTS.indexOf('function deltaMensal(id: string'),
+    CHARTS.indexOf('function mensal(id: string)'),
+  )
+  assert.ok(!semComentarios(bloco).includes("v !== 0"))
 })

@@ -266,14 +266,14 @@ test('a acao "fechar" saiu da API', () => {
 })
 
 test('o botao "Fechar" saiu da tela', () => {
-  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  const tela = ler('app/dashboard/financeiro/condicoes-baas/lancamentos/LancamentoBaasClient.tsx')
   assert.ok(!tela.includes('>Fechar</Button>'), 'o botao Fechar voltou a lista')
   assert.ok(!tela.includes('async function fechar('), 'o handler de fechar voltou')
   assert.ok(!tela.includes('acao=fechar'), 'a chamada de fechar voltou')
 })
 
 test('EXCLUIR existe, e em qualquer estado', () => {
-  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  const tela = ler('app/dashboard/financeiro/condicoes-baas/lancamentos/LancamentoBaasClient.tsx')
   assert.ok(tela.includes('>Excluir</Button>'))
   // Fora de qualquer `l.status === 'RASCUNHO'`: o que bloqueia e a liquidacao,
   // conferida no servidor — nao o estado do lancamento.
@@ -282,7 +282,7 @@ test('EXCLUIR existe, e em qualquer estado', () => {
 
 test('a confirmacao DIZ o que sai junto', () => {
   // Um "Excluir?" seco esconderia que tres registros desaparecem.
-  const tela = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  const tela = ler('app/dashboard/financeiro/condicoes-baas/lancamentos/LancamentoBaasClient.tsx')
   assert.ok(tela.includes('Excluir este lançamento BaaS?'))
   assert.ok(tela.includes('o lançamento financeiro'))
   assert.ok(tela.includes('o título a receber'))
@@ -379,7 +379,7 @@ test('o detalhe e alcancavel DE LANCAMENTOS', () => {
   // acrescenta a camada BaaS quando a linha veio de um Lancamento BaaS — a
   // decisao de mostrar ou nao a composicao saiu da tabela e foi para o
   // painel, que e quem tem o dado.
-  const l = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  const l = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
   assert.ok(l.includes('onClick={() => setDetalhe(l)}>Detalhes</Button>'))
   assert.ok(l.includes('<DetalheLancamento'))
 

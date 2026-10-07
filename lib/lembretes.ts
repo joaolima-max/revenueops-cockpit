@@ -222,8 +222,8 @@ export function lembretesDeTitulos(
   const saida: NovaNotificacao[] = []
   const origem = tipo === 'PAGAR' ? 'CONTA_PAGAR' : 'CONTA_RECEBER'
   const href = tipo === 'PAGAR'
-    ? '/dashboard/financeiro/contas-pagar'
-    : '/dashboard/financeiro/contas-receber'
+    ? '/dashboard/financeiro/cp-cr'
+    : '/dashboard/financeiro/cp-cr/receber'
   const substantivo = tipo === 'PAGAR' ? 'a pagar' : 'a receber'
 
   for (const t of titulos) {

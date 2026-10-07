@@ -10,6 +10,7 @@
  */
 
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { test } from 'node:test'
 import {
   MODULES, activeFeatures, navigationFor, checkAccess, isFeatureEnabled,
@@ -20,6 +21,20 @@ import {
 } from '../lib/permissions'
 
 const PERFIS = ['ADMIN', 'GESTOR', 'OPERACIONAL', 'COMERCIAL'] as const
+
+/**
+ * LEITURA DE ARQUIVO-FONTE.
+ *
+ * Alguns fatos desta rodada não vivem em `MODULES`: as rotas antigas que
+ * passaram a redirecionar, e os rótulos das abas de navegação profunda. Eles
+ * são verificados no FONTE, como já se faz em `tests/layout.test.ts`.
+ */
+function existe(caminho: string): boolean {
+  return fs.existsSync(caminho)
+}
+function ler(caminho: string): string {
+  return fs.readFileSync(caminho, 'utf8')
+}
 
 /** Rotas de página dos seis ambientes retirados. */
 const ROTAS_REMOVIDAS = [
@@ -94,12 +109,12 @@ test('Notificações permanece — é ambiente diferente de Alertas', () => {
 
 test('os ambientes que ficam continuam registrados', () => {
   for (const chave of [
-    'cockpit', 'conselho', 'receita.forecast', 'receita.metas',
-    'carteira.clientes', 'carteira.volumetria', 'carteira.certificados',
+    'home', 'conselho', 'receita.forecast', 'receita.metas',
+    'comercial.clientes',
     'operacoes.compliance', 'comercial.pipeline', 'comercial.funis',
     'comercial.leads', 'comercial.followup', 'comercial.crm',
-    'financeiro.visao', 'financeiro.lancamentos', 'financeiro.contas',
-    'financeiro.pagar', 'financeiro.condicoes',
+    'financeiro.visao', 'financeiro.cpcr', 'financeiro.condicoes',
+    'financeiro.previsao', 'financeiro.cadastros',
   ]) {
     assert.ok(isFeatureEnabled(chave), `${chave} deveria continuar ligada`)
   }
@@ -189,39 +204,78 @@ test('RECEITA tem Metas e Lançamento Diário — e só', () => {
   )
 })
 
-test('FINANCEIRO tem os SETE menus da especificação, nessa ordem', () => {
+test('FINANCEIRO tem os CINCO menus da especificação, nessa ordem', () => {
   /**
    * A ORDEM É A DA LEITURA DO AMBIENTE:
    *
-   *   Visão Geral        o que aconteceu
-   *   Lançamentos        o registro do que aconteceu
-   *   Contas a Pagar     o que vence        (antes de Receber, como sempre)
-   *   Contas a Receber   o que entra
-   *   Previsão           o que se espera que aconteça
-   *   Cadastros          o que classifica tudo acima
-   *   Condições BaaS     o contrato do parceiro
-   *   Lançamentos BaaS   a apuração que produz os três registros
+   *   Visão geral            o que aconteceu
+   *   Previsão               o que se espera que aconteça
+   *   CP / CR                os títulos e o registro que os origina
+   *   Condições BaaS         o contrato do parceiro e a apuração dele
+   *   Cadastros Financeiros  o que classifica tudo acima
    *
-   * ── O QUE MUDOU NA v28 ─────────────────────────────────────────────────
+   * ── O QUE MUDOU NESTA RODADA ───────────────────────────────────────────
    *
-   * CATEGORIAS e FORNECEDORES eram dois itens e viraram UM — "Cadastros
-   * Financeiros" —, com Centros de Custo como terceira aba. Eram dois cliques
-   * de menu para dois cadastros que se consultam juntos.
+   * Oito menus viraram CINCO, e nenhuma tela foi perdida:
    *
-   * PREVISÃO entrou, entre Contas a Receber e Cadastros: ela fecha o bloco do
-   * dinheiro (realizado → previsto) e vem antes dos cadastros, que são
-   * infraestrutura.
+   *   Lançamentos, Contas a Pagar e Contas a Receber  →  abas de CP / CR
+   *   Lançamentos BaaS                                →  aba de Condições BaaS
    *
-   * Oito menus viraram oito de novo — um saiu, um entrou.
+   * Os três primeiros leem o MESMO `LancamentoFinanceiro`; o quarto é a
+   * apuração que usa as tarifas cadastradas no menu que o absorveu.
+   *
+   * PREVISÃO subiu para a segunda posição: realizado e previsto são as duas
+   * leituras executivas do ambiente, e a pergunta "fecha o mês?" se responde
+   * com as duas juntas.
    */
   const financeiro = MODULES.find((m) => m.key === 'financeiro')!
   assert.deepEqual(
     financeiro.features.filter((f) => f.enabled).map((f) => f.label),
     [
-      'Visão Geral', 'Lançamentos', 'Contas a Pagar', 'Contas a Receber',
-      'Previsão', 'Cadastros Financeiros', 'Condições BaaS', 'Lançamentos BaaS',
+      'Visão geral', 'Previsão', 'CP / CR', 'Condições BaaS',
+      'Cadastros Financeiros',
     ],
   )
+})
+
+test('CP / CR registra as TRÊS APIs que absorveu', () => {
+  /**
+   * O MESMO BURACO DE SEGURANÇA que o teste de Cadastros Financeiros já
+   * guarda, agora para CP / CR: caminho de API não registrado é caminho
+   * LIBERADO para qualquer usuário autenticado (ver `checkAccess`).
+   *
+   * Ao fundir três menus em um, a tentação é apagar as três entradas e criar
+   * uma nova com uma API só — e isso abriria os títulos a pagar, os títulos a
+   * receber e os lançamentos financeiros para todo mundo, sem nenhum sinal na
+   * tela.
+   */
+  const cpcr = activeFeatures().find((f) => f.key === 'financeiro.cpcr')!
+  assert.ok(cpcr, 'CP / CR não está registrado')
+  assert.equal(cpcr.route, '/dashboard/financeiro/cp-cr')
+  for (const api of [
+    '/api/financeiro/contas-pagar',
+    '/api/financeiro/contas-receber',
+    '/api/financeiro/lancamentos',
+  ]) {
+    assert.ok(cpcr.api?.includes(api), `${api} ficou sem registro de acesso`)
+  }
+})
+
+test('Condições BaaS registra a API de Lançamento BaaS que absorveu', () => {
+  const cond = activeFeatures().find((f) => f.key === 'financeiro.condicoes')!
+  assert.equal(cond.route, '/dashboard/financeiro/condicoes-baas')
+  for (const api of ['/api/financeiro/condicoes-baas', '/api/lancamento-baas']) {
+    assert.ok(cond.api?.includes(api), `${api} ficou sem registro de acesso`)
+  }
+})
+
+test('Clientes registra as TRÊS APIs que absorveu', () => {
+  const cli = activeFeatures().find((f) => f.key === 'comercial.clientes')!
+  assert.equal(cli.route, '/dashboard/carteira')
+  assert.equal(cli.moduleKey, 'comercial')
+  for (const api of ['/api/clientes', '/api/volumetria', '/api/certificados']) {
+    assert.ok(cli.api?.includes(api), `${api} ficou sem registro de acesso`)
+  }
 })
 
 test('CATEGORIAS e FORNECEDORES nao sao mais itens do sidebar', () => {
@@ -267,12 +321,34 @@ test('PREVISAO esta em FINANCEIRO e exige as chaves proprias', () => {
   assert.ok(previsao.api?.includes('/api/previsao'), 'a API de Previsao ficou sem registro')
 })
 
-test('Lançamentos BaaS está em FINANCEIRO, nunca em RECEITA', () => {
-  const baas = activeFeatures().find((f) => f.key === 'financeiro.baas')!
-  assert.equal(baas.moduleKey, 'financeiro')
-  assert.equal(baas.route, '/dashboard/lancamento-baas')
+test('Lançamento BaaS está em FINANCEIRO, nunca em RECEITA', () => {
+  // Deixou de ser menu próprio e virou a aba "Lançamentos" de Condições BaaS,
+  // que é do FINANCEIRO. RECEITA continua sem nada de BaaS.
+  const cond = activeFeatures().find((f) => f.key === 'financeiro.condicoes')!
+  assert.equal(cond.moduleKey, 'financeiro')
   const receita = MODULES.find((m) => m.key === 'receita')!
   assert.ok(!receita.features.some((f) => /baas/i.test(f.label)))
+  // E não há mais menu próprio para ele em lugar nenhum.
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil).flatMap((x) => x.items.map((i) => i.label))
+    assert.ok(!itens.includes('Lançamentos BaaS'),
+      `Lançamentos BaaS voltou a ser menu em ${perfil}`)
+  }
+})
+
+test('a rota antiga de Lançamento BaaS continua existindo, como redirecionamento', () => {
+  /**
+   * `/dashboard/lancamento-baas` esteve em produção: há favoritos e links em
+   * conversas apontando para lá. A página permanece e só redireciona.
+   *
+   * Ela NÃO é registrada em `MODULES`, e isso é correto: caminho não
+   * registrado é caminho liberado, e esta página não lê nada — só manda para
+   * `/dashboard/financeiro/condicoes-baas/lancamentos`, que é registrada e
+   * confere a alçada.
+   */
+  assert.ok(existe('app/dashboard/lancamento-baas/page.tsx'))
+  const red = ler('app/dashboard/lancamento-baas/page.tsx')
+  assert.ok(red.includes("redirect('/dashboard/financeiro/condicoes-baas/lancamentos')"))
 })
 
 test('Metas e Lançamento Diário NÃO estão em Financeiro', () => {
@@ -291,15 +367,35 @@ test('Metas e Lançamento Diário NÃO estão em Financeiro', () => {
   assert.equal(diario.moduleKey, 'receita')
 })
 
-test('Contas a Pagar e Contas a Receber são menus e rotas distintos', () => {
-  // Leem bases diferentes (despesa × ContaReceber) e não podem casar por
-  // prefixo um com o outro, como Pipeline e Funis já casavam.
-  const pagar = activeFeatures().find((f) => f.key === 'financeiro.pagar')!
-  const receber = activeFeatures().find((f) => f.key === 'financeiro.contas')!
-  assert.equal(pagar.route, '/dashboard/financeiro/contas-pagar')
-  assert.equal(receber.route, '/dashboard/financeiro/contas-receber')
-  assert.ok(!pagar.route.startsWith(receber.route + '/'))
-  assert.ok(!receber.route.startsWith(pagar.route + '/'))
+test('CP / CR tem as TRÊS vistas, cada uma na sua rota', () => {
+  /**
+   * Contas a Pagar, Contas a Receber e Lançamentos viraram abas de UM menu —
+   * mas continuam sendo TRÊS telas, em três rotas. Fundir os menus não é
+   * fundir as telas: cada aba busca só o que precisa, e o link de uma delas é
+   * um endereço.
+   *
+   * Contas a Pagar mora na RAIZ: é a vista com prazo.
+   */
+  for (const [rota, cliente] of [
+    ['app/dashboard/financeiro/cp-cr/page.tsx', 'ContasPagarClient'],
+    ['app/dashboard/financeiro/cp-cr/receber/page.tsx', 'ContasReceberClient'],
+    ['app/dashboard/financeiro/cp-cr/lancamentos/page.tsx', 'LancamentosClient'],
+  ] as const) {
+    assert.ok(existe(rota), `${rota} não existe`)
+    assert.ok(ler(rota).includes(cliente), `${rota} não renderiza ${cliente}`)
+  }
+})
+
+test('as rotas antigas de CP / CR continuam existindo, como redirecionamento', () => {
+  for (const [antiga, destino] of [
+    ['app/dashboard/financeiro/contas-pagar/page.tsx', '/dashboard/financeiro/cp-cr'],
+    ['app/dashboard/financeiro/contas-receber/page.tsx', '/dashboard/financeiro/cp-cr/receber'],
+    ['app/dashboard/financeiro/lancamentos/page.tsx', '/dashboard/financeiro/cp-cr/lancamentos'],
+  ] as const) {
+    assert.ok(existe(antiga), `${antiga} foi apagada — links salvos devolveriam 404`)
+    assert.ok(ler(antiga).includes(`redirect('${destino}')`),
+      `${antiga} não redireciona para ${destino}`)
+  }
 })
 
 test('a Visão Geral não engole os menus abaixo dela', () => {
@@ -313,8 +409,16 @@ test('a Visão Geral não engole os menus abaixo dela', () => {
     ).map((f) => f.key)
 
   assert.deepEqual(daRota('/dashboard/financeiro'), ['financeiro.visao'])
-  assert.deepEqual(daRota('/dashboard/financeiro/lancamentos'), ['financeiro.lancamentos'])
+  assert.deepEqual(daRota('/dashboard/financeiro/cp-cr'), ['financeiro.cpcr'])
+  // AS SUB-ROTAS HERDAM O REGISTRO DO PAI, por prefixo. É assim que as abas
+  // de CP / CR e de Condições BaaS ficam protegidas sem registro próprio.
+  assert.deepEqual(daRota('/dashboard/financeiro/cp-cr/lancamentos'), ['financeiro.cpcr'])
   assert.deepEqual(daRota('/dashboard/financeiro/condicoes-baas'), ['financeiro.condicoes'])
+  assert.deepEqual(
+    daRota('/dashboard/financeiro/condicoes-baas/lancamentos'), ['financeiro.condicoes'],
+  )
+  assert.deepEqual(daRota('/dashboard/carteira/volumetria'), ['comercial.clientes'])
+  assert.deepEqual(daRota('/dashboard/carteira/certificados'), ['comercial.clientes'])
 })
 
 test('nenhuma FUNÇÃO engole o prefixo de API de outra', () => {
@@ -417,11 +521,28 @@ test('o menu chama-se "Condições BaaS", nao "Condições Comerciais BaaS"', ()
 
 /* ── Contas a Receber e Categorias ───────────────────────────────────────── */
 
-test('Contas a Receber e Contas a Pagar continuam menus distintos', () => {
+test('Contas a Receber e Contas a Pagar não são mais menus — são abas de CP / CR', () => {
   const rotulos = navigationFor('ADMIN')
     .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
-  assert.ok(rotulos.includes('Contas a Receber'))
-  assert.ok(rotulos.includes('Contas a Pagar'))
+  assert.ok(!rotulos.includes('Contas a Receber'))
+  assert.ok(!rotulos.includes('Contas a Pagar'))
+  assert.ok(rotulos.includes('CP / CR'))
+
+  // E AS DUAS CONTINUAM NA NAVEGAÇÃO PROFUNDA, com o nome que sempre tiveram.
+  const nav = ler('components/financeiro/CpCrNav.tsx')
+  assert.ok(nav.includes("label: 'Contas a Pagar'"))
+  assert.ok(nav.includes("label: 'Contas a Receber'"))
+  assert.ok(nav.includes("label: 'Lançamentos'"))
+})
+
+test('a aba interna de Condições BaaS se chama "Lançamentos", sem "BaaS"', () => {
+  // Dentro de "Condições BaaS" o sufixo é redundante — o módulo já disse que
+  // o assunto é BaaS. "Lançamentos BaaS" aqui leria como se houvesse outro
+  // tipo de lançamento na mesma tela.
+  const nav = ler('components/financeiro/CondicoesBaasNav.tsx')
+  assert.ok(nav.includes("label: 'Condições'"))
+  assert.ok(nav.includes("label: 'Lançamentos'"))
+  assert.ok(!nav.includes("label: 'Lançamentos BaaS'"))
 })
 
 test('RECEITA e FINANCEIRO são seções SEPARADAS na sidebar', () => {
@@ -432,7 +553,7 @@ test('RECEITA e FINANCEIRO são seções SEPARADAS na sidebar', () => {
   assert.equal(receita.label, 'RECEITA')
   assert.equal(financeiro.label, 'FINANCEIRO')
   assert.equal(receita.items.length, 2)
-  assert.equal(financeiro.items.length, 8)
+  assert.equal(financeiro.items.length, 5)
   // RECEITA vem ANTES: é a meta que dá sentido à leitura do resto.
   assert.ok(nav.indexOf(receita) < nav.indexOf(financeiro))
 })
@@ -468,12 +589,65 @@ test('a chave view_crm sobreviveu à renomeação da tela', () => {
 
 /* ── Navegação final da rodada ───────────────────────────────────────────── */
 
-test('COMERCIAL: Visão geral, Leads, Pipeline, Follow Up — nessa ordem', () => {
+test('COMERCIAL: Visão geral, Leads, Pipeline, Clientes, Follow Up — nessa ordem', () => {
+  /**
+   * CLIENTES entrou aqui, depois do Pipeline. A seção CARTEIRA saiu: ela tinha
+   * três itens — Clientes, Volumetria e Certificados — que são três leituras
+   * do MESMO cliente, e viraram abas de um módulo só.
+   *
+   * A posição é a da leitura do funil: o cliente é o desfecho do pipeline, e
+   * o Follow Up acompanha os dois.
+   */
   const comercial = navigationFor('ADMIN').find((s) => s.key === 'comercial')!
   assert.deepEqual(
     comercial.items.map((i) => i.label),
-    ['Visão geral', 'Leads', 'Pipeline', 'Follow Up'],
+    ['Visão geral', 'Leads', 'Pipeline', 'Clientes', 'Follow Up'],
   )
+})
+
+test('Volumetria e Certificados não são mais menus — são abas de Clientes', () => {
+  for (const perfil of PERFIS) {
+    const itens = navigationFor(perfil, ALL_PERMISSIONS as unknown as string[], true)
+      .flatMap((x) => x.items.map((i) => i.label))
+    assert.ok(!itens.includes('Volumetria'), `Volumetria voltou a ser menu em ${perfil}`)
+    assert.ok(!itens.includes('Certificados'), `Certificados voltou a ser menu em ${perfil}`)
+  }
+
+  // E as duas continuam na navegação profunda, com o nome que sempre tiveram.
+  const nav = ler('components/carteira/CarteiraNav.tsx')
+  assert.ok(nav.includes("label: 'Clientes'"))
+  assert.ok(nav.includes("label: 'Volumetria'"))
+  assert.ok(nav.includes("label: 'Certificados'"))
+})
+
+test('as rotas antigas de Volumetria e Certificados redirecionam', () => {
+  for (const [antiga, destino] of [
+    ['app/dashboard/volumetria/page.tsx', '/dashboard/carteira/volumetria'],
+    ['app/dashboard/certificados/page.tsx', '/dashboard/carteira/certificados'],
+  ] as const) {
+    assert.ok(existe(antiga), `${antiga} foi apagada — links salvos devolveriam 404`)
+    assert.ok(ler(antiga).includes(`redirect('${destino}')`),
+      `${antiga} não redireciona para ${destino}`)
+  }
+})
+
+test('a aba de Certificados some para quem não tem a chave', () => {
+  /**
+   * A ALÇADA DE CADA ABA NÃO MUDOU ao consolidar os menus: Certificados
+   * continua exigindo `view_certificates` na página e na API.
+   *
+   * O que a navegação profunda acrescenta é que o LINK não é desenhado para
+   * quem não tem a chave — em vez de ser desenhado e levar a um redirect.
+   * Esconder o link não autoriza nada: a página continua conferindo.
+   */
+  const nav = ler('components/carteira/CarteiraNav.tsx')
+  assert.ok(nav.includes('podeVerCertificados'))
+  assert.ok(nav.includes('visivel: podeVerCertificados'))
+
+  const pagina = ler('app/dashboard/carteira/certificados/page.tsx')
+  assert.ok(pagina.includes("'view_certificates'"),
+    'a página de Certificados parou de conferir a chave')
+  assert.ok(pagina.includes("redirect('/dashboard')"))
 })
 
 test('OPERAÇÕES: Tarefas, Incidentes, Compliance — nessa ordem', () => {
@@ -512,7 +686,7 @@ test('as seções da sidebar saem na ordem da especificação', () => {
   const secoes = navigationFor('ADMIN').map((s) => s.key)
   assert.deepEqual(
     secoes,
-    ['executivo', 'receita', 'carteira', 'comercial', 'operacoes', 'financeiro', 'admin'],
+    ['executivo', 'receita', 'comercial', 'operacoes', 'financeiro', 'admin'],
   )
 })
 
@@ -521,16 +695,38 @@ test('quem NÃO é sócio vê EXECUTIVO sem Conselho', () => {
   // "não sei" — e quem não sabe (o proxy) não decide. A sidebar sempre sabe:
   // o layout é server component e lê `isPartner` do banco.
   const executivo = navigationFor('ADMIN', null, false).find((s) => s.key === 'executivo')!
-  assert.deepEqual(executivo.items.map((i) => i.label), ['Cockpit'])
+  assert.deepEqual(executivo.items.map((i) => i.label), ['Home'])
 })
 
 /* ── A SIDEBAR DESTA RODADA, item por item ───────────────────────────────── */
 
-test('EXECUTIVO: Cockpit e Conselho', () => {
+test('EXECUTIVO: Home e Conselho', () => {
   // `view_conselho` na lista: o Conselho passou a exigir socio E a chave, e
   // sem ela o item (corretamente) nao aparece.
   const s = navigationFor('ADMIN', ['view_conselho'], true).find((x) => x.key === 'executivo')!
-  assert.deepEqual(s.items.map((i) => i.label), ['Cockpit', 'Conselho'])
+  assert.deepEqual(s.items.map((i) => i.label), ['Home', 'Conselho'])
+})
+
+test('o Cockpit virou HOME — só o nome e a chave mudaram', () => {
+  /**
+   * "Apenas nome e posição, sem alterar a função": a ROTA, a API e `exact`
+   * continuam exatamente os mesmos. Trocá-los invalidaria links salvos e
+   * deixaria `/api/dashboard` sem registro.
+   *
+   * A chave acompanhou o rótulo porque o registro é a fonte de verdade do
+   * produto, e uma entrada `key: 'cockpit'` rotulada "Home" seria a
+   * divergência que `lib/modules.ts` existe para evitar.
+   */
+  const home = activeFeatures().find((f) => f.key === 'home')!
+  assert.ok(home, 'a Home não está registrada')
+  assert.equal(home.label, 'Home')
+  assert.equal(home.route, '/dashboard')
+  assert.equal(home.exact, true)
+  assert.ok(home.api?.includes('/api/dashboard'))
+  assert.equal(home.moduleKey, 'executivo')
+
+  // E a chave antiga não ficou para trás, duplicando a função.
+  assert.ok(!activeFeatures().some((f) => f.key === 'cockpit'))
 })
 
 test('a ordem das seções é a da especificação, par a par', () => {
@@ -539,29 +735,65 @@ test('a ordem das seções é a da especificação, par a par', () => {
     assert.ok(k.indexOf(a) < k.indexOf(b), `${a} deveria vir antes de ${b}`)
 
   antes('executivo', 'receita')
-  antes('receita', 'carteira')
-  // CARTEIRA antes de COMERCIAL: a base instalada vem antes da prospecção.
-  antes('carteira', 'comercial')
+  // CARTEIRA SAIU: Clientes virou um item de COMERCIAL.
+  antes('receita', 'comercial')
   antes('comercial', 'operacoes')
   antes('operacoes', 'financeiro')
   antes('financeiro', 'admin')
 })
 
-test('Contas a PAGAR vem antes de Contas a RECEBER', () => {
-  const rotulos = navigationFor('ADMIN')
-    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
-  assert.ok(rotulos.indexOf('Contas a Pagar') < rotulos.indexOf('Contas a Receber'))
+test('Contas a PAGAR vem antes de Contas a RECEBER — agora dentro de CP / CR', () => {
+  // A ordem continua sendo a mesma, só mudou de lugar: do sidebar para a
+  // navegação profunda. Pagar primeiro porque é a vista que tem prazo.
+  const nav = ler('components/financeiro/CpCrNav.tsx')
+  assert.ok(nav.indexOf("label: 'Contas a Pagar'") < nav.indexOf("label: 'Contas a Receber'"))
+  // E Contas a Pagar é a RAIZ do módulo: `href: ''`.
+  assert.ok(/\{ href: '', label: 'Contas a Pagar' \}/.test(nav))
 })
 
-test('Lançamentos BaaS FECHA o Financeiro', () => {
+test('Cadastros Financeiros FECHA o Financeiro', () => {
+  // Os cadastros são infraestrutura: classificam tudo o que está acima, e por
+  // isso vêm por último. Era Lançamentos BaaS que fechava; ele virou aba de
+  // Condições BaaS.
   const rotulos = navigationFor('ADMIN')
     .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
-  assert.equal(rotulos[rotulos.length - 1], 'Lançamentos BaaS')
+  assert.equal(rotulos[rotulos.length - 1], 'Cadastros Financeiros')
 })
 
-test('nenhum menu novo foi inventado — as sete seções e nada mais', () => {
+test('PREVISÃO vem imediatamente abaixo da Visão geral', () => {
+  // Realizado e previsto lado a lado, no topo: são as duas leituras
+  // executivas do ambiente, e "fecha o mês?" se responde com as duas juntas.
+  const rotulos = navigationFor('ADMIN', ['view_previsao'])
+    .find((s) => s.key === 'financeiro')!.items.map((i) => i.label)
+  assert.equal(rotulos[0], 'Visão geral')
+  assert.equal(rotulos[1], 'Previsão')
+})
+
+test('nenhum menu novo foi inventado — as SEIS seções e nada mais', () => {
   const chaves = navigationFor('ADMIN', ['view_auditoria'], true).map((s) => s.key)
   assert.deepEqual(chaves, [
-    'executivo', 'receita', 'carteira', 'comercial', 'operacoes', 'financeiro', 'admin',
+    'executivo', 'receita', 'comercial', 'operacoes', 'financeiro', 'admin',
   ])
+})
+
+test('A SIDEBAR INTEIRA, item por item — a especificação desta rodada', () => {
+  /**
+   * O ESPELHO EXATO do pedido. Qualquer item que entre, saia ou troque de
+   * seção quebra aqui — que é o ponto: a sidebar é a primeira coisa que o
+   * usuário vê, e ela mudou por decisão de produto, não por acidente.
+   */
+  const nav = navigationFor('ADMIN', ['view_conselho', 'view_previsao', 'view_auditoria'], true)
+  assert.deepEqual(
+    nav.map((s) => [s.label, s.items.map((i) => i.label)]),
+    [
+      ['EXECUTIVO', ['Home', 'Conselho']],
+      ['RECEITA', ['Metas', 'Lançamento Diário']],
+      ['COMERCIAL', ['Visão geral', 'Leads', 'Pipeline', 'Clientes', 'Follow Up']],
+      ['OPERAÇÕES', ['Tarefas', 'Incidentes', 'Compliance']],
+      ['FINANCEIRO', [
+        'Visão geral', 'Previsão', 'CP / CR', 'Condições BaaS', 'Cadastros Financeiros',
+      ]],
+      ['ADMIN', ['Usuários', 'Auditoria']],
+    ],
+  )
 })

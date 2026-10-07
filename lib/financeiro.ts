@@ -403,6 +403,83 @@ export async function receitaPorNatureza(periodo: string): Promise<ReceitaPorNat
 }
 
 /* ========================================================================= *
+ * REALIZADO DAS METAS DE RECEITA DA PREVISÃO
+ * ========================================================================= */
+
+export interface RealizadoReceitaPrevisao {
+  /** Apuração dos parceiros BaaS / White Label fechada no mês. */
+  lancamentosWlBaas: number
+  /**
+   * Receita de SERVIÇOS. `null` de propósito, e não zero.
+   *
+   * ── POR QUE NÃO HÁ NÚMERO AQUI ────────────────────────────────────────
+   *
+   * Não existe, no sistema, nada que diga qual receita é "de serviços".
+   * `CategoriaFinanceira.natureza` reconhece três papéis — FLOAT, SETUP e
+   * SUSTENTAÇÃO — e serviços não é nenhum deles. Somar receitas por NOME de
+   * categoria ("Serviços", "Serviço", "Prestação de serviços") é
+   * exactamente o acoplamento que `natureza` existe para evitar.
+   *
+   * Então o realizado é AUSENTE, e a meta aparece como `SEM_REALIZADO` na
+   * tela. Devolver zero afirmaria que nada foi faturado, que é uma afirmação
+   * diferente de "o sistema não sabe" — e é a confusão que a série diária e
+   * os gráficos mensais desta mesma rodada também recusam.
+   *
+   * O que falta é uma DECISÃO de produto: qual natureza (ou qual categoria)
+   * conta como serviços. No dia em que ela existir, o número entra aqui e a
+   * meta passa a ser avaliada sem mais nenhuma mudança.
+   */
+  servicos: null
+  /** Receita de SETUP — as categorias com `natureza = SETUP`. */
+  setup: number
+}
+
+/**
+ * O REALIZADO das três metas de receita que alimentam a Previsão.
+ *
+ * Cada linha vem da sua fonte própria, e nenhuma é inventada:
+ *
+ *   LANÇAMENTOS WL/BAAS  `LancamentoBaas` — a receita de uma apuração é o
+ *                        SALDO INICIAL da conta do parceiro (ver
+ *                        `receitaBaas`, em lib/lancamento-baas). RASCUNHO
+ *                        fica fora: rascunho não gerou título nenhum.
+ *
+ *   SERVIÇOS             ausente. Ver `RealizadoReceitaPrevisao.servicos`.
+ *
+ *   SETUP                `receitaPorNatureza(periodo).SETUP` — as categorias
+ *                        marcadas como setup. É a mesma fonte que o gráfico
+ *                        de receita por natureza já usa.
+ *
+ * ── O MÊS DE UMA APURAÇÃO É O DO SEU FIM ────────────────────────────────
+ *
+ * `periodoFim` e não `periodoInicio`: uma apuração de 25/09 a 24/10 é receita
+ * de outubro, porque é em outubro que ela fecha e gera o título. Usar o
+ * início atribuiria a setembro um faturamento que ainda não existia.
+ */
+export async function realizadoReceitaPrevisao(
+  periodo: string,
+): Promise<RealizadoReceitaPrevisao> {
+  const { inicio, fim } = intervaloMes(periodo)
+
+  const [baas, natureza] = await Promise.all([
+    prisma.lancamentoBaas.aggregate({
+      where: {
+        status: { not: 'RASCUNHO' },
+        periodoFim: { gte: inicio, lt: fim },
+      },
+      _sum: { saldoInicial: true },
+    }),
+    receitaPorNatureza(periodo),
+  ])
+
+  return {
+    lancamentosWlBaas: baas._sum.saldoInicial ?? 0,
+    servicos: null,
+    setup: natureza.SETUP,
+  }
+}
+
+/* ========================================================================= *
  * EVOLUÇÃO DE PARCEIROS ATIVOS — BaaS e White Label, mês a mês
  * ========================================================================= */
 
@@ -432,6 +509,47 @@ export interface PontoParceiros {
  * passar a ser gravado; para esses meses, o estado reconstruído é o mais
  * antigo conhecido.
  */
+/**
+ * O PRIMEIRO MÊS EM QUE A CONTAGEM DE PARCEIROS EXISTE.
+ *
+ * ── O DEFEITO QUE ISTO CORRIGE ──────────────────────────────────────────
+ *
+ * "Evolução de BaaS Ativos", "Evolução de White Labels Ativos" e "Evolução do
+ * MRR" desenhavam ZERO em todo mês anterior ao cadastro das condições
+ * comerciais. Em Production, as 20 condições foram criadas em 01–02/10/2026 —
+ * então os gráficos mostravam uma rampa de 0 para 9 entre setembro e outubro,
+ * como se nove parceiros tivessem entrado num mês.
+ *
+ * Nenhum parceiro entrou. O que aconteceu foi que ANTES DE OUTUBRO O SISTEMA
+ * NÃO SABE: a Bass Pago já tinha parceiros, e o cadastro deles é que é novo.
+ * Zero não era o número — era a ausência de registro, desenhada como número.
+ *
+ * ── A REGRA ─────────────────────────────────────────────────────────────
+ *
+ * A série começa no primeiro mês em que existe pelo menos uma condição
+ * comercial cadastrada. Antes disso não há ponto NENHUM: nem zero, nem
+ * estimativa, nem repetição do primeiro valor conhecido. É a mesma regra da
+ * série diária, onde dia sem lançamento fica FORA em vez de virar zero.
+ *
+ * `null` quando não há nenhuma condição cadastrada — e aí a série é vazia.
+ *
+ * ── POR QUE `createdAt`, E NÃO `sustentacaoInicio` ──────────────────────
+ *
+ * `createdAt` é quando o REGISTRO passou a existir, que é exatamente a
+ * pergunta: desde quando o sistema tem como responder. `sustentacaoInicio` é
+ * a vigência do contrato, e `evolucaoParceiros` já a respeita ao montar cada
+ * ponto. Usá-la aqui faria a série começar antes de existir cadastro.
+ */
+export async function primeiroMesComParceiros(): Promise<string | null> {
+  const primeira = await prisma.condicaoComercial.findFirst({
+    orderBy: { createdAt: 'asc' },
+    select: { createdAt: true },
+  })
+  if (!primeira) return null
+  const d = primeira.createdAt
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 export async function evolucaoParceiros(periodos: string[]): Promise<PontoParceiros[]> {
   const [condicoes, transicoes] = await Promise.all([
     prisma.condicaoComercial.findMany({

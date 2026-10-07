@@ -100,19 +100,19 @@ test('a recusa DIZ onde o titulo se cria', () => {
 })
 
 test('a tela de Contas a Receber nao tem criacao', () => {
-  const c = ler('app/dashboard/financeiro/contas-receber/ContasReceberClient.tsx')
+  const c = ler('app/dashboard/financeiro/cp-cr/receber/ContasReceberClient.tsx')
   for (const proibido of ['Novo Título', 'Novo título', "method: 'POST'"]) {
     assert.ok(!c.includes(proibido), `criacao manual na tela: ${proibido}`)
   }
 })
 
 test('Contas a Receber tem "Ir para lançamentos"', () => {
-  const c = ler('app/dashboard/financeiro/contas-receber/ContasReceberClient.tsx')
+  const c = ler('app/dashboard/financeiro/cp-cr/receber/ContasReceberClient.tsx')
   assert.ok(c.includes('Ir para Lançamentos') || c.includes('Ir para lançamentos'))
 })
 
 test('Contas a Pagar tem "Ir para lançamentos"', () => {
-  const c = ler('app/dashboard/financeiro/contas-pagar/ContasPagarClient.tsx')
+  const c = ler('app/dashboard/financeiro/cp-cr/ContasPagarClient.tsx')
   assert.ok(c.includes('Ir para lançamentos'))
   // No cabecalho, sempre alcancavel — nao so no estado vazio.
   assert.ok(
@@ -144,7 +144,7 @@ test('"Folha de pagamento" cabe em UMA linha', () => {
     'bp-truncate perdeu o nowrap — a descricao voltaria a quebrar palavra',
   )
 
-  const L = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  const L = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
   const m = L.match(/w-\[clamp\((\d+)rem,\s*\d+%,\s*\d+rem\)\]">Descrição/)
   assert.ok(m, 'a coluna Descricao perdeu o clamp de largura')
   assert.ok(
@@ -154,19 +154,19 @@ test('"Folha de pagamento" cabe em UMA linha', () => {
 })
 
 test('a tabela de Lancamentos ROLA em vez de comprimir', () => {
-  const L = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  const L = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
   assert.ok(L.includes('min-w-[76rem]'), 'a tabela voltou a comprimir as oito colunas')
   const shell = ler('components/ui/DataTable.tsx')
   assert.ok(shell.includes('overflow-x-auto'), 'o TableShell perdeu a rolagem')
 })
 
 test('a Categoria fica COMPACTA e nao disputa com a descricao', () => {
-  const L = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  const L = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
   assert.ok(L.includes('className="w-[9rem]">Categoria'))
 })
 
 test('descricao longa ganha ellipsis E o texto no tooltip', () => {
-  const L = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+  const L = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
   assert.ok(L.includes('bp-truncate" title={l.descricao}'), 'a descricao perdeu o tooltip')
 })
 

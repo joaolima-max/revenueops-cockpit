@@ -1,8 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { cn } from '@/lib/utils'
+import SubNav from '@/components/ui/SubNav'
 
 /**
  * NAVEGAÇÃO PROFUNDA DA PREVISÃO.
@@ -35,6 +33,12 @@ import { cn } from '@/lib/utils'
  * Orçamento vem antes de receitas e despesas porque é o acordo; as duas são a
  * execução dele. Fluxo de caixa depois das duas, porque é a soma delas.
  * Forecast fecha: é a única que fala do futuro além do que foi cadastrado.
+ *
+ * ── A APARÊNCIA MORA EM `SubNav` ────────────────────────────────────────
+ *
+ * Quatro módulos têm navegação profunda hoje (Previsão, CP / CR, Condições
+ * BaaS e Clientes). O markup e a regra de "qual aba está ativa" são de
+ * `components/ui/SubNav`; aqui ficam só a raiz e a lista de áreas.
  */
 
 export const AREAS_PREVISAO = [
@@ -50,33 +54,5 @@ export const AREAS_PREVISAO = [
 const RAIZ = '/dashboard/financeiro/previsao'
 
 export default function PrevisaoNav() {
-  const pathname = usePathname()
-
-  return (
-    <nav className="flex flex-wrap items-center gap-2" aria-label="Áreas da Previsão">
-      {AREAS_PREVISAO.map((a) => {
-        const rota = `${RAIZ}${a.href}`
-        // A Visão Geral mora na RAIZ, então ela casa EXATAMENTE — sem isto ela
-        // ficaria marcada como ativa em todas as sub-rotas, porque todas
-        // começam com o seu caminho.
-        const ativa = a.href === '' ? pathname === rota : pathname.startsWith(rota)
-        return (
-          <Link
-            key={a.href || 'raiz'}
-            href={rota}
-            aria-current={ativa ? 'page' : undefined}
-            className={cn(
-              'px-3.5 py-2 rounded-lg t-sm font-medium border',
-              'transition-colors duration-[180ms] ease-bp',
-              ativa
-                ? 'border-accent/40 bg-accent/10 text-accent-soft'
-                : 'border-line text-muted hover:border-line-2 hover:text-fg',
-            )}
-          >
-            {a.label}
-          </Link>
-        )
-      })}
-    </nav>
-  )
+  return <SubNav raiz={RAIZ} areas={AREAS_PREVISAO} rotulo="Áreas da Previsão" />
 }

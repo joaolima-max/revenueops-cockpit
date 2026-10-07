@@ -254,9 +254,31 @@ test('a comparacao REAPURA o mes comparavel na janela parcial', () => {
   // precisa) como base. Isso traria o defeito de volta por outro caminho.
   const bloco = KPI.slice(KPI.indexOf('export async function comparacaoMensal'))
   assert.ok(
-    bloco.includes('await kpisDoPeriodo(anteriorInteiro.periodo, ateDia)'),
+    bloco.includes('await kpisDoPeriodo(anteriorInteiro.periodo, dias)'),
     'o mes comparavel voltou a entrar inteiro',
   )
+})
+
+test('a janela e IGUALADA nos dois lados, nao so reapurada no comparavel', () => {
+  /**
+   * O SEGUNDO DEFEITO, pelo caminho inverso.
+   *
+   * No dia 31 de um mes, "os 31 dias decorridos" nao existem em fevereiro:
+   * `intervaloParcial` capa no fim do mes e devolveria 28. Comparar 31 dias de
+   * marco com 28 de fevereiro e o MESMO defeito que `comparacaoMensal` existe
+   * para corrigir, so invertido.
+   *
+   * A janela efetiva passa a ser o MENOR dos dois tamanhos, e vale para os
+   * dois lados.
+   */
+  const bloco = KPI.slice(KPI.indexOf('export async function comparacaoMensal'))
+  assert.ok(
+    bloco.includes("Math.min(ateDia, diasNoMes(anteriorInteiro.periodo))"),
+    'a janela do mes comparavel deixou de ser igualada',
+  )
+  // E o `ateDia` devolvido e o EFETIVO, para o rotulo nao mentir sobre a
+  // janela usada.
+  assert.ok(bloco.includes('ateDia: dias'), 'o rotulo voltaria a citar a janela pedida')
 })
 
 test('as TELAS declaram a janela que estao comparando', () => {

@@ -103,6 +103,23 @@ enum MetaTipo {
   /// Receita tarifaria / TPV, em percentual.
   TAKE_RATE
 
+  /// METAS DE RECEITA QUE ALIMENTAM A PREVISAO.
+  ///
+  /// As quatro linhas de receita que a Previsao soma ao MRR projetado para
+  /// chegar na RECEITA PREVISTA do periodo (ver lib/previsao-receita):
+  ///
+  ///   RECEITA_TARIFARIA            (acima) a tarifa sobre o TPV proprio
+  ///   RECEITA_LANCAMENTOS_WL_BAAS  a apuracao dos parceiros
+  ///   RECEITA_SERVICOS             servicos contratados
+  ///   RECEITA_SETUP                implantacao
+  ///
+  /// Nao se sobrepoem entre si nem ao MRR: sustentacao e mensalidade de API
+  /// entram pelo MRR projetado, que vem do cadastro de condicoes comerciais e
+  /// da carteira — nunca de meta.
+  RECEITA_LANCAMENTOS_WL_BAAS
+  RECEITA_SERVICOS
+  RECEITA_SETUP
+
   /// METAS DE PIPELINE. Quantitativas e percentuais — nunca monetarias: o
   /// valor comercial de um lead nao esta validado e nao entra em meta.
   LEADS_GERADOS
@@ -784,6 +801,50 @@ model LancamentoDiario {
   updatedAt        DateTime @updatedAt
 
   @@index([data])
+}
+
+/// RASTREABILIDADE DA NORMALIZACAO HISTORICA (v29).
+///
+/// De fevereiro a setembro de 2026 cada mes tinha UM lancamento diario,
+/// gravado no ultimo dia do mes, com o valor do MES INTEIRO. A migration v29
+/// distribuiu esses consolidados dia a dia; esta tabela guarda o que havia
+/// ANTES, para que a conferencia seja possivel depois do fato.
+///
+/// POR QUE ELA EXISTE, e nao so um comentario na migration: o pedido era
+/// explicito — "nao apagar o original sem rastreabilidade". O lancamento
+/// original NAO foi apagado (ele permaneceu, virando o ultimo dia do mes,
+/// porque a data dele ja era o ultimo dia), mas os VALORES dele mudaram. Sem
+/// esta tabela nao haveria como provar que a soma distribuida bate com o
+/// numero que a operacao reportou.
+///
+/// E ela tambem e o que torna a migration IDEMPOTENTE: um mes com registro
+/// aqui nao e normalizado de novo.
+model NormalizacaoHistorica {
+  id String @id @default(cuid())
+
+  /// O lancamento que era o consolidado e virou o ultimo dia do mes.
+  lancamentoId String
+
+  /// Data do consolidado original — o ultimo dia do mes. UNICA: um mes nao se
+  /// normaliza duas vezes.
+  dataOriginal DateTime @unique @db.Date
+  /// Quantos dias tem o mes. O divisor da distribuicao.
+  diasNoMes    Int
+
+  /// Os valores ORIGINAIS, exatamente como estavam antes da distribuicao.
+  receitaOriginal    Float
+  tpvOriginal        Float
+  transacoesOriginal Int
+  medOriginal        Int
+  saldoOriginal      Float
+  clientesAtivosOriginal Int?
+
+  /// Quantas linhas foram CRIADAS (dias 1..n-1). O original nao conta.
+  diasCriados Int
+
+  aplicadoEm DateTime @default(now())
+
+  @@index([dataOriginal])
 }
 
 /// Multiplicador do Float, configuravel pela tela de Parametros.

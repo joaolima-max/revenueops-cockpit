@@ -171,7 +171,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
                 por vencimento. Não há cadastro aqui, então o caminho para
                 criar ou corrigir uma despesa precisa estar visível — do jeito
                 que já está em Contas a Receber. */}
-            <Link href="/dashboard/financeiro/lancamentos">
+            <Link href="/dashboard/financeiro/cp-cr/lancamentos">
               <Button>Ir para lançamentos</Button>
             </Link>
           </div>
@@ -237,7 +237,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
             title="Nenhuma despesa neste período"
             description="Despesas são lançadas em Lançamentos e aparecem aqui pela data de vencimento."
             action={
-              <Link href="/dashboard/financeiro/lancamentos">
+              <Link href="/dashboard/financeiro/cp-cr/lancamentos">
                 <Button variant="primary">Ir para lançamentos</Button>
               </Link>
             }
@@ -262,7 +262,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
             {titulos.length === 0 ? (
               <EmptyRow colSpan={8}>
                 Nenhuma despesa com esses filtros. Despesas são lançadas em{' '}
-                <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft hover:underline">
+                <Link href="/dashboard/financeiro/cp-cr/lancamentos" className="text-accent-soft hover:underline">
                   Lançamentos
                 </Link>.
               </EmptyRow>
@@ -299,7 +299,7 @@ export default function ContasPagarClient({ podeGerenciar }: { podeGerenciar: bo
                           {t.status === 'PAGO' ? 'Reabrir' : 'Dar baixa'}
                         </Button>
                       )}
-                      <Link href="/dashboard/financeiro/lancamentos">
+                      <Link href="/dashboard/financeiro/cp-cr/lancamentos">
                         <Button size="sm">Ver lançamento</Button>
                       </Link>
                     </span>
