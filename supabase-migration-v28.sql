@@ -15,6 +15,7 @@
 --   5. SLA de Pipeline              — PipelineEtapa.slaDias + Deal.etapaEntradaEm
 --   6. Backfill de Deal.etapaEntradaEm a partir do histórico
 --   7. AJUSTE CONTÁBIL DO BAAS      — a receita passa a ser o saldo INTEGRAL
+--  7b. Título a receber             — passa a espelhar a receita integral
 --   8. Permissões de Previsão       — view_previsao / manage_previsao
 -- ============================================================================
 
@@ -359,10 +360,7 @@ WHERE "etapaEntradaEm" IS NULL
 -- ── O QUE NÃO É TOCADO ────────────────────────────────────────────────────
 --
 --   * a DESPESA do repasse — já vale `valorCliente`, que é o número certo;
---   * o TÍTULO A RECEBER — continua valendo as TARIFAS. Ele é o que se cobra
---     do parceiro, e o resto do saldo já está na conta da Bass Pago: cobrar o
---     integral criaria um recebível de dinheiro que já foi recebido. Além
---     disso, títulos já pagos ou faturados não se reescrevem;
+--   * o TÍTULO A RECEBER JÁ PAGO OU FATURADO — ver a seção 7b;
 --   * nenhum lançamento financeiro que não tenha nascido de um Lançamento
 --     BaaS — o `JOIN` por `lancamentoId` garante isso.
 --
@@ -389,6 +387,70 @@ JOIN "CondicaoComercial" cc ON cc.id = lb."condicaoId"
 WHERE lb."contaPagarId" = lf.id
   AND lf.tipo = 'DESPESA'
   AND lf.descricao <> 'Comissão BaaS — ' || cc."nomeFantasia";
+
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 7b. O TÍTULO A RECEBER PASSA A ESPELHAR A RECEITA
+--
+-- ── A DECISÃO ─────────────────────────────────────────────────────────────
+--
+-- Até a v27 o título a receber valia só as TARIFAS, porque a receita era a
+-- margem. Com a receita bruta, a assimetria deixou de ter sentido: um título
+-- de 10 mil ao lado de uma receita de 100 mil obriga quem confere a somar os
+-- dois lados à mão para descobrir que a diferença era o overprice.
+--
+-- Então o título passa a valer o saldo INTEGRAL apurado, igual à receita.
+--
+-- ── POR QUE ISSO NÃO CRIA DUPLA CONTAGEM ──────────────────────────────────
+--
+-- Porque nem `lib/financeiro.ts` nem `lib/previsao.ts` leem `ContaReceber`
+-- para apurar receita, resultado ou caixa — a origem única é
+-- `LancamentoFinanceiro`. O título existe para a COBRANÇA e para a
+-- INADIMPLÊNCIA, e não entra em nenhuma soma de receita.
+--
+-- ── O QUE NÃO É REESCRITO, E A CONSEQUÊNCIA ───────────────────────────────
+--
+-- Título JÁ PAGO, FATURADO ou com data de pagamento NÃO é tocado. Dois
+-- motivos:
+--
+--   1. o valor movimentado é o histórico. Reescrevê-lo apagaria o que de fato
+--      foi recebido, e um título pago de 10 mil passaria a dizer que 100 mil
+--      entraram;
+--   2. nota fiscal emitida é problema fiscal, não ajuste de cadastro — é a
+--      mesma razão por que `liquidacaoDe` trava a edição desses lançamentos.
+--
+-- CONSEQUÊNCIA ACEITA: em Contas a Receber vão conviver títulos antigos pelas
+-- tarifas e novos pelo integral. É assimetria real, e preferível a reescrever
+-- liquidação — a tela de Lançamentos BaaS mostra a composição de cada um.
+--
+-- Idempotente: o WHERE compara com o valor de destino.
+-- ────────────────────────────────────────────────────────────────────────────
+UPDATE "ContaReceber" cr
+SET valor = lb."saldoInicial",
+    descricao = 'Apuração BaaS — ' || cc."nomeFantasia",
+    "updatedAt" = CURRENT_TIMESTAMP
+FROM "LancamentoBaas" lb
+JOIN "CondicaoComercial" cc ON cc.id = lb."condicaoId"
+WHERE lb."contaReceberId" = cr.id
+  -- NUNCA mexe em liquidado: o valor movimentado é o histórico.
+  AND cr.status NOT IN ('PAGO', 'FATURADO')
+  AND cr."dataPago" IS NULL
+  AND cr.valor <> lb."saldoInicial";
+
+-- Quantos ficaram para trás, e por quê — para quem aplicar a migration saber
+-- que a assimetria existe em vez de descobri-la na tela.
+DO $$
+DECLARE liquidados int;
+BEGIN
+  SELECT count(*) INTO liquidados
+  FROM "ContaReceber" cr
+  JOIN "LancamentoBaas" lb ON lb."contaReceberId" = cr.id
+  WHERE cr.status IN ('PAGO', 'FATURADO') OR cr."dataPago" IS NOT NULL;
+
+  IF liquidados > 0 THEN
+    RAISE NOTICE 'v28: % titulo(s) a receber JA LIQUIDADO(S) mantiveram o valor antigo (tarifas). Liquidacao nao se reescreve.', liquidados;
+  END IF;
+END $$;
 
 
 -- ────────────────────────────────────────────────────────────────────────────

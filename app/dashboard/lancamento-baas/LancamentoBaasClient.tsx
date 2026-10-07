@@ -225,7 +225,7 @@ export default function LancamentoBaasClient() {
       + `Lançamentos · receita: ${moedaCheia(l.saldoInicial)}\n`
       + `Lançamentos · despesa (comissão): ${moedaCheia(l.valorCliente)}\n`
       + `Resultado: ${moedaCheia(l.saldoInicial - l.valorCliente)}\n`
-      + `Contas a Receber · tarifas: ${moedaCheia(l.totalTarifas)}\n`
+      + `Contas a Receber · título da receita: ${moedaCheia(l.saldoInicial)}\n`
       + `Contas a Pagar · comissão do parceiro: ${moedaCheia(l.valorCliente)}`
       + (reparo
         ? '\n\nOs registros que já existem são ATUALIZADOS, não duplicados.'

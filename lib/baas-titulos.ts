@@ -5,25 +5,27 @@
  *
  *   1. LANÇAMENTO FINANCEIRO de RECEITA — o saldo INTEGRAL apurado no
  *      período. É receita da Bass Pago porque o saldo estava na conta dela;
- *   2. CONTA A RECEBER — o que se COBRA do parceiro, isto é, as tarifas;
+ *   2. CONTA A RECEBER — o título dessa receita, pelo MESMO valor integral;
  *   3. LANÇAMENTO FINANCEIRO de DESPESA — a comissão devida ao parceiro, que
  *      é o que alimenta Contas a Pagar.
  *
- * ── RECEITA (1) E TÍTULO (2) TÊM VALORES DIFERENTES, DE PROPÓSITO ───────
+ * ── RECEITA (1) E TÍTULO (2) VALEM O MESMO ──────────────────────────────
  *
- * A RECEITA é o saldo integral: 100 mil, no exemplo da especificação. O
- * TÍTULO A RECEBER é o que a Bass Pago cobra do parceiro: as tarifas, 10 mil.
+ * Os dois valem o saldo integral apurado: 100 mil, no exemplo da
+ * especificação. O título É o recebível daquela receita, e espelhá-lo é o que
+ * mantém Contas a Receber coerente com a Receita do período — um título de 10
+ * mil ao lado de uma receita de 100 mil obrigaria quem confere a somar os dois
+ * lados à mão para descobrir que a diferença era o overprice.
  *
- * Não é inconsistência. O resto do saldo apurado JÁ ESTÁ na conta da Bass
- * Pago — não há o que receber dele. Emitir um recebível de 100 mil criaria um
- * título para dinheiro que já entrou, e ele apareceria em Contas a Receber
- * como cobrança pendente para sempre. O que de fato muda de mão são as
- * tarifas; o overprice é realizado pagando menos ao parceiro, e a comissão
- * sai como despesa no registro 3.
+ * Até a v27 o título cobrava só as TARIFAS, porque a receita era a margem.
+ * Com a receita bruta, a assimetria deixou de ter sentido.
  *
- * A projeção de caixa depende dessa distinção: ver `lib/previsao.ts`, que
- * conta o AR como entrada futura e a comissão como saída futura, sem contar o
- * saldo integral duas vezes.
+ * ── A PROJEÇÃO DE CAIXA NÃO SOMA OS DOIS ────────────────────────────────
+ *
+ * E é por isso que o espelhamento não cria dupla contagem: `lib/previsao.ts`
+ * NUNCA lê `ContaReceber` — o caixa e o resultado saem de
+ * `LancamentoFinanceiro`, que é a origem única. O título existe para a
+ * cobrança e para a inadimplência; ele não entra em nenhuma soma de receita.
  *
  * IDEMPOTÊNCIA PELO BANCO. As três FKs em `LancamentoBaas` são UNIQUE, e a
  * geração roda dentro de uma transação que só grava os ids ao fim. Chamar
@@ -94,17 +96,17 @@ export interface DadosGeracao {
   periodoInicio: Date
   periodoFim: Date
   /**
-   * TARIFAS do período — o que se COBRA do parceiro, e o valor do título a
-   * receber. Não inclui o overprice.
-   */
-  tarifas: number
-  /**
-   * O saldo INTEGRAL apurado no período — a RECEITA da Bass Pago, e o valor
-   * do lançamento financeiro de receita.
+   * O saldo INTEGRAL apurado no período.
    *
-   * Inclui as tarifas, o overprice E a comissão do parceiro. O saldo estava na
-   * conta da Bass Pago, e é dela que sai o pagamento ao BaaS: por isso o
-   * integral é receita, e a comissão é despesa (ver `despesa`, abaixo).
+   * É a RECEITA da Bass Pago **e** o valor do título a receber — os dois
+   * registros valem o mesmo. Inclui as tarifas, o overprice E a comissão do
+   * parceiro: o saldo estava na conta da Bass Pago, e é dela que sai o
+   * pagamento ao BaaS.
+   *
+   * `tarifas` SAIU desta interface na v28. Enquanto o título cobrava só as
+   * tarifas, ele era um parâmetro próprio; agora que o título espelha a
+   * receita, mantê-lo seria um campo que ninguém lê — e um campo não lido é um
+   * campo que volta a ser preenchido errado.
    */
   receita: number
   /**
@@ -212,7 +214,6 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
 
     const vencimento = d.periodoFim
     const receita = centavos(d.receita)
-    const tarifas = centavos(d.tarifas)
     const comissao = centavos(d.despesa)
 
     /* ── 1. RECEITA da Bass Pago — o saldo INTEGRAL apurado ────────────── */
@@ -241,27 +242,27 @@ export async function gerarTitulos(d: DadosGeracao): Promise<TitulosGerados> {
     const dadosAR = devedorDoTitulo(d.clienteId, d.condicaoId)
 
     /**
-     * O TÍTULO COBRA AS TARIFAS — e continua cobrando, sob a regra nova.
+     * O TÍTULO ESPELHA A RECEITA: o saldo INTEGRAL apurado.
      *
-     * A RECEITA do registro 1 é o saldo integral (100 mil); o título é o que
-     * de fato se COBRA do parceiro (10 mil). Os dois números são diferentes de
-     * propósito:
+     * Até a v27 ele cobrava só as tarifas, porque a receita era a margem. Com
+     * a receita bruta, a assimetria deixou de ter sentido: um título de 10 mil
+     * ao lado de uma receita de 100 mil obrigaria quem confere a somar os dois
+     * lados à mão para descobrir que a diferença era o overprice.
      *
-     *   - o resto do saldo JÁ ESTÁ na conta da Bass Pago. Um recebível de 100
-     *     mil seria cobrança de dinheiro que já entrou, e ficaria pendente em
-     *     Contas a Receber para sempre;
-     *   - o overprice é realizado pagando MENOS ao parceiro, não cobrando mais
-     *     dele — cobrá-lo aqui seria cobrar duas vezes o mesmo valor;
-     *   - a comissão do parceiro vai para o outro lado, como despesa (3).
+     * NÃO cria dupla contagem. `lib/previsao.ts` e `lib/financeiro.ts` NUNCA
+     * leem `ContaReceber` para apurar receita, resultado ou caixa — a origem
+     * única é `LancamentoFinanceiro`. O título existe para a cobrança e para a
+     * inadimplência, e não entra em nenhuma soma de receita.
      *
-     * O rótulo segue "Tarifa BaaS" porque é exatamente o que o título é.
+     * O rótulo acompanha: "Apuração BaaS", igual ao da receita, porque é o
+     * mesmo valor visto como cobrança. "Tarifa BaaS" descreveria 10 mil.
      */
     const comum = {
-      descricao: descricao(d, 'Tarifa BaaS'),
+      descricao: descricao(d, 'Apuração BaaS'),
       // `ContaReceber.tipo` é o rótulo que a tela mostra como badge — a
       // categoria do título. Mesmo nome dos outros dois: BaaS.
       tipo: CATEGORIA_BAAS,
-      valor: tarifas,
+      valor: receita,
       dataVenc: vencimento,
     }
 
@@ -519,7 +520,6 @@ export async function sincronizarTitulosFaltantes(
         // não `totalTarifas + overpriceValor`, que é a MARGEM. Era assim que a
         // receita era calculada até a v27, quando a comissão do parceiro ficava
         // fora do resultado; a regra nova registra os dois lados brutos.
-        tarifas: lb.totalTarifas,
         receita: lb.saldoInicial,
         despesa: lb.valorCliente,
         criadoPorId,

@@ -44,10 +44,21 @@ test('§7: a cascata produz os seis numeros da especificacao', () => {
   assert.equal(CENARIO.valorCliente, 67_451.25)
 })
 
-test('§12: CONTAS A RECEBER = R$ 10.065,00 — SO as tarifas', () => {
-  // O que se COBRA do parceiro. NAO inclui o overprice: ele e receita nossa,
-  // mas e realizado pagando ao parceiro menos — fatura-lo tambem seria cobrar
-  // duas vezes o mesmo valor.
+test('§12: CONTAS A RECEBER = R$ 100.000,00 — espelha a RECEITA', () => {
+  /**
+   * v28 — o titulo vale o saldo INTEGRAL apurado, igual a receita.
+   *
+   * Ate a v27 ele valia so as tarifas (10.065), porque a receita era a margem.
+   * Com a receita bruta, a assimetria deixou de ter sentido: um titulo de 10
+   * mil ao lado de uma receita de 100 mil obrigaria quem confere a somar os
+   * dois lados a mao para descobrir que a diferenca era o overprice.
+   *
+   * E NAO cria dupla contagem: nem `lib/financeiro.ts` nem `lib/previsao.ts`
+   * leem `ContaReceber` para apurar receita, resultado ou caixa.
+   */
+  assert.equal(receitaBaas(CENARIO), 100_000)
+  // E o valor das TARIFAS continua existindo — no detalhe da cascata, nao no
+  // titulo.
   assert.equal(CENARIO.totalTarifas, 10_065)
 })
 
@@ -55,11 +66,15 @@ test('§12: CONTAS A PAGAR = R$ 67.451,25 — o residual do parceiro', () => {
   assert.equal(CENARIO.valorCliente, 67_451.25)
 })
 
-test('§12: NAO INVERTER — o AR e o menor, o AP e o maior', () => {
+test('§12: NAO INVERTER — o AR e o MAIOR, o AP e o menor', () => {
   // A troca dos dois seria silenciosa: os numeros existem e a soma nao fecha
   // com nada visivel. Este teste e o que a pega.
-  assert.ok(CENARIO.totalTarifas < CENARIO.valorCliente)
-  assert.notEqual(CENARIO.totalTarifas, CENARIO.valorCliente)
+  //
+  // A DIRECAO INVERTEU na v28: enquanto o AR eram as tarifas (10.065) ele era
+  // o menor; agora que espelha a receita (100.000), ele e o maior. O teste
+  // acompanha o fato, em vez de preservar a comparacao antiga.
+  assert.ok(receitaBaas(CENARIO) > despesaBaas(CENARIO))
+  assert.notEqual(receitaBaas(CENARIO), despesaBaas(CENARIO))
 })
 
 test('§12: NAO SOMAR os dois como uma receita unica', () => {
@@ -90,14 +105,22 @@ test('LANCAMENTOS registra a RECEITA: o saldo INTEGRAL apurado', () => {
   )
 })
 
-test('o TITULO A RECEBER continua cobrando so as tarifas', () => {
-  // A receita e o integral, mas o AR nao: o resto do saldo JA ESTA na conta da
-  // Bass Pago, e emitir recebivel dele criaria cobranca de dinheiro recebido.
-  assert.ok(CENARIO.totalTarifas < receitaBaas(CENARIO))
-  assert.equal(
-    centavos(receitaBaas(CENARIO) - CENARIO.totalTarifas - CENARIO.overpriceValor),
-    CENARIO.valorCliente,
+test('o TITULO A RECEBER ESPELHA a receita, e o codigo garante isso', () => {
+  // Nao e so o valor: a geracao usa a MESMA variavel para os dois registros,
+  // entao eles nao podem divergir por descuido.
+  const t = ler('lib/baas-titulos.ts')
+  assert.ok(
+    t.includes('const receita = centavos(d.receita)'),
+    'a receita deixou de ser uma variavel unica',
   )
+  // O lancamento de receita e o titulo leem a MESMA variavel.
+  assert.ok(t.includes('valor: receita,'), 'o titulo deixou de espelhar a receita')
+  assert.equal(
+    (t.match(/valor: receita,/g) ?? []).length, 2,
+    'a receita e o titulo deixaram de compartilhar o valor',
+  )
+  // E `tarifas` nao e mais parametro: campo nao lido volta a ser preenchido errado.
+  assert.ok(!t.includes('d.tarifas'), 'o parametro `tarifas` voltou')
 })
 
 test('tarifas + overprice + residual = saldo informado', () => {
@@ -345,7 +368,7 @@ test('o detalhe diz o que cada modulo recebeu', () => {
   const d = ler('components/financeiro/DetalheBaas.tsx')
   assert.ok(d.includes('Contas a Receber'))
   assert.ok(d.includes('Contas a Pagar'))
-  assert.ok(d.includes('Só as tarifas — o que se cobra'))
+  assert.ok(d.includes('O título da receita — mesmo valor'))
 })
 
 test('o detalhe e alcancavel DE LANCAMENTOS', () => {
@@ -396,28 +419,32 @@ test('a descricao gerada e CURTA: "<o que> — <parceiro>"', () => {
 test('os tres registros tem descricoes distinguiveis e curtas', () => {
   const t = ler('lib/baas-titulos.ts')
 
-  // v28 — OS TRES RÓTULOS, e cada um diz exatamente o que a linha vale:
-  //
-  //   "Apuração BaaS" (receita)  → o saldo INTEGRAL apurado no período;
-  //   "Tarifa BaaS"   (AR)       → só as tarifas, que é o que se cobra;
-  //   "Comissão BaaS" (despesa)  → o valor devido ao parceiro.
-  //
-  // A receita deixou de dizer "Tarifa BaaS" porque deixou de ser a tarifa:
-  // manter o rótulo faria a linha de 100 mil dizer que é a tarifa de 10 mil.
-  assert.ok(t.includes("descricao(d, 'Apuração BaaS')"), 'a receita perdeu o rotulo')
-  assert.ok(t.includes("descricao(d, 'Tarifa BaaS')"), 'o titulo a receber perdeu o rotulo')
+  /**
+   * v28 — DOIS RÓTULOS para TRÊS registros, e cada um diz o que a linha vale:
+   *
+   *   "Apuração BaaS" → o lançamento de RECEITA **e** o título a receber.
+   *                     São o mesmo valor (o saldo integral) visto de dois
+   *                     lugares: a competência e a cobrança.
+   *   "Comissão BaaS" → o lançamento de DESPESA, devido ao parceiro.
+   *
+   * O rótulo repetido é a INFORMAÇÃO, não um descuido: os dois registros
+   * valem o mesmo, e nomeá-los diferente sugeriria valores diferentes. Era
+   * assim antes da v28 também, quando os dois diziam "Tarifa BaaS".
+   */
+  assert.equal(
+    (t.match(/descricao\(d, 'Apuração BaaS'\)/g) ?? []).length, 2,
+    'a receita e o titulo a receber devem dizer "Apuração BaaS"',
+  )
   assert.ok(t.includes("descricao(d, 'Comissão BaaS')"), 'a despesa perdeu o rotulo')
-
-  // Os TRES sao distinguiveis: nenhum rotulo aparece em dois registros.
-  for (const rotulo of ['Apuração BaaS', 'Tarifa BaaS', 'Comissão BaaS']) {
-    assert.equal(
-      (t.match(new RegExp(`descricao\\(d, '${rotulo}'\\)`, 'g')) ?? []).length, 1,
-      `o rotulo "${rotulo}" deixou de identificar um registro so`,
-    )
-  }
+  assert.equal(
+    (t.match(/descricao\(d, 'Comissão BaaS'\)/g) ?? []).length, 1,
+    'o rotulo da comissao deixou de identificar um registro so',
+  )
 
   // Os rotulos longos e os revogados sairam.
   assert.ok(!t.includes("'Repasse ao parceiro'"), 'o rotulo longo do repasse voltou')
   assert.ok(!t.includes("'Lançamento BaaS')"), 'o rotulo antigo da receita voltou')
   assert.ok(!t.includes("descricao(d, 'Repasse BaaS')"), 'o rotulo "Repasse" voltou')
+  // E "Tarifa BaaS" saiu do titulo: ele descreveria 10 mil num titulo de 100 mil.
+  assert.ok(!t.includes("descricao(d, 'Tarifa BaaS')"), 'o titulo voltou a dizer "Tarifa"')
 })

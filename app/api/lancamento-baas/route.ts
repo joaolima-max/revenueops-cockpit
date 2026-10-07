@@ -187,10 +187,9 @@ export async function POST(request: NextRequest) {
         numeroConta: criado.numeroConta,
         periodoInicio: inicio,
         periodoFim: fim,
-        // A RECEITA é o saldo INTEGRAL apurado; a DESPESA é a comissão do
-        // parceiro; e o AR cobra as TARIFAS, que é o que de fato muda de mão
-        // (o resto do saldo já está na conta da Bass Pago).
-        tarifas: calc.totalTarifas,
+        // A RECEITA e o TÍTULO A RECEBER valem o saldo INTEGRAL apurado; a
+        // DESPESA é a comissão do parceiro. Os três saem de `calc`, nunca de
+        // número digitado.
         receita: receitaBaas(calc),
         despesa: despesaBaas(calc),
         criadoPorId: session.userId,

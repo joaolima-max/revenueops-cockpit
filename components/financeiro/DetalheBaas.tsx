@@ -201,10 +201,11 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
           </section>
 
           {/* ── O QUE CADA MÓDULO RECEBEU ────────────────────────────────
-              Três números que vão para três lugares, e é a pergunta que a
-              tela de Lançamentos levanta: por que o título a receber não é
-              igual ao lançamento? Porque a receita é o saldo integral, e o
-              título cobra só o que de fato muda de mão. */}
+              Três registros, e os dois primeiros valem o MESMO: a receita é o
+              saldo integral apurado, e o título a receber é essa receita vista
+              como cobrança. O terceiro é a comissão do parceiro, que sai como
+              despesa. Até a v27 o título cobrava só as tarifas, porque a
+              receita era a margem. */}
           <section className="space-y-3">
             <PanelHeader
               title="O que foi gerado"
@@ -218,8 +219,8 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
               </HairlineCell>
               <HairlineCell className="gap-2">
                 <p className="t-label text-subtle">Contas a Receber</p>
-                <Figure figura={figuraMoeda(l.totalTarifas)} size="sm" />
-                <p className="t-label text-subtle/70">Só as tarifas — o que se cobra</p>
+                <Figure figura={figuraMoeda(receita)} size="sm" />
+                <p className="t-label text-subtle/70">O título da receita — mesmo valor</p>
               </HairlineCell>
               <HairlineCell className="gap-2">
                 <p className="t-label text-subtle">Contas a Pagar</p>
@@ -247,15 +248,15 @@ export function CorpoBaas({ l }: { l: LancamentoBaasDetalhe }) {
 
             <p className="t-sm text-subtle">
               O saldo apurado estava na conta da Bass Pago, então entra{' '}
-              <span className="text-fg">integral</span> como receita; a comissão de{' '}
+              <span className="text-fg">integral</span> como receita, e o título a
+              receber espelha esse valor; a comissão de{' '}
               <span className="tabular-nums text-fg">{moedaCheia(despesa)}</span>{' '}
               devida ao parceiro é contabilizada como despesa. O resultado é a
               diferença entre os dois.
               {l.overpriceValor > 0 && (
-                <> O overprice de{' '}
+                <> Dentro do resultado, o overprice de{' '}
                 <span className="tabular-nums text-fg">{moedaCheia(l.overpriceValor)}</span>{' '}
-                não é faturado ao parceiro — é realizado pagando a ele menos —, e por
-                isso fica fora do título a receber.</>
+                não é cobrado à parte — ele é realizado pagando ao parceiro menos.</>
               )}
             </p>
           </section>

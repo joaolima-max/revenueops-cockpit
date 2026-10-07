@@ -149,10 +149,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       numeroConta: String(body.numeroConta).trim(),
       periodoInicio: inicio,
       periodoFim: fim,
-      // A RECEITA é o saldo INTEGRAL apurado; a DESPESA é a comissão do
-      // parceiro. O AR cobra as TARIFAS — o resto do saldo já está na conta da
-      // Bass Pago, e cobrá-lo seria emitir título de dinheiro já recebido.
-      tarifas: calc.totalTarifas,
+      // A RECEITA e o TÍTULO A RECEBER valem o saldo INTEGRAL apurado; a
+      // DESPESA é a comissão do parceiro.
       receita: receitaBaas(calc),
       despesa: despesaBaas(calc),
       criadoPorId: session.userId,
@@ -203,10 +201,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       numeroConta: l.numeroConta,
       periodoInicio: l.periodoInicio,
       periodoFim: l.periodoFim,
-      // A RECEITA é o saldo INTEGRAL apurado; a DESPESA é a comissão do
-      // parceiro. O AR cobra as TARIFAS — o resto do saldo já está na conta da
-      // Bass Pago, e cobrá-lo seria emitir título de dinheiro já recebido.
-      tarifas: calc.totalTarifas,
+      // A RECEITA e o TÍTULO A RECEBER valem o saldo INTEGRAL apurado; a
+      // DESPESA é a comissão do parceiro.
       receita: receitaBaas(calc),
       despesa: despesaBaas(calc),
       criadoPorId: session.userId,
