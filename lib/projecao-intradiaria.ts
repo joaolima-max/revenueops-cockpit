@@ -27,6 +27,27 @@
  *
  * 10h00 de um dia às 10h00 do dia seguinte, em America/Sao_Paulo.
  *
+ * ── A QUAL CICLO UM LANÇAMENTO PERTENCE ─────────────────────────────────
+ *
+ * Ao ciclo que começa às 10h00 do DIA EM QUE ELE FOI REGISTRADO.
+ *
+ * É o que resolve o caso real: o lançamento de 07/10 foi registrado às 09h19
+ * de 08/10 — 41 minutos ANTES da virada. Sob a regra "o ciclo que contém o
+ * registro", ele cairia no ciclo que estava acabando e chegaria a 100% quase
+ * de imediato, sem animação nenhuma. Sob esta regra, ele pertence ao ciclo que
+ * começa às 10h de 08/10 e anima o dia inteiro.
+ *
+ * Um lançamento registrado DEPOIS das 10h pertence ao ciclo em curso, e a
+ * porção já decorrida da curva conta como REALIZADA: ele aparece em `f(agora)`
+ * e segue dali. Não se reinicia a contagem — ver `valorExibido`.
+ *
+ * ── E ENQUANTO O CICLO DELE NÃO COMEÇA, ELE FICA DE FORA ────────────────
+ *
+ * Um lançamento registrado às 09h19 já está no acumulado real às 09h20. Se ele
+ * fosse exibido inteiro até as 10h e só então começasse a animar, o número
+ * CAIRIA na virada. Então, enquanto o ciclo dele não começa, ele é subtraído
+ * do exibido — é o `pendente` de `valorExibido`.
+ *
  * O fuso NÃO é derivado do relógio de quem abre a tela: é fixo e lido com
  * `Intl`, que conhece as regras do fuso (inclusive as históricas, de quando o
  * Brasil tinha horário de verão). Fixar "UTC−3" na mão daria o número errado
@@ -35,22 +56,48 @@
  *
  * ── A DISTRIBUIÇÃO PONDERADA ────────────────────────────────────────────
  *
- * O crescimento não é uniforme: das 18h às 20h ele é DUAS VEZES mais rápido.
- * E isso não pode ser "multiplicar por dois nesse intervalo" — o total
- * estouraria o valor lançado. A aceleração entra na DISTRIBUIÇÃO:
+ * O crescimento não é uniforme: ele segue o RITMO DA OPERAÇÃO ao longo do dia,
+ * com pico no começo da noite e quase parada na madrugada.
  *
- *   10h–18h    8 horas × peso 1  =  8
- *   18h–20h    2 horas × peso 2  =  4
- *   20h–10h   14 horas × peso 1  = 14
- *                                 ──
- *                            total 26 unidades de peso
+ *   10h–18h    8 horas × 1,0  =  8,0      dia comercial
+ *   18h–20h    2 horas × 2,0  =  4,0      PICO
+ *   20h–22h    2 horas × 1,0  =  2,0      noite
+ *   22h–00h    2 horas × 0,8  =  1,6      desaceleração
+ *   00h–06h    6 horas × 0,3  =  1,8      madrugada
+ *   06h–08h    2 horas × 0,8  =  1,6      retomada
+ *   08h–10h    2 horas × 1,0  =  2,0      manhã
+ *                               ────
+ *                         total 21,0 unidades de peso
  *
- *   taxa normal  = valor / 26  por hora
- *   taxa de pico = valor / 13  por hora   (exatamente o dobro)
+ *   taxa base         = valor / 21        por hora
+ *   taxa de pico      = 2 × valor / 21    por hora  (o dobro da base)
+ *   taxa de madrugada = 0,3 × valor / 21  por hora
  *
- * A soma das 24 horas ponderadas é 26/26 = 1, então o acumulado fecha
- * EXATAMENTE no valor lançado às 10h do dia seguinte. Nunca antes, nunca
- * acima.
+ * E isso não pode ser "multiplicar por dois no pico" — o total estouraria o
+ * valor lançado. A aceleração e a desaceleração entram na DISTRIBUIÇÃO: a soma
+ * das 24 horas ponderadas é 21/21 = 1, então o acumulado fecha EXATAMENTE no
+ * valor lançado às 10h do dia seguinte. Nunca antes, nunca acima.
+ *
+ * ── OS PESOS SÃO CONTADOS EM DÉCIMOS, E ISSO É DELIBERADO ───────────────
+ *
+ * `0,8` e `0,3` não têm representação binária exata: `6 × 0,3` dá
+ * 1,7999999999999998, não 1,8.
+ *
+ * SEJAMOS PRECISOS SOBRE O QUE ISSO CUSTA HOJE: nada. Com estes sete
+ * multiplicadores os resíduos se cancelam, e tanto o total quanto o acumulado
+ * em cada fronteira caem no número exato mesmo em ponto flutuante. A conta
+ * decimal daria o mesmo resultado.
+ *
+ * A razão dos décimos é a PRÓXIMA mudança de perfil, não esta. Trocar a
+ * madrugada de 0,3 para 0,7 faz `3 × 0,7` virar 2,0999999999999996 — e a
+ * fração no fim do ciclo deixa de fechar em 1. O painel pararia a um centavo
+ * do valor lançado, para sempre, e o defeito não apareceria em teste nenhum
+ * que não medisse a última casa.
+ *
+ * Em décimos inteiros (10, 20, 10, 8, 3, 8, 10) o total é 210 e o acumulado é
+ * exato para QUALQUER multiplicador de uma casa decimal. É o que torna mexer
+ * no perfil uma operação segura. Os decimais existem para leitura; a conta é
+ * inteira.
  *
  * ── DETERMINÍSTICO, E A PALAVRA É LITERAL ───────────────────────────────
  *
@@ -65,25 +112,95 @@ export const FUSO_OPERACIONAL = 'America/Sao_Paulo'
 /** A hora, no fuso operacional, em que um ciclo começa e o anterior termina. */
 export const HORA_INICIO_CICLO = 10
 
-/** A janela de pico, em horas do fuso operacional. */
-export const PICO_INICIO = 18
-export const PICO_FIM = 20
-export const FATOR_PICO = 2
-
 const HORAS_DO_CICLO = 24
 const HORA_MS = 3_600_000
 
 /**
- * O peso total do ciclo: 8×1 + 2×2 + 14×1.
+ * O PERFIL DE VELOCIDADE do ciclo — as sete faixas, na ordem do relógio.
  *
- * Exportado porque é o denominador da taxa, e os testes o prendem: mudar a
- * janela de pico sem mudar este número produziria uma curva que não fecha no
- * valor lançado.
+ * `ate` é a hora de parede em que a faixa TERMINA, contada a partir das 10h e
+ * podendo passar da meia-noite (22h → 24, 00h → 24, 06h → 30). Contar em
+ * "horas desde o início do ciclo" em vez de hora de parede é o que faz a
+ * madrugada não precisar de caso especial: 00h–06h é simplesmente [14, 20).
+ *
+ * `peso10` é o multiplicador em DÉCIMOS. Ver o cabeçalho para por que a conta
+ * é inteira: `6 × 0,3` em ponto flutuante não fecha o ciclo em 1.
  */
-export const PESO_TOTAL =
-  (PICO_INICIO - HORA_INICIO_CICLO) * 1
-  + (PICO_FIM - PICO_INICIO) * FATOR_PICO
-  + (HORAS_DO_CICLO - (PICO_FIM - HORA_INICIO_CICLO)) * 1
+export interface FaixaRitmo {
+  /** Hora de parede em que a faixa começa, no fuso operacional. */
+  horaInicio: number
+  /** Horas decorridas do ciclo em que a faixa começa (0 = 10h). */
+  de: number
+  /** Horas decorridas do ciclo em que a faixa termina (exclusivo). */
+  ate: number
+  /** O multiplicador, para leitura. */
+  multiplicador: number
+  /** O multiplicador em décimos — é com ele que a conta é feita. */
+  peso10: number
+  /** Para a tela poder nomear a faixa. */
+  rotulo: string
+}
+
+/**
+ * AS SETE FAIXAS. Conjunto FECHADO e contíguo: cobrem as 24 horas sem buraco
+ * e sem sobreposição, e `verificarPerfil` prende isso.
+ */
+export const PERFIL_RITMO: readonly FaixaRitmo[] = [
+  { horaInicio: 10, de: 0,  ate: 8,  multiplicador: 1.0, peso10: 10, rotulo: 'dia comercial' },
+  { horaInicio: 18, de: 8,  ate: 10, multiplicador: 2.0, peso10: 20, rotulo: 'pico' },
+  { horaInicio: 20, de: 10, ate: 12, multiplicador: 1.0, peso10: 10, rotulo: 'noite' },
+  { horaInicio: 22, de: 12, ate: 14, multiplicador: 0.8, peso10: 8,  rotulo: 'desaceleração' },
+  { horaInicio: 0,  de: 14, ate: 20, multiplicador: 0.3, peso10: 3,  rotulo: 'madrugada' },
+  { horaInicio: 6,  de: 20, ate: 22, multiplicador: 0.8, peso10: 8,  rotulo: 'retomada' },
+  { horaInicio: 8,  de: 22, ate: 24, multiplicador: 1.0, peso10: 10, rotulo: 'manhã' },
+]
+
+/** A faixa de PICO, nomeada para a tela e para os testes. */
+export const PICO_INICIO = 18
+export const PICO_FIM = 20
+export const FATOR_PICO = 2
+
+/**
+ * O peso total do ciclo, em DÉCIMOS: 210.
+ *
+ * Derivado das faixas, não digitado. Mudar uma faixa sem recalcular o total
+ * produziria uma curva que não fecha no valor lançado — e o painel
+ * ultrapassaria ou ficaria abaixo do número real.
+ */
+export const PESO_TOTAL_10 = PERFIL_RITMO.reduce(
+  (a, f) => a + f.peso10 * (f.ate - f.de), 0,
+)
+
+/** O peso total em unidades de peso: 21,0. Só para leitura e para a tela. */
+export const PESO_TOTAL = PESO_TOTAL_10 / 10
+
+/**
+ * O perfil é íntegro?
+ *
+ * Três condições, e nenhuma delas é óbvia ao olhar a tabela: as faixas têm de
+ * ser CONTÍGUAS (sem buraco, sem sobreposição), começar em 0 e terminar em 24.
+ * Um buraco faria a curva parar; uma sobreposição a faria contar duas vezes; e
+ * qualquer dos dois estragaria o fechamento no valor real.
+ *
+ * Exportada para o teste poder exercitá-la, e chamada em tempo de módulo para
+ * que um perfil quebrado não chegue à tela.
+ */
+export function verificarPerfil(faixas: readonly FaixaRitmo[] = PERFIL_RITMO): void {
+  if (faixas.length === 0) throw new Error('perfil de ritmo vazio')
+  if (faixas[0].de !== 0) throw new Error('o perfil não começa em 0')
+  for (let i = 1; i < faixas.length; i++) {
+    if (faixas[i].de !== faixas[i - 1].ate) {
+      throw new Error(
+        `perfil descontínuo entre ${faixas[i - 1].rotulo} e ${faixas[i].rotulo}`,
+      )
+    }
+  }
+  if (faixas[faixas.length - 1].ate !== HORAS_DO_CICLO) {
+    throw new Error('o perfil não termina em 24 horas')
+  }
+}
+
+verificarPerfil()
 
 /* ========================================================================= *
  * O FUSO
@@ -207,45 +324,110 @@ export function cicloDe(agora: Date): Ciclo {
   return { inicio, fim }
 }
 
+/**
+ * A QUAL CICLO um lançamento pertence — o início do ciclo dele.
+ *
+ * Ao ciclo que começa às 10h00 do DIA EM QUE ELE FOI REGISTRADO, no fuso
+ * operacional. Nada mais: nem a competência, nem o ciclo que contém o
+ * registro.
+ *
+ * ── O CASO REAL QUE ESTA REGRA RESOLVE ────────────────────────────────
+ *
+ * O lançamento referente a 07/10 foi registrado às 09h19 de 08/10 — 41
+ * minutos ANTES da virada. Sob "o ciclo que contém o registro", ele cairia no
+ * ciclo que estava acabando: apareceria em f(23,3h) ≈ 97% e chegaria a 100%
+ * em 41 minutos. Nenhuma animação.
+ *
+ * Com esta regra ele pertence ao ciclo que COMEÇA às 10h de 08/10, e anima as
+ * 24 horas seguintes. É o que o pedido descreve: "um lançamento registrado
+ * antes das 10h pertence ao próximo ciclo que começa às 10h".
+ *
+ * ── E DEPOIS DAS 10H? ─────────────────────────────────────────────────
+ *
+ * Registrado às 11h, pertence ao ciclo que começou às 10h daquele mesmo dia —
+ * o que está em curso. A porção já decorrida conta como REALIZADA (ver
+ * `valorExibido`), então ele entra em `f(agora)` e segue a curva dali. Os
+ * dois casos saem da mesma linha de código, porque os dois são "as 10h do dia
+ * do registro".
+ */
+export function cicloAtribuidoA(registradoEm: Date): Date {
+  const l = partesNoFuso(registradoEm)
+  return instanteNoFuso(l.ano, l.mes, l.dia, HORA_INICIO_CICLO)
+}
+
 /* ========================================================================= *
  * A CURVA
  * ========================================================================= */
 
 /**
- * O peso ACUMULADO desde o início do ciclo, em unidades de peso (0 a 26).
+ * O peso ACUMULADO desde o início do ciclo, em DÉCIMOS (0 a 210).
  *
  * `h` são horas decorridas desde as 10h, em fração. A curva é contínua e
- * monótona: três trechos lineares, com a inclinação dobrada no do meio.
+ * monótona: sete trechos lineares, cada um com a inclinação da sua faixa.
  *
- *   h ∈ [0, 8]    10h–18h    peso 1   →  W = h
- *   h ∈ (8, 10]   18h–20h    peso 2   →  W = 8 + 2(h−8)
- *   h ∈ (10, 24]  20h–10h    peso 1   →  W = 12 + (h−10)
+ *   h ∈ [0,  8)   10h–18h   ×1,0
+ *   h ∈ [8,  10)  18h–20h   ×2,0   PICO
+ *   h ∈ [10, 12)  20h–22h   ×1,0
+ *   h ∈ [12, 14)  22h–00h   ×0,8
+ *   h ∈ [14, 20)  00h–06h   ×0,3   madrugada
+ *   h ∈ [20, 22)  06h–08h   ×0,8
+ *   h ∈ [22, 24]  08h–10h   ×1,0
  *
- * W(24) = 26 = PESO_TOTAL, que é o que faz a fração fechar em 1.
+ * W(24) = 210 = PESO_TOTAL_10, que é o que faz a fração fechar em 1.
+ *
+ * ── A CONTINUIDADE É POR CONSTRUÇÃO, NÃO POR SORTE ────────────────────
+ *
+ * O acumulado de cada faixa parte do acumulado das anteriores e cresce
+ * linearmente dentro dela. Nas fronteiras os dois lados chegam ao mesmo
+ * número, então não há salto — nem às 18h, nem às 22h, nem à MEIA-NOITE, que
+ * é apenas a fronteira h=14 como qualquer outra. A inclinação muda; o valor,
+ * não.
+ *
+ * E é MONÓTONA porque todo `peso10` é positivo: mesmo na madrugada, com 0,3, o
+ * acumulado continua subindo. Uma faixa com peso zero faria o painel congelar
+ * por seis horas e ser lido como travado.
  */
-export function pesoAcumulado(h: number): number {
+export function pesoAcumulado10(h: number): number {
   if (h <= 0) return 0
-  if (h >= HORAS_DO_CICLO) return PESO_TOTAL
+  if (h >= HORAS_DO_CICLO) return PESO_TOTAL_10
 
-  const inicioPico = PICO_INICIO - HORA_INICIO_CICLO   // 8
-  const fimPico = PICO_FIM - HORA_INICIO_CICLO         // 10
-
-  if (h <= inicioPico) return h
-  if (h <= fimPico) return inicioPico + FATOR_PICO * (h - inicioPico)
-  return inicioPico + FATOR_PICO * (fimPico - inicioPico) + (h - fimPico)
+  let acumulado = 0
+  for (const f of PERFIL_RITMO) {
+    if (h >= f.ate) {
+      acumulado += f.peso10 * (f.ate - f.de)
+      continue
+    }
+    // Dentro desta faixa: o que já passou dela, na inclinação dela.
+    return acumulado + f.peso10 * (h - f.de)
+  }
+  return PESO_TOTAL_10
 }
 
 /**
- * A taxa INSTANTÂNEA, em unidades de peso por hora: 1 fora do pico, 2 dentro.
+ * O peso acumulado em unidades de peso (0 a 21,0).
  *
- * Existe para os testes poderem afirmar "entre 18h e 20h a velocidade é
- * exatamente o dobro" sobre a derivada, e não sobre uma diferença aproximada.
+ * Só para leitura e para os testes: a fração usa a versão em décimos, porque é
+ * ela que fecha exatamente.
+ */
+export function pesoAcumulado(h: number): number {
+  return pesoAcumulado10(h) / 10
+}
+
+/** A faixa de ritmo vigente em `h` horas de ciclo. `null` fora do ciclo. */
+export function faixaEm(h: number): FaixaRitmo | null {
+  if (h < 0 || h >= HORAS_DO_CICLO) return null
+  return PERFIL_RITMO.find((f) => h >= f.de && h < f.ate) ?? null
+}
+
+/**
+ * A taxa INSTANTÂNEA, em unidades de peso por hora: o multiplicador da faixa.
+ *
+ * Existe para os testes poderem afirmar "no pico a velocidade é exatamente o
+ * dobro da base" e "na madrugada é 0,3" sobre a DERIVADA, e não sobre uma
+ * diferença aproximada.
  */
 export function pesoPorHora(h: number): number {
-  if (h < 0 || h >= HORAS_DO_CICLO) return 0
-  const inicioPico = PICO_INICIO - HORA_INICIO_CICLO
-  const fimPico = PICO_FIM - HORA_INICIO_CICLO
-  return h >= inicioPico && h < fimPico ? FATOR_PICO : 1
+  return faixaEm(h)?.multiplicador ?? 0
 }
 
 /** Horas decorridas do ciclo, em fração. Negativo antes do início. */
@@ -260,7 +442,12 @@ export function horasDecorridas(agora: Date, ciclo: Ciclo): number {
  * pico — está dentro dela.
  */
 export function fracaoDoCiclo(agora: Date, ciclo: Ciclo): number {
-  const f = pesoAcumulado(horasDecorridas(agora, ciclo)) / PESO_TOTAL
+  // EM DÉCIMOS, e por isso exata nas pontas: `pesoAcumulado10(24)` é
+  // literalmente `PESO_TOTAL_10`, então a divisão dá 1 sem resíduo. Com os
+  // multiplicadores decimais em ponto flutuante, `6 × 0,3` deixaria a fração
+  // final em 0,9999999999999998 — e o painel pararia a um centavo do valor
+  // lançado.
+  const f = pesoAcumulado10(horasDecorridas(agora, ciclo)) / PESO_TOTAL_10
   return f < 0 ? 0 : f > 1 ? 1 : f
 }
 
@@ -273,6 +460,11 @@ export function fracaoDoCiclo(agora: Date, ciclo: Ciclo): number {
  */
 export function taxaPorHora(valor: number, agora: Date, ciclo: Ciclo): number {
   return (valor / PESO_TOTAL) * pesoPorHora(horasDecorridas(agora, ciclo))
+}
+
+/** A taxa BASE, por hora: o que vale uma faixa de multiplicador 1,0. */
+export function taxaBasePorHora(valor: number): number {
+  return valor / PESO_TOTAL
 }
 
 /* ========================================================================= *
@@ -358,11 +550,36 @@ export const VOLUME_ZERO: VolumeCiclo = { tpv: 0, receita: 0, transacoes: 0, med
  * ciclo também sai do acumulado, então o exibido continua exatamente onde o
  * ciclo anterior o deixou. Um painel executivo que recua 250 mil transações
  * às 10h da manhã seria lido como falha, não como animação.
+ *
+ * ── O TERMO `pendente`, E POR QUE ELE É NECESSÁRIO ──────────────────
+ *
+ *   exibido(t) = (real − incremento − pendente) + incremento × f(t)
+ *
+ * `pendente` é o volume JÁ REGISTRADO cujo ciclo ainda NÃO COMEÇOU — o
+ * lançamento das 09h19 enquanto o relógio ainda não bateu 10h.
+ *
+ * Ele já está no acumulado real (o banco não sabe de ciclos), e sem este
+ * termo o número cairia na virada: às 09h59 o painel mostraria o acumulado
+ * COM ele, e às 10h00 passaria a mostrar o acumulado SEM ele, para começar a
+ * animá-lo. Uma queda de 28 mil reais às 10h da manhã.
+ *
+ * Subtraindo-o antes, o exibido às 09h59 e às 10h00 é o MESMO número, e a
+ * animação parte dali. É a mesma razão do termo `incremento`, uma hora antes.
  */
 export function valorExibido(
-  real: number, incremento: number, fracao: number, grandeza: 'moeda' | 'contagem',
+  real: number,
+  incremento: number,
+  fracao: number,
+  grandeza: 'moeda' | 'contagem',
+  /**
+   * O volume já REGISTRADO cujo ciclo ainda não começou.
+   *
+   * Sai do exibido inteiro, sem animar nada. Ver o cabeçalho desta função
+   * para por que ele existe.
+   */
+  pendente = 0,
 ): number {
-  const base = real - incremento
+  const base = real - incremento - pendente
   const fatia = grandeza === 'contagem'
     ? projetarContagem(incremento, fracao)
     : projetarContinuo(incremento, fracao)

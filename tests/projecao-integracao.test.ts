@@ -21,7 +21,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { incrementoDoCiclo, referenciaDoCiclo, type CicloProjecao } from '../lib/projecao'
+import {
+  incrementoDoCiclo, incrementoPendente, referenciaDoCiclo, pendenteDoCiclo,
+  type CicloProjecao,
+} from '../lib/projecao'
 
 const RAIZ = join(import.meta.dirname, '..')
 const ler = (p: string) => readFileSync(join(RAIZ, p), 'utf8')
@@ -43,23 +46,36 @@ const NOTA = ler('components/projecao/NotaProjecao.tsx')
  * O INCREMENTO E O RECORTE DE COMPETÊNCIA
  * ========================================================================= */
 
-/** Um ciclo de teste, com os dois lançamentos reais de 02/10 e 03/10. */
+/**
+ * Um ciclo de teste com os dois lançamentos reais de 02/10 e 03/10.
+ *
+ * Em Production eles foram registrados às 23h03 de 03/10 e às 00h01 de 04/10.
+ * Sob a regra de atribuição (`cicloAtribuidoA`), o primeiro pertence ao ciclo
+ * de 03/10 e o segundo ao de 04/10 — mas o teste do incremento é sobre a SOMA,
+ * então aqui os dois são postos no MESMO ciclo de propósito, que é o caso que
+ * a soma existe para cobrir.
+ */
+const CICLO_03 = '2026-10-03T13:00:00.000Z'
+
 const cicloDuplo: CicloProjecao = {
-  inicio: '2026-10-03T13:00:00.000Z',
+  inicio: CICLO_03,
   fim: '2026-10-04T13:00:00.000Z',
   agoraServidor: '2026-10-04T02:30:00.000Z',
   lancamentos: [
     {
       competencia: '2026-10-02',
       registradoEm: '2026-10-04T02:03:02.016Z',
+      cicloEm: CICLO_03,
       volume: { tpv: 81_321_812.62, receita: 30_045.89, transacoes: 258_922, med: 3_939 },
     },
     {
       competencia: '2026-10-03',
       registradoEm: '2026-10-04T03:01:14.181Z',
+      cicloEm: CICLO_03,
       volume: { tpv: 67_744_982.94, receita: 20_788.32, transacoes: 246_133, med: 3_328 },
     },
   ],
+  pendentes: [],
 }
 
 test('o incremento SOMA os lancamentos do ciclo', () => {
@@ -99,6 +115,7 @@ test('um lancamento RETROATIVO nao polui o acumulado do mes corrente', () => {
       {
         competencia: '2026-02-15',
         registradoEm: '2026-10-04T02:00:00.000Z',
+        cicloEm: CICLO_03,
         volume: { tpv: 999_999, receita: 888, transacoes: 777, med: 66 },
       },
       cicloDuplo.lancamentos[1],
@@ -147,11 +164,15 @@ test('a consulta filtra por `createdAt`, NUNCA por competencia', () => {
    */
   const sem = semComentarios(PROJECAO)
   assert.ok(
-    sem.includes('where: { createdAt: { gte: ciclo.inicio, lt: ciclo.fim } }'),
+    sem.includes('where: { createdAt: { gte: inicioDaBusca, lte: agora } }'),
     'a elegibilidade deixou de ser decidida pelo registro',
   )
   assert.ok(!/where:[\s\S]{0,80}data: \{ gte/.test(sem),
     'a consulta passou a filtrar o ciclo por competência')
+  // E a atribuição ao ciclo é feita por `cicloAtribuidoA`, não pela janela da
+  // consulta: um lançamento das 09h19 está FORA do ciclo que ele anima.
+  assert.ok(sem.includes('cicloAtribuidoA(l.createdAt)'))
+  assert.ok(sem.includes("lancamentos: convertido.filter((l) => l.cicloEm === inicioIso)"))
 })
 
 test('o ciclo e apurado NO SERVIDOR, e o relogio dele viaja no payload', () => {
@@ -207,11 +228,13 @@ test('NENHUMA das duas telas reimplementa a curva', () => {
 
 test('os QUATRO KPIs da Home estao projetados — e so eles', () => {
   const sem = semComentarios(HOME)
-  // Os quatro, cada um com a sua grandeza.
-  assert.ok(sem.includes("proj(kpis.receitaTarifaria, incremento.receita, 'moeda')"))
-  assert.ok(sem.includes("proj(kpis.tpv, incremento.tpv, 'moeda')"))
-  assert.ok(sem.includes("proj(kpis.qtdTransacoes, incremento.transacoes, 'contagem')"))
-  assert.ok(sem.includes("proj(kpis.qtdMed, incremento.med, 'contagem')"))
+  // Os quatro, cada um com a sua grandeza, o seu incremento e o seu pendente.
+  assert.ok(sem.includes(
+    "proj(kpis.receitaTarifaria, incremento.receita, pendente.receita, 'moeda')"))
+  assert.ok(sem.includes("proj(kpis.tpv, incremento.tpv, pendente.tpv, 'moeda')"))
+  assert.ok(sem.includes(
+    "proj(kpis.qtdTransacoes, incremento.transacoes, pendente.transacoes, 'contagem')"))
+  assert.ok(sem.includes("proj(kpis.qtdMed, incremento.med, pendente.med, 'contagem')"))
 
   // E NENHUM dos excluídos.
   for (const fora of ['saldoMedio', 'takeRate', 'percentMed', 'clientesAtivos', 'baasAtivos', 'whiteLabelsAtivos']) {
@@ -458,4 +481,157 @@ test('a PRIMEIRA renderizacao usa o instante do SERVIDOR', () => {
   // quadro — e o número daria um pulo visível ao hidratar.
   assert.ok(semComentarios(RELOGIO).includes('export function semCliente(): null'))
   assert.ok(semComentarios(PROVEDOR).includes("segundo === null ? new Date(agoraServidor)"))
+})
+
+/* ========================================================================= *
+ * A PARTIÇÃO ENTRE ATUAL E PENDENTE
+ * ========================================================================= */
+
+/** Um ciclo com um lançamento animando e outro ainda pendente. */
+const CICLO_08 = '2026-10-08T13:00:00.000Z'   // 08/10 10h SP
+const CICLO_09 = '2026-10-09T13:00:00.000Z'   // 09/10 10h SP
+
+const cicloComPendente: CicloProjecao = {
+  inicio: CICLO_08,
+  fim: CICLO_09,
+  agoraServidor: '2026-10-09T05:00:00.000Z',  // 09/10 02h SP — madrugada
+  lancamentos: [
+    {
+      // Registrado às 11h de 08/10: pertence ao ciclo em curso e ANIMA.
+      competencia: '2026-10-07',
+      registradoEm: '2026-10-08T14:00:00.000Z',
+      cicloEm: CICLO_08,
+      volume: { tpv: 113_458_481.82, receita: 28_000.79, transacoes: 265_483, med: 3_278 },
+    },
+  ],
+  pendentes: [
+    {
+      // Registrado às 02h de 09/10: pertence ao ciclo que abre às 10h.
+      competencia: '2026-10-08',
+      registradoEm: '2026-10-09T05:00:00.000Z',
+      cicloEm: CICLO_09,
+      volume: { tpv: 90_000_000, receita: 22_000, transacoes: 200_000, med: 2_500 },
+    },
+  ],
+}
+
+test('ATUAL e PENDENTE sao somados SEPARADAMENTE', () => {
+  const inc = incrementoDoCiclo(cicloComPendente)
+  const pend = incrementoPendente(cicloComPendente)
+
+  assert.equal(inc.transacoes, 265_483)
+  assert.equal(pend.transacoes, 200_000)
+  // Nenhum dos dois contém o outro — é o que impede a dupla contagem.
+  assert.notEqual(inc.transacoes, pend.transacoes)
+  assert.equal(inc.med, 3_278)
+  assert.equal(pend.med, 2_500)
+})
+
+test('o PENDENTE respeita o recorte de competencia', () => {
+  // A competência do pendente é 08/10 — outubro.
+  assert.equal(incrementoPendente(cicloComPendente, '2026-10').transacoes, 200_000)
+  assert.equal(incrementoPendente(cicloComPendente, '2026-09').transacoes, 0)
+})
+
+test('a REFERENCIA e o PENDENTE sao lancamentos diferentes', () => {
+  /**
+   * A tela declara um ou o outro: "animando o lançamento de 07/10" ou
+   * "aguardando as 10h para o lançamento de 08/10". Confundi-los faria a nota
+   * dizer a competência errada.
+   */
+  const ref = referenciaDoCiclo(cicloComPendente)
+  const pend = pendenteDoCiclo(cicloComPendente)
+  assert.equal(ref?.competencia, '2026-10-07')
+  assert.equal(pend?.competencia, '2026-10-08')
+  assert.notEqual(ref?.registradoEm, pend?.registradoEm)
+})
+
+test('sem pendente, `pendenteDoCiclo` devolve null e o incremento e zero', () => {
+  assert.equal(pendenteDoCiclo(cicloDuplo), null)
+  assert.deepEqual(incrementoPendente(cicloDuplo), {
+    tpv: 0, receita: 0, transacoes: 0, med: 0,
+  })
+})
+
+test('a CONSULTA busca desde a MEIA-NOITE, nao desde o inicio do ciclo', () => {
+  /**
+   * O defeito que isto corrige: um lançamento atribuído ao ciclo que começa às
+   * 10h de hoje pode ter sido registrado hoje às 09h19 — ANTES do início do
+   * ciclo. Consultar de `ciclo.inicio` o perderia, e era exatamente o
+   * lançamento que não animava.
+   */
+  const sem = semComentarios(PROJECAO)
+  assert.ok(sem.includes('const d = partesNoFuso(ciclo.inicio)'))
+  assert.ok(sem.includes('instanteNoFuso(d.ano, d.mes, d.dia, 0)'))
+  assert.ok(sem.includes('gte: inicioDaBusca'))
+  // E o limite superior é AGORA, não o fim do ciclo: `createdAt` nunca está no
+  // futuro, e o limite existe para a consulta ser determinística nos testes.
+  assert.ok(sem.includes('lte: agora'))
+})
+
+/* ========================================================================= *
+ * AS DUAS TELAS, COM O NOVO TERMO
+ * ========================================================================= */
+
+test('as DUAS telas passam o PENDENTE para todos os KPIs projetados', () => {
+  /**
+   * Esquecer o pendente num KPI faria só ELE cair na virada das 10h — e o
+   * defeito seria lido como inconsistência entre indicadores da mesma tela.
+   */
+  const home = semComentarios(HOME)
+  assert.ok(home.includes('incrementoPendente(ciclo, periodo)'))
+  for (const campo of ['pendente.receita', 'pendente.tpv', 'pendente.transacoes', 'pendente.med']) {
+    assert.ok(home.includes(campo), `a Home não passa ${campo}`)
+  }
+
+  const cons = semComentarios(CONSELHO)
+  assert.ok(cons.includes('incrementoPendente(ciclo)'))
+  assert.ok(cons.includes('incrementoPendente(ciclo, periodo)'))
+  for (const campo of [
+    'pendTodos.tpv', 'pendTodos.receita', 'pendTodos.transacoes',
+    'pendMes.tpv', 'pendMes.receita', 'pendMes.transacoes',
+  ]) {
+    assert.ok(cons.includes(campo), `o Conselho não passa ${campo}`)
+  }
+})
+
+test('as DUAS telas declaram a ESPERA quando ha pendente', () => {
+  // "Esperar" é uma conduta diferente de "não há dado", e a tela tem de
+  // distinguir as duas.
+  for (const [nome, fonte] of [['Home', HOME], ['Conselho', CONSELHO]] as const) {
+    assert.ok(fonte.includes('pendenteDoCiclo'), `${nome} não resolve o pendente da nota`)
+    assert.ok(/pendente=\{aguardando\}/.test(fonte), `${nome} não passa o pendente à nota`)
+  }
+  assert.ok(NOTA.includes('a distribuição começa às'))
+  assert.ok(NOTA.includes('antes da abertura do ciclo'))
+})
+
+test('a nota tem TRES estados, e nenhum deles afirma tempo real', () => {
+  assert.ok(NOTA.includes('Nenhum lançamento novo no ciclo'))   // sem dado
+  assert.ok(NOTA.includes('a distribuição começa às'))          // aguardando
+  assert.ok(NOTA.includes('distribuídos ao longo do ciclo'))    // animando
+  const sem = semComentarios(NOTA).toLowerCase()
+  for (const p of ['tempo real', 'ao vivo', 'realtime']) {
+    assert.ok(!sem.includes(p), `a nota afirma "${p}"`)
+  }
+})
+
+test('o PERFIL de ritmo e declarado na tela, com o pico e a madrugada', () => {
+  // A nota diz o que a curva faz. Sem isso, um número que acelera às 18h e
+  // quase para à meia-noite seria lido como instabilidade.
+  assert.ok(NOTA.includes('ritmo dobrado entre 18h e 20h'))
+  assert.ok(NOTA.includes('reduzido na madrugada'))
+})
+
+test('o perfil de ritmo NAO foi reimplementado nas telas', () => {
+  /**
+   * As sete faixas vivem em `PERFIL_RITMO`. Uma segunda tabela numa das telas
+   * é como as duas passam a mostrar curvas diferentes.
+   */
+  for (const [nome, fonte] of [['Home', HOME], ['Conselho', CONSELHO]] as const) {
+    const sem = semComentarios(fonte)
+    for (const proibido of ['PERFIL_RITMO', 'pesoAcumulado', 'peso10', 'multiplicador']) {
+      assert.ok(!sem.includes(proibido), `${nome} reimplementou o perfil (${proibido})`)
+    }
+  }
 })

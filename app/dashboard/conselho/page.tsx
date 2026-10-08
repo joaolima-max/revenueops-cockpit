@@ -23,7 +23,8 @@ import ProjecaoProvider from '@/components/projecao/ProjecaoProvider'
 import FiguraProjetada from '@/components/projecao/FiguraProjetada'
 import NotaProjecao from '@/components/projecao/NotaProjecao'
 import {
-  cicloDeProjecao, incrementoDoCiclo, referenciaDoCiclo,
+  cicloDeProjecao, incrementoDoCiclo, incrementoPendente,
+  referenciaDoCiclo, pendenteDoCiclo,
 } from '@/lib/projecao'
 
 export default async function ConselhoPage() {
@@ -104,7 +105,12 @@ export default async function ConselhoPage() {
   const ciclo = await cicloDeProjecao()
   const incTodos = incrementoDoCiclo(ciclo)
   const incMes = incrementoDoCiclo(ciclo, periodo)
+  // PENDENTE: já registrado, ciclo ainda não aberto. Sai do exibido sem
+  // animar — é o que impede o número de cair quando dá 10h.
+  const pendTodos = incrementoPendente(ciclo)
+  const pendMes = incrementoPendente(ciclo, periodo)
   const referencia = referenciaDoCiclo(ciclo)
+  const aguardando = pendenteDoCiclo(ciclo)
   const temIncremento = ciclo.lancamentos.length > 0 && (
     incTodos.tpv !== 0 || incTodos.receita !== 0
     || incTodos.transacoes !== 0 || incTodos.med !== 0
@@ -135,7 +141,7 @@ export default async function ConselhoPage() {
       fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv),
       delta: varDe(k => k.tpv),
       proj: kpis.tpv === null ? undefined
-        : { real: kpis.tpv, incremento: incMes.tpv, grandeza: 'moeda' as const },
+        : { real: kpis.tpv, incremento: incMes.tpv, pendente: pendMes.tpv, grandeza: 'moeda' as const },
     },
     {
       label: 'Faturamento',
@@ -143,7 +149,7 @@ export default async function ConselhoPage() {
       // A PARCELA TARIFÁRIA é a única projetável do faturamento. Float,
       // sustentação e setup não vêm do lançamento diário de volume.
       proj: receita
-        ? { real: receita.total, incremento: incMes.receita, grandeza: 'moeda' as const }
+        ? { real: receita.total, incremento: incMes.receita, pendente: pendMes.receita, grandeza: 'moeda' as const }
         : undefined,
     },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3), delta: varDe(k => k.takeRate) },
@@ -153,7 +159,7 @@ export default async function ConselhoPage() {
       fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
       delta: varDe(k => k.qtdTransacoes),
       proj: kpis.qtdTransacoes === null ? undefined
-        : { real: kpis.qtdTransacoes, incremento: incMes.transacoes, grandeza: 'contagem' as const },
+        : { real: kpis.qtdTransacoes, incremento: incMes.transacoes, pendente: pendMes.transacoes, grandeza: 'contagem' as const },
     },
     { label: '% de MEDs', fig: kpis.percentMed === null ? null : figuraPercentual(kpis.percentMed, 2), delta: varDe(k => k.percentMed) },
   ]
@@ -218,7 +224,7 @@ export default async function ConselhoPage() {
           <div className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
             {temHistorico
               ? <FiguraProjetada real={histTpv} incremento={incTodos.tpv}
-                  grandeza="moeda" size="hero" />
+                  pendente={pendTodos.tpv} grandeza="moeda" size="hero" />
               : <Figure figura={null} size="hero" />}
             {temHistorico && <Delta v={varDe(k => k.tpv)} sufixo="no mês corrente" className="pb-2" />}
           </div>
@@ -240,12 +246,14 @@ export default async function ConselhoPage() {
               // SÓ A PARCELA TARIFÁRIA é projetável: `histFat` soma receita
               // tarifária + Float, e o Float não vem do volume lançado.
               incremento: incTodos.receita,
+              pendente: pendTodos.receita,
               grandeza: 'moeda' as const,
             },
             {
               label: 'Transações acumuladas',
               real: histTx,
               incremento: incTodos.transacoes,
+              pendente: pendTodos.transacoes,
               grandeza: 'contagem' as const,
             },
           ].map((h) => (
@@ -253,7 +261,7 @@ export default async function ConselhoPage() {
               <p className="t-label text-subtle mb-3">{h.label}</p>
               {temHistorico
                 ? <FiguraProjetada real={h.real} incremento={h.incremento}
-                    grandeza={h.grandeza} />
+                    pendente={h.pendente} grandeza={h.grandeza} />
                 : <Figure figura={null} />}
             </div>
           ))}
@@ -284,7 +292,7 @@ export default async function ConselhoPage() {
               <p className="t-label text-subtle">{m.label}</p>
               {m.proj
                 ? <FiguraProjetada real={m.proj.real} incremento={m.proj.incremento}
-                    grandeza={m.proj.grandeza} />
+                    pendente={m.proj.pendente} grandeza={m.proj.grandeza} />
                 : <Figure figura={m.fig} />}
               <div className="min-h-[1.125rem]">
                 {/* A SETA NÃO É PROJETADA: a comparação temporal continua
@@ -300,6 +308,7 @@ export default async function ConselhoPage() {
       {temHistorico && (
         <NotaProjecao
           referencia={referencia}
+          pendente={aguardando}
           inicio={ciclo.inicio}
           quantos={ciclo.lancamentos.length}
         />

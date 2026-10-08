@@ -18,11 +18,20 @@ import type { LancamentoDoCiclo } from '@/lib/projecao'
  * Nenhuma variação de "ao vivo", "em tempo real" ou "transações agora" aparece
  * aqui, de propósito.
  *
- * ── E QUANDO NÃO HÁ CICLO NOVO ──────────────────────────────────────────
+ * ── TRÊS ESTADOS, TRÊS FRASES ───────────────────────────────────────────
  *
- * A linha muda de conteúdo em vez de desaparecer. "Nenhum lançamento novo
- * neste ciclo" é a informação certa — o painel está mostrando o acumulado
- * registrado, parado, e isso é diferente de estar quebrado.
+ * A linha muda de conteúdo em vez de desaparecer, porque os três estados
+ * exigem condutas diferentes de quem lê:
+ *
+ *   ANIMANDO    diz a competência, o horário do registro e que o número é
+ *               distribuição, não captura.
+ *
+ *   AGUARDANDO  o lançamento já existe, mas foi registrado antes das 10h e o
+ *               ciclo dele não abriu. "A distribuição começa às 10h" —
+ *               esperar é a conduta certa, e é diferente de não haver dado.
+ *
+ *   SEM DADO    nenhum lançamento no ciclo. O painel mostra o acumulado
+ *               registrado, parado, e isso é diferente de estar quebrado.
  */
 
 const DATA = new Intl.DateTimeFormat('pt-BR', {
@@ -41,21 +50,48 @@ function competenciaCurta(iso: string): string {
 }
 
 export default function NotaProjecao({
-  referencia, inicio, quantos,
+  referencia, pendente, inicio, quantos,
 }: {
   /** O lançamento mais recente do ciclo. `null` = ciclo sem lançamento. */
   referencia: LancamentoDoCiclo | null
+  /**
+   * O lançamento já registrado cujo ciclo ainda não começou.
+   *
+   * Acontece entre 00h e 10h. A tela declara a ESPERA — e declará-la é o que
+   * distingue "ainda não deu a hora" de "não há dado", que exigem condutas
+   * diferentes de quem lê.
+   */
+  pendente: LancamentoDoCiclo | null
   /** Início do ciclo, em ISO. */
   inicio: string
   /** Quantos lançamentos entraram no ciclo. */
   quantos: number
 }) {
+  if (!referencia && pendente) {
+    return (
+      <p className="t-sm text-subtle">
+        Lançamento de{' '}
+        <span className="text-fg">{competenciaCurta(pendente.competencia)}</span>{' '}
+        registrado em{' '}
+        <span className="text-fg tabular-nums">
+          {DATA_HORA.format(new Date(pendente.registradoEm)).replace(', ', ' às ')}
+        </span>
+        , antes da abertura do ciclo —{' '}
+        <span className="text-fg">
+          a distribuição começa às {HORA_INICIO_CICLO}h
+        </span>
+        . Até lá os indicadores de volume mostram o acumulado do ciclo anterior.
+      </p>
+    )
+  }
+
   if (!referencia) {
     return (
       <p className="t-sm text-subtle">
         Nenhum lançamento novo no ciclo iniciado em{' '}
         <span className="text-fg">{DATA.format(new Date(inicio))} às {HORA_INICIO_CICLO}h</span>
-        {' '}— os indicadores de volume mostram o acumulado já registrado.
+        {' '}— os indicadores de volume mostram o acumulado já registrado,
+        parados, até o próximo lançamento.
       </p>
     )
   }
@@ -64,7 +100,8 @@ export default function NotaProjecao({
     <p className="t-sm text-subtle">
       Indicadores de volume{' '}
       <span className="text-fg">distribuídos ao longo do ciclo operacional</span>{' '}
-      ({HORA_INICIO_CICLO}h às {HORA_INICIO_CICLO}h, com ritmo dobrado entre 18h e 20h).
+      ({HORA_INICIO_CICLO}h às {HORA_INICIO_CICLO}h, com ritmo dobrado entre 18h e 20h
+      e reduzido na madrugada).
       {' '}Referência:{' '}
       <span className="text-fg">
         {quantos > 1
