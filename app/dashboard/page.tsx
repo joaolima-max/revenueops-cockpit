@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
-  cicloDeProjecao, incrementoDoCiclo, referenciaDoCiclo,
+  cicloDeProjecao, incrementoDoCiclo, incrementoPendente,
+  referenciaDoCiclo, pendenteDoCiclo,
 } from '@/lib/projecao'
 import {
   kpisDoPeriodo, indicadoresEstrutura, seriesCockpit,
@@ -90,7 +91,8 @@ export default async function DashboardPage() {
    *
    * Os quatro KPIs de volume — receita tarifária, TPV, transações e MEDs —
    * deixam de saltar para o total no instante do lançamento e passam a crescer
-   * ao longo do ciclo de 10h às 10h, com ritmo dobrado entre 18h e 20h.
+   * ao longo do ciclo de 10h às 10h, seguindo o ritmo da operação: dobrado
+   * entre 18h e 20h, reduzido a 0,3 na madrugada (ver `PERFIL_RITMO`).
    *
    * O que cresce é só o INCREMENTO do ciclo: o volume que entrou no painel
    * agora. O resto do acumulado do mês é dado fechado e aparece inteiro — ver
@@ -101,6 +103,10 @@ export default async function DashboardPage() {
    * acumulam. Sem ele, um lançamento retroativo registrado hoje seria
    * subtraído de um acumulado onde ele nunca esteve.
    *
+   * `pendente` é o volume já registrado cujo ciclo ainda não abriu — o
+   * lançamento feito antes das 10h. Ele sai do exibido sem animar, e é o que
+   * impede o número de cair quando dá 10h.
+   *
    * Nenhum outro indicador desta tela é projetado: saldo médio, take rate e a
    * estrutura da carteira continuam exibindo o valor real. As SETAS também —
    * a comparação temporal segue usando os números reais, pela regra que já
@@ -108,14 +114,17 @@ export default async function DashboardPage() {
    */
   const ciclo = await cicloDeProjecao()
   const incremento = incrementoDoCiclo(ciclo, periodo)
+  const pendente = incrementoPendente(ciclo, periodo)
   const referencia = referenciaDoCiclo(ciclo, periodo)
+  const aguardando = pendenteDoCiclo(ciclo, periodo)
   const temIncremento =
     incremento.tpv !== 0 || incremento.receita !== 0
     || incremento.transacoes !== 0 || incremento.med !== 0
 
   /** A projeção de um KPI, ou `undefined` quando não há valor real a exibir. */
-  const proj = (real: number | null, inc: number, grandeza: 'moeda' | 'contagem') =>
-    real === null ? undefined : { real, incremento: inc, grandeza }
+  const proj = (
+    real: number | null, inc: number, pend: number, grandeza: 'moeda' | 'contagem',
+  ) => real === null ? undefined : { real, incremento: inc, pendente: pend, grandeza }
 
   const spark = (pick: (k: KpisPeriodo) => number | null) => serie.map((k) => pick(k) ?? 0)
   const varDe = (pick: (k: KpisPeriodo) => number | null) =>
@@ -135,16 +144,16 @@ export default async function DashboardPage() {
     { label: 'Receita', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria),
       primary: true, delta: varDe((k) => k.receitaTarifaria), spark: spark((k) => k.receitaTarifaria),
       note: 'Receita tarifária do lançamento diário',
-      projecao: proj(kpis.receitaTarifaria, incremento.receita, 'moeda') },
+      projecao: proj(kpis.receitaTarifaria, incremento.receita, pendente.receita, 'moeda') },
     { label: 'TPV geral', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv),
       delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv), note: 'Lançamento diário',
-      projecao: proj(kpis.tpv, incremento.tpv, 'moeda') },
+      projecao: proj(kpis.tpv, incremento.tpv, pendente.tpv, 'moeda') },
     { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
       delta: varDe((k) => k.qtdTransacoes), spark: spark((k) => k.qtdTransacoes),
       note: comparacao.emCurso && comparacao.ateDia !== null
         ? `${formatMesRef(periodo)} · até o dia ${String(comparacao.ateDia).padStart(2, '0')}`
         : `Mês vigente · ${formatMesRef(periodo)}`,
-      projecao: proj(kpis.qtdTransacoes, incremento.transacoes, 'contagem') },
+      projecao: proj(kpis.qtdTransacoes, incremento.transacoes, pendente.transacoes, 'contagem') },
     { label: 'Saldo médio em conta', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio),
       delta: varDe((k) => k.saldoMedio), spark: spark((k) => k.saldoMedio), note: 'Média do período' },
   ]
@@ -160,7 +169,7 @@ export default async function DashboardPage() {
     { label: 'MED', fig: kpis.qtdMed === null ? null : figuraQuantidade(kpis.qtdMed),
       delta: varDe((k) => k.qtdMed),
       note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações`,
-      projecao: proj(kpis.qtdMed, incremento.med, 'contagem') },
+      projecao: proj(kpis.qtdMed, incremento.med, pendente.med, 'contagem') },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3),
       delta: varDe((k) => k.takeRate), note: 'Receita ÷ TPV' },
   ]
@@ -264,6 +273,7 @@ export default async function DashboardPage() {
           {kpis.temDados && (
             <NotaProjecao
               referencia={referencia}
+              pendente={aguardando}
               inicio={ciclo.inicio}
               quantos={ciclo.lancamentos.filter((l) => l.competencia.startsWith(periodo)).length}
             />

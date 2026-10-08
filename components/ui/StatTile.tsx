@@ -44,7 +44,13 @@ export default function StatTile({
    * célula: um saldo médio ou uma contagem de clientes ativos não "cresce ao
    * longo do dia", e animá-los seria afirmar algo falso.
    */
-  projecao?: { real: number; incremento: number; grandeza: 'moeda' | 'contagem' }
+  projecao?: {
+    real: number
+    incremento: number
+    /** Volume já registrado cujo ciclo não abriu. Sai do exibido sem animar. */
+    pendente: number
+    grandeza: 'moeda' | 'contagem'
+  }
   className?: string
 }) {
   const max = spark && spark.length ? Math.max(...spark, 1) : 1
@@ -67,6 +73,7 @@ export default function StatTile({
         <FiguraProjetada
           real={projecao.real}
           incremento={projecao.incremento}
+          pendente={projecao.pendente}
           grandeza={projecao.grandeza}
           size={size === 'sm' ? 'sm' : 'md'}
           tone={primary ? 'accent' : 'default'}
