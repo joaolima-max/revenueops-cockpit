@@ -15,6 +15,7 @@ import Panel, { PanelHeader } from '@/components/ui/Panel'
 import { TableShell, Table, THead, HeadRow, Th, Row, Td, EmptyRow } from '@/components/ui/DataTable'
 import { moedaCheia } from '@/lib/format-financeiro'
 import PrevisaoFiltros from '@/components/previsao/PrevisaoFiltros'
+import ComposicaoReceita from '@/components/previsao/ComposicaoReceita'
 import ReceitasClient from './ReceitasClient'
 
 /**
@@ -48,6 +49,9 @@ export default async function ReceitasPrevistasPage({
     }),
   ])
 
+  // Só no recorte de UM mês — ver o comentário equivalente na Visão Geral.
+  const composicaoDoMes = comparacao.length === 1 ? comparacao[0].composicao : null
+
   const previsto = comparacao.reduce((a, c) => a + c.previsto, 0)
   const realizado = comparacao.reduce((a, c) => a + c.realizado, 0)
   const desvio = realizado - previsto
@@ -66,6 +70,14 @@ export default async function ReceitasPrevistasPage({
         />
       </Suspense>
 
+      {/* A COMPOSIÇÃO vem antes da comparação, e de propósito: nesta tela a
+          pergunta é "o que está previsto, e por quê?". A comparação com o
+          realizado é o passo seguinte, e aparece logo abaixo. */}
+      {composicaoDoMes && (
+        <ComposicaoReceita composta={composicaoDoMes}
+          titulo="Receita prevista do período, parcela por parcela" />
+      )}
+
       <section className="space-y-4">
         <PanelHeader
           title="Faturamento previsto × realizado"
@@ -73,7 +85,9 @@ export default async function ReceitasPrevistasPage({
         />
         <HairlineGrid cols={4}>
           <StatTile label="Faturamento previsto" figura={figuraMoeda(previsto)}
-            note="Soma das previsões do período" />
+            note={composicaoDoMes
+              ? 'MRR projetado + metas de receita + previsões lançadas'
+              : 'Soma das previsões que casam com o filtro'} />
           <StatTile label="Faturamento realizado" figura={figuraMoeda(realizado)} primary
             note="Lançamentos de receita, por competência" />
           <StatTile label="Desvio" figura={figuraMoeda(desvio)}

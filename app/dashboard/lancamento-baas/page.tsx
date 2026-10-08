@@ -1,15 +1,11 @@
-export const dynamic = 'force-dynamic'
-
 import { redirect } from 'next/navigation'
-import { getSession } from '@/lib/auth'
-import { hasPermission } from '@/lib/permissions'
-import LancamentoBaasClient from './LancamentoBaasClient'
 
-export default async function LancamentoBaasPage() {
-  const session = await getSession()
-  if (!session) redirect('/login')
-  if (!hasPermission(session.permissoes ?? null, 'view_receita', session.role)) {
-    redirect('/dashboard')
-  }
-  return <LancamentoBaasClient />
+/**
+ * ROTA ANTIGA — virou a aba "Lançamentos" de Condições BaaS.
+ *
+ * Mesma razão de `financeiro/contas-pagar/page.tsx`: a rota esteve em
+ * produção e continua existindo como redirecionamento.
+ */
+export default async function LancamentoBaasRedirect() {
+  redirect('/dashboard/financeiro/condicoes-baas/lancamentos')
 }

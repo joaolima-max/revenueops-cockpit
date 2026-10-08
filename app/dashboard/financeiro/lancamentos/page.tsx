@@ -1,13 +1,6 @@
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
-import { getSession } from '@/lib/auth'
-import { hasPermission } from '@/lib/permissions'
-import LancamentosClient from './LancamentosClient'
-
-export default async function LancamentosPage() {
-  const session = await getSession()
-  const podeGerenciar = !!session &&
-    hasPermission(session.permissoes ?? null, 'manage_financeiro', session.role)
-
-  return <LancamentosClient podeGerenciar={podeGerenciar} />
+/** ROTA ANTIGA — virou aba de CP / CR. Ver `contas-pagar/page.tsx`. */
+export default async function LancamentosRedirect() {
+  redirect('/dashboard/financeiro/cp-cr/lancamentos')
 }

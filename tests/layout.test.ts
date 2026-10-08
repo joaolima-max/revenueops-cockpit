@@ -39,7 +39,7 @@ const semComentarios = (txt: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
 
-const LANCAMENTOS = ler('app/dashboard/financeiro/lancamentos/LancamentosClient.tsx')
+const LANCAMENTOS = ler('app/dashboard/financeiro/cp-cr/lancamentos/LancamentosClient.tsx')
 const PIPELINE = ler('app/dashboard/pipeline/PipelineClient.tsx')
 const CARTEIRA = ler('app/dashboard/carteira/CarteiraClient.tsx')
 const BADGE = ler('components/ui/Badge.tsx')
@@ -413,7 +413,7 @@ test('o grafico diario NAO e candlestick', () => {
  * ========================================================================= */
 
 const DETALHE = ler('components/financeiro/DetalheBaas.tsx')
-const BAAS = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+const BAAS = ler('app/dashboard/financeiro/condicoes-baas/lancamentos/LancamentoBaasClient.tsx')
 
 test('o detalhe BaaS: PRODUTO nao engole mais a tabela', () => {
   /**

@@ -247,7 +247,7 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
             title="Nenhum título neste período"
             description="Os recebíveis nascem em Lançamentos, ao registrar uma receita com cliente."
             action={
-              <Link href="/dashboard/financeiro/lancamentos">
+              <Link href="/dashboard/financeiro/cp-cr/lancamentos">
                 <Button variant="primary">Ir para Lançamentos</Button>
               </Link>
             }
@@ -323,7 +323,7 @@ export default function ContasReceberClient({ clientes, podeGerenciar }: {
 
       <p className="t-label text-subtle">
         Esta tela acompanha os recebíveis; ela não os cria. Um título nasce em{' '}
-        <Link href="/dashboard/financeiro/lancamentos" className="text-accent-soft hover:underline">
+        <Link href="/dashboard/financeiro/cp-cr/lancamentos" className="text-accent-soft hover:underline">
           Lançamentos
         </Link>
         , ao registrar uma receita com cliente — a mesma relação que Contas a Pagar tem com as

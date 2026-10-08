@@ -46,9 +46,9 @@ import type { SeriesCockpit, PontoDiario, PontoMensalCockpit, RangeDias } from '
  *
  * ── DUAS RESOLUÇÕES, E A RAZÃO DISSO ────────────────────────────────────
  *
- * NOVE gráficos são DIÁRIOS: TPV, receita, transações, saldo, MED, clientes
- * ativos, take rate, atividade combinada e o operacional diário. Todos saem do
- * Lançamento Diário, que tem grão de um dia.
+ * OITO gráficos são DIÁRIOS: TPV, receita, transações, saldo, MED, clientes
+ * ativos, take rate e o operacional diário. Todos saem do Lançamento Diário,
+ * que tem grão de um dia.
  *
  * TRÊS são MENSAIS: BaaS ativos, White Labels ativos e MRR. Eles não têm
  * resolução diária e não há como inventá-la — "parceiros ativos" é contagem de
@@ -58,13 +58,53 @@ import type { SeriesCockpit, PontoDiario, PontoMensalCockpit, RangeDias } from '
  * intervalo atravessa. Quando a janela toca um mês só, o gráfico DIZ que a
  * série é mensal em vez de desenhar um ponto solto.
  *
- * ── A DATA MÍNIMA DE 01/10 ──────────────────────────────────────────────
+ * ── "ATIVIDADE OPERACIONAL" SAIU ────────────────────────────────────────
  *
- * A série diária começa em 01/10/2026 e nada anterior é exibido (ver
+ * Havia DOIS gráficos para a mesma pergunta: "Atividade Operacional"
+ * (transações, MEDs e clientes ativos lado a lado) e "Evolução Atividade
+ * Operacional Diária" (TPV, receita, transações e MED). O segundo é
+ * estritamente mais informativo — tem as duas séries monetárias — e os dois
+ * leem a MESMA `serieDiaria`.
+ *
+ * Dois gráficos do mesmo dado no mesmo painel não dão duas leituras: dão a
+ * dúvida de qual dos dois é o certo. Ficou o DIÁRIO, que já era o gráfico de
+ * largura inteira no topo da tela. Nenhuma métrica se perdeu: clientes ativos
+ * tem o seu próprio gráfico, logo acima.
+ *
+ * ── A DATA MÍNIMA DE 01/06 ──────────────────────────────────────────────
+ *
+ * A série diária começa em 01/06/2026 e nada anterior é exibido (ver
  * `DATA_MINIMA_ATIVIDADE`, em lib/kpi). Enquanto não houver 90 dias desde o
  * piso, as três janelas devolvem o mesmo recorte — e a tela DECLARA isso, em
  * vez de deixar o leitor concluir que 30 e 90 dias são a mesma coisa.
+ *
+ * ── E A SÉRIE MENSAL TEM O SEU PRÓPRIO PISO ─────────────────────────────
+ *
+ * Os três gráficos mensais começam no primeiro mês com condição comercial
+ * cadastrada (`mensalDisponivelDe`), não no começo da janela. Antes disso o
+ * sistema não sabe quantos parceiros havia, e desenhar zero afirmaria que não
+ * havia nenhum. Ver `serieMensalCockpit`.
  */
+
+/**
+ * Dois dias de calendário são VIZINHOS?
+ *
+ * `PontoDiario.dia` vem como "dd/mm/aaaa" (pt-BR, em UTC — ver `serieDiaria`),
+ * que é o formato que o tooltip exibe. A comparação "dia vs dia anterior" só é
+ * honesta entre dias adjacentes, e a série pode ter buracos: um dia sem
+ * lançamento fica FORA dela, de propósito.
+ */
+function diasVizinhos(anterior: string, posterior: string): boolean {
+  const parse = (s: string) => {
+    const [d, m, a] = s.split('/').map(Number)
+    return Number.isFinite(d) && Number.isFinite(m) && Number.isFinite(a)
+      ? Date.UTC(a, m - 1, d)
+      : NaN
+  }
+  const a = parse(anterior), b = parse(posterior)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false
+  return b - a === 86_400_000
+}
 
 /** As três janelas. Conjunto FECHADO, espelho de `RANGES_DIAS` em lib/kpi. */
 const RANGES: Array<{ valor: RangeDias; label: string }> = [
@@ -102,7 +142,6 @@ const CHART_DEFS: ChartDef[] = [
   { id: 'baas', title: 'Evolução de BaaS Ativos', sub: 'Parceiros BaaS ativos no fim de cada mês', resolucao: 'mensal' },
   { id: 'whitelabel', title: 'Evolução de White Labels Ativos', sub: 'White Labels ativos no fim de cada mês', resolucao: 'mensal' },
   { id: 'takerate', title: 'Receita ÷ TPV', sub: 'Take rate — quanto da movimentação vira receita', resolucao: 'diaria' },
-  { id: 'atividade', title: 'Atividade Operacional', sub: 'Transações, MEDs e clientes ativos lado a lado', resolucao: 'diaria' },
   { id: 'mrr', title: 'Evolução do MRR', sub: 'Receita recorrente mensal', resolucao: 'mensal' },
 ]
 
@@ -127,10 +166,11 @@ const DIARIO_DEF: ChartDef = {
 }
 
 const DEFAULT_ORDER = CHART_DEFS.map((c) => c.id)
-// Chave versionada: a lista e a semântica dos gráficos mudaram nesta rodada
-// (janela por gráfico), e uma ordem salva com ids antigos não deve sobreviver
-// em silêncio — ela deixaria buracos no grid.
-const LS_KEY = 'dashboard_chart_order_v6'
+// Chave versionada: a LISTA de gráficos mudou — "Atividade Operacional" saiu
+// —, e uma ordem salva com o id antigo não deve sobreviver em silêncio: ela
+// deixaria um buraco no grid, porque `charts['atividade']` não existe mais.
+// Subir a chave é o que faz cada navegador voltar à ordem padrão uma vez.
+const LS_KEY = 'dashboard_chart_order_v7'
 
 const PADRAO_SERIALIZADO = JSON.stringify(DEFAULT_ORDER)
 const EVENTO_ORDEM = 'bp-chart-order'
@@ -426,9 +466,15 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
 
     if (def?.resolucao === 'mensal') {
       const n = s.mensal.length
+      // O PISO DESTA SÉRIE É O CADASTRO, não a janela. Declará-lo é o que
+      // impede a leitura de que o gráfico está incompleto por erro: a série
+      // começa onde o dado começa a existir. Ver `serieMensalCockpit`.
+      const desde = s.mensalDisponivelDe
+        ? ` · desde ${formatMesRef(s.mensalDisponivelDe)}, o primeiro mês com condição cadastrada`
+        : ''
       return n <= 1
-        ? 'Série de resolução mensal — a janela escolhida cobre um mês só.'
-        : `${n} meses · resolução mensal, não diária`
+        ? `Série de resolução mensal${desde || ' — a janela escolhida cobre um mês só.'}`
+        : `${n} meses · resolução mensal, não diária${desde}`
     }
 
     const base = `${s.janela.inicio.split('-').reverse().join('/')} a `
@@ -440,26 +486,58 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
   }
 
   /**
-   * Variação do ÚLTIMO ponto contra o PENÚLTIMO da janela.
+   * Variação do ÚLTIMO DIA LANÇADO contra o DIA ANTERIOR A ELE.
    *
-   * É leitura imediata de tendência dentro do recorte escolhido — e muda com a
-   * janela, como deve: o último dia contra o anterior em 7 dias, e o mesmo par
-   * em 90 dias (a série é a mesma; só o começo dela muda).
+   * ── O DEFEITO QUE ISTO CORRIGE ────────────────────────────────────────
+   *
+   * A versão anterior descartava os zeros ANTES de pegar os dois últimos
+   * valores. Com isso, se o dia 05 tivesse saldo zero, "a variação do dia 06"
+   * comparava 06 com 04 — e o rodapé continuava dizendo "no dia". Dois dias
+   * de distância apresentados como um.
+   *
+   * Agora os dois pontos são os dois ÚLTIMOS da série, sem filtro. Zero é um
+   * valor: um dia com zero MED é um dia sem MED, não um dia sem lançamento —
+   * e dia sem lançamento já fica fora da série (`serieDiaria`).
+   *
+   * A base zero continua recusada, mas por `variacao`, que é quem sabe que
+   * dividir por zero não dá percentual. A diferença é onde a recusa acontece:
+   * antes ela escondia o par errado, agora ela não desenha seta nenhuma.
+   *
+   * ── E OS DOIS DIAS PRECISAM SER CONSECUTIVOS ──────────────────────────
+   *
+   * A série pode ter buracos (dia sem lançamento). Se o último par não for de
+   * dias de calendário vizinhos, a comparação não é "dia vs dia anterior" e a
+   * seta não é desenhada — é a regra de `parTemporal` (lib/comparacao-temporal)
+   * aplicada à granularidade DIÁRIA: as duas janelas têm de ser adjacentes.
    */
   function deltaDiario(id: string, key: keyof PontoDiario, sufixo: string) {
-    const vals = serieDe(id)
-      .diario.map((d) => d[key])
-      .filter((v): v is number => typeof v === 'number' && v !== 0)
-    if (vals.length < 2) return null
-    return <Delta v={variacao(vals[vals.length - 1], vals[vals.length - 2])} sufixo={sufixo} />
+    const serie = serieDe(id).diario
+    if (serie.length < 2) return null
+
+    const ultimo = serie[serie.length - 1]
+    const penultimo = serie[serie.length - 2]
+    if (!diasVizinhos(penultimo.dia, ultimo.dia)) return null
+
+    const a = ultimo[key]
+    const b = penultimo[key]
+    if (typeof a !== 'number' || typeof b !== 'number') return null
+    return <Delta v={variacao(a, b)} sufixo={sufixo} />
   }
 
+  /**
+   * Variação do último MÊS contra o anterior.
+   *
+   * Mesma correção do diário: sem filtro de zero. Uma contagem de parceiros
+   * que caiu a zero é informação, e descartá-la fazia o gráfico comparar
+   * outubro com agosto chamando de "no mês".
+   */
   function deltaMensal(id: string, key: keyof PontoMensalCockpit) {
-    const vals = serieDe(id)
-      .mensal.map((d) => d[key])
-      .filter((v): v is number => typeof v === 'number' && v !== 0)
-    if (vals.length < 2) return null
-    return <Delta v={variacao(vals[vals.length - 1], vals[vals.length - 2])} sufixo="no mês" />
+    const serie = serieDe(id).mensal
+    if (serie.length < 2) return null
+    const a = serie[serie.length - 1][key]
+    const b = serie[serie.length - 2][key]
+    if (typeof a !== 'number' || typeof b !== 'number') return null
+    return <Delta v={variacao(a, b)} sufixo="no mês" />
   }
 
   /** Pontos mensais com o rótulo já formatado para o eixo. */
@@ -717,30 +795,6 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
       ) : <NoSeries what="O take rate depende de TPV e receita lançados na janela." />
     },
 
-    atividade: (id) => {
-      const d = diario(id)
-      return hasSeries(d, 'transacoes', 'med') ? (
-        <ResponsiveContainer width="100%" height={200}>
-          <ComposedChart data={d} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
-            <CartesianGrid {...grid} />
-            <XAxis dataKey="rotulo" {...eixo} interval="preserveStartEnd" minTickGap={28} />
-            <YAxis yAxisId="tx" {...eixo} tickFormatter={eixoQtd} width={88} allowDecimals={false} />
-            <YAxis yAxisId="cli" orientation="right" {...eixo} tickFormatter={eixoQtd} width={56} allowDecimals={false} />
-            <Tooltip cursor={cursorBarra(p)} content={makeTooltip(d, 'rotulo', [
-              { key: 'transacoes', nome: 'Transações', cor: p.s1 },
-              { key: 'med', nome: 'MEDs', cor: p.s3 },
-              { key: 'clientesAtivos', nome: 'Clientes ativos', cor: p.s2 },
-            ], quantidadeCompacta)} />
-            <Legend {...leg} />
-            <Bar yAxisId="tx" dataKey="transacoes" name="Transações" fill={p.s1} {...BAR} />
-            <Bar yAxisId="tx" dataKey="med" name="MEDs" fill={p.s3} {...BAR} />
-            <Line yAxisId="cli" type="monotone" dataKey="clientesAtivos" name="Clientes ativos"
-              connectNulls stroke={p.s2} {...linha} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      ) : <NoSeries what="Sem transações e MEDs suficientes na janela para compor a leitura." />
-    },
-
     /* ── OS TRÊS MENSAIS ──────────────────────────────────────────────────
        BaaS, White Labels e MRR não têm grão diário. A contagem de cada mês é
        RECONSTRUÍDA do histórico de `ativo` das condições comerciais (ver
@@ -748,7 +802,9 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
        Nada é estimado — e por isso a resolução é a que é. */
     baas: (id) => {
       const d = mensal(id)
-      if (d.length <= 1) return <SerieMensalCurta nome="BaaS ativos" />
+      if (d.length <= 1) {
+        return <SerieMensalCurta nome="BaaS ativos" disponivelDe={serieDe(id).mensalDisponivelDe ?? undefined} />
+      }
       return hasSeries(d, 'baasAtivos') ? (
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={d} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
@@ -766,12 +822,14 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
             <Area type="monotone" dataKey="baasAtivos" stroke={p.s1} fill="url(#baasG)" {...linha} />
           </AreaChart>
         </ResponsiveContainer>
-      ) : <NoSeries what="Nenhum BaaS ativo na janela — ou nenhuma condição BaaS cadastrada." />
+      ) : <NoSeries what="Nenhuma condição BaaS ativa nos meses com cadastro." />
     },
 
     whitelabel: (id) => {
       const d = mensal(id)
-      if (d.length <= 1) return <SerieMensalCurta nome="White Labels ativos" />
+      if (d.length <= 1) {
+        return <SerieMensalCurta nome="White Labels ativos" disponivelDe={serieDe(id).mensalDisponivelDe ?? undefined} />
+      }
       return hasSeries(d, 'whiteLabelsAtivos') ? (
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={d} margin={{ top: 4, right: 0, bottom: 0, left: -8 }}>
@@ -789,12 +847,14 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
             <Area type="monotone" dataKey="whiteLabelsAtivos" stroke={p.s2} fill="url(#wlG)" {...linha} />
           </AreaChart>
         </ResponsiveContainer>
-      ) : <NoSeries what="Nenhum White Label ativo na janela — ou nenhuma condição cadastrada." />
+      ) : <NoSeries what="Nenhuma condição White Label ativa nos meses com cadastro." />
     },
 
     mrr: (id) => {
       const d = mensal(id)
-      if (d.length <= 1) return <SerieMensalCurta nome="MRR" />
+      if (d.length <= 1) {
+        return <SerieMensalCurta nome="MRR" disponivelDe={serieDe(id).mensalDisponivelDe ?? undefined} />
+      }
       if (!hasSeries(d, 'mrr')) {
         return <NoSeries what="Nenhum cliente ativo com mensalidade contratada." />
       }
@@ -945,12 +1005,35 @@ export default function DashboardCharts({ series }: { series: SeriesCockpit }) {
  * E interpolar dias dentro do mês inventaria dado. Então o quadro diz o que
  * está acontecendo e aponta a janela que resolve.
  */
-function SerieMensalCurta({ nome }: { nome: string }) {
+/**
+ * A SÉRIE MENSAL TEM UM PONTO SÓ — e a tela precisa dizer QUAL dos dois
+ * motivos é o caso, porque a conduta de quem lê muda.
+ *
+ * JANELA CURTA      a janela escolhida cobre um mês só. Ampliar para 90 dias
+ *                   resolve, e é o que a mensagem manda fazer.
+ *
+ * HISTÓRICO CURTO   o cadastro de condições comerciais começou neste mês, e
+ *                   ampliar a janela não vai produzir mês nenhum. Dizer
+ *                   "escolha 90 dias" aqui seria mandar o usuário a um lugar
+ *                   onde não há nada — e ele concluiria, com razão, que o
+ *                   gráfico está quebrado.
+ *
+ * O segundo caso é a razão de `mensalDisponivelDe` existir: antes desta
+ * rodada a série desenhava ZERO nos meses sem cadastro, e o gráfico mostrava
+ * uma rampa de 0 para 9 que nunca aconteceu.
+ */
+function SerieMensalCurta({ nome, disponivelDe }: { nome: string; disponivelDe?: string }) {
   return (
     <div className="h-[200px] flex items-center justify-center">
       <EmptyState compact
-        title="Série de resolução mensal"
-        description={`${nome} é apurado por mês, e a janela escolhida cobre um mês só. Escolha 90 dias para ver a trajetória trimestral.`}
+        title={disponivelDe ? 'Histórico ainda de um mês' : 'Série de resolução mensal'}
+        description={disponivelDe
+          ? `${nome} é apurado por mês, e o cadastro de condições comerciais `
+            + `começa em ${formatMesRef(disponivelDe)} — não há mês anterior para `
+            + 'comparar. Ampliar a janela não acrescenta pontos: o que falta é '
+            + 'histórico, não janela.'
+          : `${nome} é apurado por mês, e a janela escolhida cobre um mês só. `
+            + 'Escolha 90 dias para ver a trajetória trimestral.'}
       />
     </div>
   )

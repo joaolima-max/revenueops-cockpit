@@ -19,6 +19,7 @@ import EmptyState, { Alert, NoData } from '@/components/ui/EmptyState'
 import Figure from '@/components/ui/Figure'
 import Button from '@/components/ui/Button'
 import PrevisaoFiltros from '@/components/previsao/PrevisaoFiltros'
+import ComposicaoReceita from '@/components/previsao/ComposicaoReceita'
 import VisaoGeralCharts from './VisaoGeralCharts'
 
 /**
@@ -73,6 +74,17 @@ export default async function PrevisaoVisaoGeralPage({
 
   /** O último ponto da curva: o caixa que se espera ter no fim da janela. */
   const ultimoCaixa = caixa.pontos[caixa.pontos.length - 1] ?? null
+
+  /**
+   * A COMPOSIÇÃO a exibir: só quando a janela é de um mês só.
+   *
+   * `composicao` vem `null` quando há filtro de dimensão ativo — MRR e meta
+   * não têm centro de custo, então a composição automática não se aplica ao
+   * recorte. Ver `receitaPrevistaVsRealizada`.
+   */
+  const composicaoDoMes = visao.receita.length === 1
+    ? visao.receita[0].composicao
+    : null
 
   const receitaPrevista = visao.receita.reduce((a, r) => a + r.previsto, 0)
   const receitaRealizada = visao.receita.reduce((a, r) => a + r.realizado, 0)
@@ -130,7 +142,15 @@ export default async function PrevisaoVisaoGeralPage({
 
   /* NÍVEL 2 — o plano. */
   const nivel2 = [
-    { label: 'Receita prevista', fig: figuraMoeda(receitaPrevista), note: 'Previsão de faturamento' },
+    {
+      label: 'Receita prevista',
+      fig: figuraMoeda(receitaPrevista),
+      // A NOTA DIZ A FÓRMULA. Sem ela, "receita prevista" seria lido como um
+      // campo digitado em algum lugar — e ninguém procuraria a composição.
+      note: composicaoDoMes
+        ? 'MRR projetado + metas de receita + previsões lançadas'
+        : 'Previsão de faturamento',
+    },
     { label: 'Despesa prevista', fig: figuraMoeda(despesaPrevista), note: 'Despesas futuras do período' },
     { label: 'Resultado previsto', fig: figuraMoeda(resultadoPrevisto), note: 'Receita − despesa previstas' },
     {
@@ -213,6 +233,16 @@ export default async function PrevisaoVisaoGeralPage({
               ))}
             </HairlineGrid>
           </section>
+
+          {/* ── A ORIGEM DA RECEITA PREVISTA ───────────────────────────────
+              Vem logo abaixo do tile que mostra o total, porque é a resposta
+              à pergunta que o tile levanta: "de onde saiu isso?".
+
+              Só no recorte de UM mês. Numa janela de 3 ou 12 meses seriam
+              três ou doze composições, e a pergunta de auditoria é sempre
+              sobre um mês — o `composicao` de cada ponto continua no payload
+              para quem precisar. */}
+          {composicaoDoMes && <ComposicaoReceita composta={composicaoDoMes} />}
 
           {/* ── NÍVEL 3 — a distinção que o painel precisa declarar ─────── */}
           <section className="space-y-4">

@@ -45,6 +45,35 @@ export const UNIDADE_LABEL: Record<MetaUnidade, string> = {
 export const META_TIPOS = [
   // Operacionais — alimentados pelo Lançamento Diário.
   'RECEITA_TARIFARIA', 'TPV', 'SALDO_EM_CONTA', 'TRANSACOES', 'MEDS', 'TAKE_RATE',
+  /**
+   * DE RECEITA — as três linhas que, com a Receita Tarifária, fecham a
+   * RECEITA PREVISTA da Previsão.
+   *
+   * ── POR QUE ELAS EXISTEM ───────────────────────────────────────────────
+   *
+   * A Previsão de Receita é `MRR projetado + metas de receita`. O MRR vem do
+   * CADASTRO (sustentação das condições comerciais e mensalidade de API da
+   * carteira) — é contrato assinado, não alvo. As outras quatro linhas de
+   * receita não têm cadastro de onde sair: ninguém assina "vou faturar
+   * R$ 80 mil de setup em novembro". Elas são DECISÃO, e decisão de receita
+   * neste produto se grava como meta.
+   *
+   * Então estas três entram no mesmo cadastro de Metas que a Receita
+   * Tarifária já usava, com o mesmo período, a mesma edição e a mesma
+   * auditoria — e a Previsão as lê de lá. Uma segunda tabela de "receita
+   * planejada" ao lado de Metas criaria dois lugares para decidir o mesmo
+   * número.
+   *
+   * ── NÃO SE SOBREPÕEM ───────────────────────────────────────────────────
+   *
+   * RECEITA_TARIFARIA é a tarifa sobre o TPV PRÓPRIO (vem do Lançamento
+   * Diário). RECEITA_LANCAMENTOS_WL_BAAS é a apuração dos PARCEIROS (vem do
+   * Lançamento BaaS). Serviços e Setup são contratos pontuais. Sustentação e
+   * mensalidade de API não aparecem aqui porque entram pelo MRR — metá-las
+   * seria contar o mesmo dinheiro duas vezes, e é a primeira coisa que
+   * `lib/previsao-receita` documenta.
+   */
+  'RECEITA_LANCAMENTOS_WL_BAAS', 'RECEITA_SERVICOS', 'RECEITA_SETUP',
   // De PIPELINE — alimentados pelo Comercial. Quantidade e percentual; nenhuma
   // monetária, porque o valor de um lead não está validado e não vira meta.
   //
@@ -85,6 +114,15 @@ export const PADRAO_POR_TIPO: Record<MetaTipo, { unidade: MetaUnidade; direcao: 
   // operação fala do indicador — e quem decide, no fim, é quem cadastra.
   MEDS: { unidade: 'PERCENTUAL', direcao: 'MENOR_MELHOR' },
   TAKE_RATE: { unidade: 'PERCENTUAL', direcao: 'MAIOR_MELHOR' },
+
+  // ── Receita que alimenta a Previsão ───────────────────────────────────
+  // VALOR e MAIOR_MELHOR nas três: são reais a faturar, e faturar mais é
+  // melhor. A unidade NÃO é negociável aqui como em MED — uma meta de receita
+  // em percentual não tem o que somar na Previsão —, mas a validação disso
+  // mora em `validarValorMeta` e na API, não neste padrão.
+  RECEITA_LANCAMENTOS_WL_BAAS: { unidade: 'VALOR', direcao: 'MAIOR_MELHOR' },
+  RECEITA_SERVICOS: { unidade: 'VALOR', direcao: 'MAIOR_MELHOR' },
+  RECEITA_SETUP: { unidade: 'VALOR', direcao: 'MAIOR_MELHOR' },
 
   // ── Pipeline ──────────────────────────────────────────────────────────
   LEADS_GERADOS: { unidade: 'QUANTIDADE', direcao: 'MAIOR_MELHOR' },
@@ -129,6 +167,14 @@ export const META_TIPO_LABEL: Record<string, string> = {
   TRANSACOES: 'Transações',
   MEDS: 'MED',
   TAKE_RATE: 'Take Rate',
+
+  // As três de receita que alimentam a Previsão. O rótulo diz a LINHA de
+  // receita, sem a palavra "meta": o contexto da tela já é o de metas, e
+  // "Meta de Receita de Setup" apareceria como "Meta: Meta de Receita de
+  // Setup" nas tabelas.
+  RECEITA_LANCAMENTOS_WL_BAAS: 'Receita de Lançamentos WL/BaaS',
+  RECEITA_SERVICOS: 'Receita de Serviços',
+  RECEITA_SETUP: 'Receita de Setup',
 
   LEADS_GERADOS: 'Geração de Leads',
   // "Conversão de FECHAMENTO": o que se mede é quanto do que foi decidido

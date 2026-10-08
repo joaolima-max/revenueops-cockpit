@@ -52,6 +52,8 @@
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { intervaloMes, periodoEmCurso, diaDoMes, diasNoMes } from '@/lib/periodo'
+import { receitaPrevistaCompostaDeVarios } from '@/lib/previsao-receita'
+import type { ReceitaPrevistaComposta } from '@/lib/previsao-calculo'
 import {
   centavos, execucao, previstoRealizado, calcularForecast, projecaoDoPeriodo,
   curvaCaixa, diferencaResultadoCaixa, ocorrenciasDespesa, tendencia, media,
@@ -88,10 +90,14 @@ export {
   STATUS_ORCAMENTO, STATUS_ORCAMENTO_LABEL,
   RECORRENCIAS, RECORRENCIA_LABEL,
   JANELAS_MESES, JANELA_LABEL,
+  COMPONENTES_RECEITA_PREVISTA, COMPONENTE_RECEITA_LABEL, META_DO_COMPONENTE,
 } from '@/lib/previsao-calculo'
 export type {
   StatusPrevisao, StatusOrcamentoValor, Recorrencia, JanelaMeses,
+  ComponenteReceita, ComponenteReceitaPrevista, ReceitaPrevistaComposta,
+  LinhaOrigemReceita,
 } from '@/lib/previsao-calculo'
+export { receitaPrevistaComposta, receitaPrevistaCompostaDeVarios } from '@/lib/previsao-receita'
 
 export type TipoPrevisao = 'RECEITA' | 'DESPESA'
 
@@ -385,46 +391,101 @@ export async function orcamentoVsRealizado(
 
 export interface PontoPrevisaoReceita extends PrevistoRealizado {
   periodo: string
+  /**
+   * A composição do previsto, quando ele é o AUTOMÁTICO.
+   *
+   * `null` quando há filtro ativo — ver `receitaPrevistaVsRealizada`. É o que
+   * permite à tela abrir a origem de cada parcela sem uma segunda consulta.
+   */
+  composicao: ReceitaPrevistaComposta | null
+}
+
+/**
+ * Um filtro de DIMENSÃO está ativo?
+ *
+ * Período e tamanho da janela não contam: eles escolhem QUANDO, não O QUÊ.
+ * Centro de custo, categoria, fornecedor e condição recortam o conjunto — e é
+ * esse recorte que a composição automática não sabe fazer.
+ */
+function filtraDimensao(f: FiltroPrevisao): boolean {
+  return !!(f.centroCustoId || f.categoriaId || f.fornecedorId || f.condicaoId)
 }
 
 /**
  * Faturamento PREVISTO × REALIZADO, mês a mês.
  *
- * CANCELADA fica fora: previsão cancelada não é expectativa. As demais entram,
- * inclusive REALIZADA — ela marca que a linha foi cumprida, e o previsto dela
- * continua sendo o que se esperava (apagá-lo da comparação faria o previsto do
- * mês encolher conforme as linhas fossem cumpridas, e o desvio sempre fechar
- * em zero).
+ * ── O PREVISTO É A COMPOSIÇÃO AUTOMÁTICA ────────────────────────────────
+ *
+ * `RECEITA PREVISTA = MRR projetado + as quatro metas de receita + as
+ * receitas lançadas`. A fórmula, a razão de cada parcela e a prova de que
+ * elas não se sobrepõem estão em `lib/previsao-calculo.ts`; quem monta é
+ * `receitaPrevistaComposta`.
+ *
+ * As linhas lançadas manualmente entram como SEXTO componente da composição,
+ * não somadas à parte. Somá-las fora produziria dois totais de "receita
+ * prevista" na mesma tela — e a dupla contagem que o pedido proíbe.
+ *
+ * ── COM FILTRO DE DIMENSÃO, O PREVISTO VOLTA A SER O LANÇADO ────────────
+ *
+ * MRR e meta não têm centro de custo, categoria nem fornecedor: sustentação é
+ * da carteira inteira e meta é da empresa. Então, com um filtro desses ativo,
+ * a composição automática NÃO SE APLICA — e aplicá-la de qualquer jeito
+ * mostraria o MRR total dentro de um recorte de um centro de custo, que é
+ * falso.
+ *
+ * Nesse caso o previsto é a soma das linhas lançadas que casam com o filtro,
+ * que é o comportamento que esta função sempre teve, e `composicao` vem
+ * `null` para a tela saber que não há o que auditar ali.
+ *
+ * ── O REALIZADO NÃO MUDOU ───────────────────────────────────────────────
+ *
+ * Continua sendo `LancamentoFinanceiro` de RECEITA por competência. É ele que
+ * faz o `remanescente` encolher conforme a receita se materializa — e é esse
+ * encolhimento que impede a projeção de caixa de somar a mesma entrada duas
+ * vezes (uma como previsão, outra como título).
  */
 export async function receitaPrevistaVsRealizada(
   periodos: string[], f: FiltroPrevisao = {},
 ): Promise<PontoPrevisaoReceita[]> {
   if (periodos.length === 0) return []
 
-  const [previstas, realizado] = await Promise.all([
-    prisma.receitaPrevista.findMany({
-      where: {
-        periodo: { in: periodos },
-        status: { not: 'CANCELADO' },
-        ...(f.centroCustoId ? { centroCustoId: f.centroCustoId } : {}),
-        ...(f.categoriaId ? { categoriaId: f.categoriaId } : {}),
-        ...(f.condicaoId ? { condicaoId: f.condicaoId } : {}),
-      },
-      select: { periodo: true, valorPrevisto: true },
-    }),
+  const recortado = filtraDimensao(f)
+
+  const [previstas, realizado, composicoes] = await Promise.all([
+    recortado
+      ? prisma.receitaPrevista.findMany({
+        where: {
+          periodo: { in: periodos },
+          status: { not: 'CANCELADO' },
+          ...(f.centroCustoId ? { centroCustoId: f.centroCustoId } : {}),
+          ...(f.categoriaId ? { categoriaId: f.categoriaId } : {}),
+          ...(f.condicaoId ? { condicaoId: f.condicaoId } : {}),
+        },
+        select: { periodo: true, valorPrevisto: true },
+      })
+      : Promise.resolve([] as Array<{ periodo: string; valorPrevisto: number }>),
     realizadoPorPeriodo(periodos, { ...f, tipo: 'RECEITA' }),
+    recortado
+      ? Promise.resolve([] as ReceitaPrevistaComposta[])
+      : receitaPrevistaCompostaDeVarios(periodos),
   ])
 
   const previstoPor = new Map<string, number>()
   for (const r of previstas) {
     previstoPor.set(r.periodo, (previstoPor.get(r.periodo) ?? 0) + r.valorPrevisto)
   }
+  const composicaoPor = new Map(composicoes.map((c) => [c.periodo, c]))
   const realizadoPor = new Map(realizado.map((r) => [r.periodo, r.receita]))
 
-  return periodos.map((p) => ({
-    periodo: p,
-    ...previstoRealizado(previstoPor.get(p) ?? 0, realizadoPor.get(p) ?? 0),
-  }))
+  return periodos.map((p) => {
+    const composicao = composicaoPor.get(p) ?? null
+    const previsto = recortado ? (previstoPor.get(p) ?? 0) : (composicao?.total ?? 0)
+    return {
+      periodo: p,
+      composicao,
+      ...previstoRealizado(previsto, realizadoPor.get(p) ?? 0),
+    }
+  })
 }
 
 /* ========================================================================= *

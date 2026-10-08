@@ -95,20 +95,35 @@ export const MODULES: Module[] = [
   //
   //   EXECUTIVO  o retrato da empresa;
   //   RECEITA    a meta e o insumo diário que a alimenta;
-  //   CARTEIRA   quem já é cliente;
-  //   COMERCIAL  de onde vem o próximo;
+  //   COMERCIAL  de onde vem o próximo cliente — e quem já é cliente;
   //   OPERAÇÕES  o que mantém o cliente funcionando;
   //   FINANCEIRO o que se faz com o dinheiro que entrou;
   //   ADMIN      quem pode o quê.
   //
-  // CARTEIRA antes de COMERCIAL: a base instalada vem antes da prospecção,
-  // porque é dela que sai a receita que a meta mede.
+  // A SEÇÃO CARTEIRA SAIU. Ela tinha três itens — Clientes, Volumetria e
+  // Certificados — que são três leituras do MESMO cliente. Os três viraram
+  // um módulo só (`comercial.clientes`, com navegação profunda), e uma seção
+  // de um item é um cabeçalho sem conteúdo. Clientes passou a morar em
+  // COMERCIAL, depois de Pipeline: é o desfecho do funil, e quem opera o
+  // pipeline é quem consulta a carteira.
   {
     key: 'executivo',
     label: 'EXECUTIVO',
     enabled: true,
     features: [
-      { key: 'cockpit', label: 'Cockpit', route: '/dashboard', api: ['/api/dashboard'], enabled: true, exact: true },
+      /**
+       * HOME — era "Cockpit".
+       *
+       * Mudou o NOME e nada mais: mesma rota, mesma API, mesma função, mesmos
+       * gráficos. "Home" é o que a tela é — a primeira coisa que se abre — e
+       * é o nome que o resto do produto usa para a raiz de um ambiente.
+       *
+       * A CHAVE acompanhou o rótulo. Uma entrada `key: 'cockpit'` rotulada
+       * "Home" seria exatamente a divergência que este arquivo existe para
+       * evitar: o registro é a fonte de verdade, e a fonte não pode chamar a
+       * coisa por um nome que a tela não usa mais.
+       */
+      { key: 'home', label: 'Home', route: '/dashboard', api: ['/api/dashboard'], enabled: true, exact: true },
       // CONSELHO: SÓCIO **E** `view_conselho`. As duas, nunca uma.
       //
       // São perguntas diferentes. "É dono da empresa?" é um fato sobre a
@@ -152,26 +167,48 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    key: 'carteira',
-    label: 'CARTEIRA',
-    enabled: true,
-    features: [
-      { key: 'carteira.clientes', label: 'Clientes', route: '/dashboard/carteira', api: ['/api/clientes'], enabled: true },
-      { key: 'carteira.volumetria', label: 'Volumetria', route: '/dashboard/volumetria', api: ['/api/volumetria'], enabled: true },
-      { key: 'carteira.certificados', label: 'Certificados', route: '/dashboard/certificados', api: ['/api/certificados'], enabled: true },
-    ],
-  },
-  {
     key: 'comercial',
     label: 'COMERCIAL',
     enabled: true,
     features: [
-      // ORDEM: Visão geral, Leads, Pipeline, Follow Up.
+      // ORDEM: Visão geral, Leads, Pipeline, Clientes, Follow Up.
       // A leitura agregada abre o ambiente; o cadastro do lead vem antes do
-      // quadro, porque é o lead que alimenta o card.
+      // quadro, porque é o lead que alimenta o card. CLIENTES vem depois do
+      // Pipeline porque é o desfecho dele — o lead que fechou —, e antes do
+      // Follow Up, que é o acompanhamento de ambos.
       { key: 'comercial.crm', label: 'Visão geral', route: '/dashboard/crm', api: ['/api/crm'], enabled: true },
       { key: 'comercial.leads', label: 'Leads', route: '/dashboard/leads', api: ['/api/leads'], enabled: true },
       { key: 'comercial.pipeline', label: 'Pipeline', route: '/dashboard/pipeline', api: ['/api/deals', '/api/pipeline/board', '/api/pipeline/cards'], enabled: true },
+      /**
+       * CLIENTES — UM item para TRÊS telas.
+       *
+       * Clientes, Volumetria e Certificados eram três menus de uma seção
+       * CARTEIRA própria, para três leituras do MESMO cliente. Viraram abas de
+       * `/dashboard/carteira`: a raiz continua sendo o cadastro, e as outras
+       * duas são sub-rotas (`/volumetria`, `/certificados`).
+       *
+       * AS TRÊS APIs FICAM REGISTRADAS AQUI. É este array que as mantém sob
+       * controle de acesso: caminho de API não registrado é caminho LIBERADO
+       * para qualquer usuário autenticado (ver `checkAccess`). Tirar
+       * `/api/certificados` daqui ao fundir os menus abriria o cadastro de
+       * certificados para todo mundo — e em silêncio.
+       *
+       * As rotas antigas (`/dashboard/volumetria`, `/dashboard/certificados`)
+       * continuam existindo como redirecionamento para a aba correspondente.
+       * Não precisam de registro próprio: elas não leem nada, só redirecionam
+       * para esta rota, que é registrada.
+       *
+       * A ALÇADA DE CADA ABA NÃO MUDOU. Certificados continua exigindo
+       * `view_certificates` na página e na API; Volumetria continua decidindo
+       * por perfil. Consolidar menus não é o momento de afrouxar nem de
+       * apertar uma permissão — e a aba de Certificados some da navegação para
+       * quem não tem a chave, em vez de aparecer e levar a um redirect.
+       */
+      {
+        key: 'comercial.clientes', label: 'Clientes', route: '/dashboard/carteira',
+        api: ['/api/clientes', '/api/volumetria', '/api/certificados'],
+        enabled: true,
+      },
       { key: 'comercial.followup', label: 'Follow Up', route: '/dashboard/followup', api: ['/api/followup'], enabled: true },
       // LIXEIRA DE LEADS — registrada e OCULTA, como os Funis. Não é um
       // ambiente: é a consulta do que foi descartado, e quem a vê são os
@@ -244,33 +281,30 @@ export const MODULES: Module[] = [
     features: [
       // `exact` na Visão Geral pelo mesmo motivo do Cockpit: ela mora na raiz
       // do ambiente, e sem isso casaria por prefixo com todos os menus abaixo.
-      { key: 'financeiro.visao', label: 'Visão Geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
-      { key: 'financeiro.lancamentos', label: 'Lançamentos', route: '/dashboard/financeiro/lancamentos', api: ['/api/financeiro/lancamentos'], enabled: true },
-      // Contas a Pagar lê os MESMOS lançamentos de despesa da tela de
-      // Lançamentos, pela data de vencimento. Não existe uma segunda base.
-      { key: 'financeiro.pagar', label: 'Contas a Pagar', route: '/dashboard/financeiro/contas-pagar', api: ['/api/financeiro/contas-pagar'], enabled: true },
-      { key: 'financeiro.contas', label: 'Contas a Receber', route: '/dashboard/financeiro/contas-receber', api: ['/api/financeiro/contas-receber'], enabled: true },
+      { key: 'financeiro.visao', label: 'Visão geral', route: '/dashboard/financeiro', api: ['/api/financeiro/visao-geral'], enabled: true, exact: true },
       /**
        * PREVISÃO — o lado PREVISTO do financeiro.
        *
        * ── A POSIÇÃO ────────────────────────────────────────────────────────
        *
-       * Depois de Contas a Receber e antes de Cadastros Financeiros, e a ordem
-       * é a da leitura do ambiente:
+       * IMEDIATAMENTE ABAIXO da Visão geral, e a ordem é a da leitura do
+       * ambiente:
        *
-       *   Visão Geral        o que aconteceu
-       *   Lançamentos        o registro do que aconteceu
-       *   Contas a Pagar     o que vence
-       *   Contas a Receber   o que entra
-       *   PREVISÃO           o que se espera que aconteça
-       *   Cadastros          o que classifica tudo acima
-       *   Condições BaaS     o contrato do parceiro
-       *   Lançamentos BaaS   a apuração que produz os três registros
+       *   Visão geral            o que aconteceu
+       *   PREVISÃO               o que se espera que aconteça
+       *   CP / CR                os títulos e o registro que os origina
+       *   Condições BaaS         o contrato do parceiro e a apuração dele
+       *   Cadastros Financeiros  o que classifica tudo acima
        *
-       * Previsão fecha o bloco do DINHEIRO (realizado → previsto) e vem antes
-       * dos cadastros, que são infraestrutura. Colocá-la no fim, depois de
-       * Lançamentos BaaS, separaria a previsão de caixa dos títulos que a
-       * alimentam.
+       * Realizado e previsto ficam LADO A LADO, no topo: são as duas leituras
+       * executivas do ambiente, e a pergunta "fecha o mês?" se responde com as
+       * duas juntas. Os títulos vêm depois porque são a operação; os cadastros
+       * fecham porque são infraestrutura.
+       *
+       * Previsão continua no FINANCEIRO, e não em RECEITA. Ela projeta CAIXA e
+       * RESULTADO — contas a pagar, despesas futuras, orçamento, centros de
+       * custo —, não só a receita. Movê-la para Receita a separaria dos
+       * títulos que a alimentam.
        *
        * ── A ALÇADA ─────────────────────────────────────────────────────────
        *
@@ -296,6 +330,73 @@ export const MODULES: Module[] = [
         api: ['/api/previsao'],
         enabled: true,
         permissao: ['view_previsao', 'manage_previsao'],
+      },
+      /**
+       * CP / CR — UM item para TRÊS vistas do mesmo `LancamentoFinanceiro`.
+       *
+       * Contas a Pagar, Contas a Receber e Lançamentos eram três menus para a
+       * MESMA tabela. O que muda entre eles é a pergunta, não a base:
+       *
+       *   Contas a Pagar     as despesas pelo VENCIMENTO
+       *   Contas a Receber   as receitas pelo VENCIMENTO
+       *   Lançamentos        o registro pela COMPETÊNCIA
+       *
+       * Três itens obrigavam a escolher a aba antes de saber qual responde à
+       * pergunta, e a sair do módulo para conferir o lançamento que originou um
+       * título. Viraram abas de `/dashboard/financeiro/cp-cr`, com Contas a
+       * Pagar na raiz.
+       *
+       * AS TRÊS APIs FICAM REGISTRADAS AQUI, pela razão de sempre: caminho de
+       * API não registrado é caminho LIBERADO (ver `checkAccess`). Tirar
+       * `/api/financeiro/contas-pagar` daqui ao fundir os menus abriria os
+       * títulos para qualquer usuário autenticado — e em silêncio.
+       *
+       * As rotas antigas (`/financeiro/contas-pagar`, `/contas-receber`,
+       * `/lancamentos`) continuam existindo como redirecionamento. Não
+       * precisam de registro próprio: não leem nada, só redirecionam para esta
+       * rota, que é registrada.
+       *
+       * ── POR QUE "LANÇAMENTOS" FICOU AQUI DENTRO ──────────────────────────
+       *
+       * O sidebar pedido tem cinco itens no Financeiro, e Lançamentos não é um
+       * deles. Ele também não podia simplesmente sair: é a base que as duas
+       * vistas de título leem, e é de lá que se anexa comprovante e se
+       * classifica a despesa. CP / CR é o lugar natural — a mesma tabela, a
+       * terceira pergunta —, e nenhuma função se perdeu no caminho.
+       */
+      {
+        key: 'financeiro.cpcr', label: 'CP / CR',
+        route: '/dashboard/financeiro/cp-cr',
+        api: [
+          '/api/financeiro/contas-pagar',
+          '/api/financeiro/contas-receber',
+          '/api/financeiro/lancamentos',
+        ],
+        enabled: true,
+      },
+      /**
+       * CONDIÇÕES BAAS — o contrato do parceiro E a apuração dele.
+       *
+       * "Lançamentos BaaS" era um menu separado, e é o MESMO assunto em dois
+       * tempos: as tarifas acordadas (aqui) e o que elas renderam no mês (a
+       * aba "Lançamentos"). Conferir uma apuração exigia sair do módulo para
+       * reler a tarifa que a originou.
+       *
+       * O MENU CONTINUA SE CHAMANDO "Condições BaaS" — é o nome do cadastro, e
+       * é por ele que o usuário procura. Dentro, a aba se chama apenas
+       * "Lançamentos": o módulo já disse que o assunto é BaaS.
+       *
+       * `/api/lancamento-baas` passou a ser registrada AQUI. A alçada efetiva
+       * não mudou: o registro nunca exigiu chave nenhuma destas rotas, e quem
+       * decide é a página (`view_receita`) e o handler de cada API.
+       *
+       * `/dashboard/lancamento-baas` continua existindo como redirecionamento.
+       */
+      {
+        key: 'financeiro.condicoes', label: 'Condições BaaS',
+        route: '/dashboard/financeiro/condicoes-baas',
+        api: ['/api/financeiro/condicoes-baas', '/api/lancamento-baas'],
+        enabled: true,
       },
       /**
        * CADASTROS FINANCEIROS — UM item para TRÊS cadastros.
@@ -327,10 +428,6 @@ export const MODULES: Module[] = [
         ],
         enabled: true,
       },
-      { key: 'financeiro.condicoes', label: 'Condições BaaS', route: '/dashboard/financeiro/condicoes-baas', api: ['/api/financeiro/condicoes-baas'], enabled: true },
-      // LANÇAMENTOS BAAS fecha o ambiente: ele tarifa o volume do parceiro e
-      // produz os três registros que os menus acima administram.
-      { key: 'financeiro.baas', label: 'Lançamentos BaaS', route: '/dashboard/lancamento-baas', api: ['/api/lancamento-baas'], enabled: true },
     ],
   },
   {

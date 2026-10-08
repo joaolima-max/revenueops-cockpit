@@ -23,32 +23,38 @@ const I = {
 }
 
 export const ICONS: Record<string, ReactNode> = {
-  'cockpit': I.cockpit,
+  // A CHAVE é a do registro de módulos (`lib/modules.ts`). Um item sem ícone
+  // aqui aparece no menu sem glifo — a sidebar não inventa um.
+  'home': I.cockpit,
   'conselho': I.metricas,
-  'receita.forecast': I.forecast,
   'receita.metas': I.metas,
+  'receita.forecast': I.forecast,
 
-  'carteira.clientes': I.clientes,
-  'carteira.volumetria': I.volumetria,
-  'operacoes.incidentes': I.incidentes,
-  'operacoes.tarefas': I.tarefas,
-  'comercial.pipeline': I.pipeline,
   'comercial.crm': I.metricas,
-  'carteira.certificados': I.volumetria,
-  'operacoes.compliance': I.alertas,
   'comercial.leads': I.leads,
+  'comercial.pipeline': I.pipeline,
+  // Clientes carrega os três: cadastro, volumetria e certificados. O ícone é
+  // o do CADASTRO, que é a aba da raiz.
+  'comercial.clientes': I.clientes,
   'comercial.followup': I.followup,
+
+  'operacoes.tarefas': I.tarefas,
+  'operacoes.incidentes': I.incidentes,
+  'operacoes.compliance': I.alertas,
+
   'financeiro.visao': I.financeiro,
-  'financeiro.lancamentos': I.forecast,
-  'financeiro.contas': I.financeiro,
-  'financeiro.pagar': I.tarefas,
+  'financeiro.previsao': I.forecast,
+  // CP / CR carrega Contas a Pagar, Contas a Receber e Lançamentos. O ícone é
+  // o de TÍTULO (prancheta), que é a aba da raiz.
+  'financeiro.cpcr': I.tarefas,
+  // Condições BaaS carrega o cadastro e a apuração. O ícone é o da APURAÇÃO,
+  // que é o que distingue o módulo dos outros do Financeiro.
+  'financeiro.condicoes': I.lancamentoBaas,
   // Um item para os três cadastros (categorias, fornecedores, centros de
   // custo). O ícone de "parâmetros" é o que o produto já usava para cadastro
   // de classificação.
   'financeiro.cadastros': I.parametros,
-  'financeiro.previsao': I.forecast,
-  'financeiro.condicoes': I.metricas,
-  'financeiro.baas': I.lancamentoBaas,
+
   'admin.usuarios': I.usuarios,
   'admin.auditoria': I.auditoria,
 }

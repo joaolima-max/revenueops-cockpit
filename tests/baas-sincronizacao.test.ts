@@ -219,7 +219,7 @@ test('nenhuma rota aceita a acao de FECHAR', () => {
 })
 
 test('a UI nao oferece FECHAR — oferece EXCLUIR', () => {
-  const ui = ler('app/dashboard/lancamento-baas/LancamentoBaasClient.tsx')
+  const ui = ler('app/dashboard/financeiro/condicoes-baas/lancamentos/LancamentoBaasClient.tsx')
   assert.ok(!ui.includes('>Fechar lançamento<'))
   assert.ok(ui.includes('>Excluir<'), 'o botao de excluir saiu da tela')
 })
