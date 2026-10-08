@@ -452,15 +452,25 @@ test('o timer NAO e armado quando nao ha incremento', () => {
   assert.ok(CONSELHO.includes('ativo={temIncremento}'))
 })
 
-test('o intervalo e de 1 segundo — nem rapido demais, nem uma requisicao', () => {
-  assert.ok(semComentarios(RELOGIO).includes('export const INTERVALO_MS = 1000'))
-  // E o tick NÃO vai ao servidor: a fração é recalculada do relógio local.
-  // "Não faça uma requisição ao backend a cada segundo."
-  assert.ok(!semComentarios(RELOGIO).includes('fetch('))
+test('a cadencia e de QUADRO, nao de segundo — e nunca uma requisicao', () => {
+  /**
+   * Era de um segundo, e por isso o número avançava de um salto o crescimento
+   * de um segundo inteiro: +7 transações, +R$ 3.001,55. Ver
+   * `tests/projecao-animacao.test.ts` para a prova do defeito e da correção.
+   */
+  const rel = semComentarios(RELOGIO)
+  assert.ok(rel.includes('export const INTERVALO_FALLBACK_MS = 16'))
+  assert.ok(!rel.includes('INTERVALO_MS = 1000'), 'a cadência voltou a ser de um segundo')
+  assert.ok(rel.includes('requestAnimationFrame(passo)'))
+
+  // E o quadro NÃO vai ao servidor: a fração é recalculada do relógio local.
+  // "Não faça uma requisição ao backend a cada segundo" — e muito menos a cada
+  // quadro.
+  assert.ok(!rel.includes('fetch('))
   assert.ok(!semComentarios(PROVEDOR).includes('fetch('))
 })
 
-test('a fracao e RECALCULADA do relogio, nunca acumulada', () => {
+test('a fracao e RECALCULADA do relogio a cada quadro, nunca acumulada', () => {
   /**
    * "A projeção deve ser baseada no horário atual, não no tempo decorrido
    * desde que a tela foi aberta."
@@ -480,7 +490,7 @@ test('a PRIMEIRA renderizacao usa o instante do SERVIDOR', () => {
   // Começar pelo relógio local acusaria divergência de hidratação no primeiro
   // quadro — e o número daria um pulo visível ao hidratar.
   assert.ok(semComentarios(RELOGIO).includes('export function semCliente(): null'))
-  assert.ok(semComentarios(PROVEDOR).includes("segundo === null ? new Date(agoraServidor)"))
+  assert.ok(semComentarios(PROVEDOR).includes("instante === null ? new Date(agoraServidor)"))
 })
 
 /* ========================================================================= *
