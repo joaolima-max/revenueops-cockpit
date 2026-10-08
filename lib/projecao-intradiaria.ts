@@ -467,6 +467,133 @@ export function taxaBasePorHora(valor: number): number {
   return valor / PESO_TOTAL
 }
 
+/**
+ * A TAXA MÁXIMA de um valor ao longo do ciclo, por segundo.
+ *
+ * É a taxa da faixa mais rápida — o pico, ×2. Serve para responder a uma
+ * pergunta de APRESENTAÇÃO, não de cálculo: de quanto em quanto tempo a tela
+ * precisa reamostrar a curva para não pular um inteiro?
+ */
+export function taxaMaximaPorSegundo(valor: number): number {
+  const maior = PERFIL_RITMO.reduce((a, f) => Math.max(a, f.multiplicador), 0)
+  return Math.abs(valor) * maior / PESO_TOTAL / 3600
+}
+
+/**
+ * O INTERVALO MÁXIMO de amostragem que garante nenhum inteiro pulado, em ms.
+ *
+ * ── A GARANTIA É ARITMÉTICA, NÃO VISUAL ────────────────────────────────
+ *
+ * `projetarContagem` é `floor` de uma curva contínua e crescente. Se entre
+ * duas amostras o valor subjacente cresce MENOS de 1, o `floor` só pode
+ * repetir ou avançar exatamente 1 — nunca dois:
+ *
+ *   x(t₂) − x(t₁) < 1  ⟹  floor(x(t₂)) − floor(x(t₁)) ∈ {0, 1}
+ *
+ * Então não há interpolação a fazer: basta amostrar mais fino que este
+ * intervalo. Com o lançamento real de 07/10 (265.483 transações) ele é de
+ * ~142 ms, e um quadro de animação são ~16,7 ms — oito quadros por inteiro.
+ *
+ * `Infinity` para valor zero: nada cresce, nada pula.
+ */
+export function intervaloMaximoSemSalto(valor: number): number {
+  const porSegundo = taxaMaximaPorSegundo(valor)
+  return porSegundo === 0 ? Infinity : 1000 / porSegundo
+}
+
+/**
+ * Quantos quadros por segundo seriam necessários para não pular nenhum inteiro.
+ *
+ * É só a taxa máxima, dita na unidade em que a decisão é tomada. Com o
+ * lançamento real de 07/10 são 7,02 — e a tela tem 60.
+ */
+export function quadrosNecessariosPorSegundo(valor: number): number {
+  return taxaMaximaPorSegundo(valor)
+}
+
+/**
+ * O intervalo EFETIVO de um quadro, em ms — o PIOR caso, não a média.
+ *
+ * ── POR QUE NÃO É SIMPLESMENTE 1000/fps ────────────────────────────────
+ *
+ * `Date.now()` devolve milissegundo INTEIRO, e é dele que a amostragem vem.
+ * A 60 Hz os quadros não caem a cada 16,667 ms: caem em 16, 17, 17, 16, 17,
+ * 17… — a sequência de inteiros mais próxima.
+ *
+ * A garantia de não pular inteiro tem de valer no PIOR quadro, não no médio.
+ * Arredondar para cima é a diferença entre uma garantia e uma estimativa — e
+ * foi exatamente o que o teste de otimalidade pegou numa primeira versão
+ * desta função, que usava 16,667 e por isso prometia sequência completa num
+ * volume em que o quadro de 17 ms já saltava dois.
+ */
+export function intervaloEfetivoDoQuadro(quadrosPorSegundo: number): number {
+  return Math.ceil(1000 / quadrosPorSegundo)
+}
+
+/**
+ * O VOLUME DIÁRIO acima do qual uma taxa de quadros não dá mais conta.
+ *
+ * A 60 quadros por segundo (pior quadro de 17 ms): ~2.223.529 de contagem no
+ * dia. Hoje o lançamento é de 265.483 — margem de 8,4×.
+ *
+ * A 120 Hz (pior quadro de 9 ms) o teto é de 4.200.000, e o
+ * `requestAnimationFrame` acompanha o dispositivo sem mudança de código.
+ */
+export function volumeMaximoSemSalto(quadrosPorSegundo: number): number {
+  const maior = PERFIL_RITMO.reduce((a, f) => Math.max(a, f.multiplicador), 0)
+  const intervalo = intervaloEfetivoDoQuadro(quadrosPorSegundo)
+  return (1000 * PESO_TOTAL * 3600) / (maior * intervalo)
+}
+
+/**
+ * O MÍNIMO de inteiros que QUALQUER implementação fiel ao instante pularia,
+ * amostrando a cada `intervaloMs`.
+ *
+ * ── POR QUE ESTA FUNÇÃO EXISTE ─────────────────────────────────────────
+ *
+ * Para separar duas coisas que são fáceis de confundir: um limite da NOSSA
+ * implementação e um limite do DISPOSITIVO.
+ *
+ * Uma tela pinta no máximo `1/Δ` vezes por segundo. Se a contagem cresce mais
+ * rápido que isso, não existe implementação que mostre todos os inteiros — não
+ * há onde pintá-los. O teto é físico, não de projeto:
+ *
+ *   inteiros por segundo que a tela pode mostrar  =  1/Δ
+ *   inteiros por segundo que a curva produz       =  r
+ *   r ≤ 1/Δ  ⟹  sequência completa
+ *   r > 1/Δ  ⟹  impossível, em qualquer implementação fiel
+ *
+ * Devolve `floor(r · Δ)` — zero enquanto o quadro dá conta, e exatamente o
+ * número de inteiros que a física obriga a saltar acima disso.
+ *
+ * ── E É POR ISSO QUE A AMOSTRAGEM POR QUADRO É O ÓTIMO ─────────────────
+ *
+ * Nossa implementação amostra a curva uma vez por quadro de pintura, então ela
+ * mostra TODOS os inteiros que o dispositivo é capaz de mostrar. Não há
+ * abordagem melhor disponível:
+ *
+ *   - pintar mais rápido que a tela é impossível;
+ *   - um contador que ande um inteiro por quadro independentemente do relógio
+ *     mostraria mais números, mas ficaria ATRASADO em relação ao instante —
+ *     dois dispositivos deixariam de concordar, recarregar a página daria
+ *     outro valor, e o ciclo não fecharia às 10h no número lançado.
+ *
+ * O pedido proíbe explicitamente a segunda. Então o ótimo fiel é este, e
+ * `tests/projecao-animacao.test.ts` prova que a implementação o alcança.
+ *
+ * ── UM BÔNUS DE `requestAnimationFrame` ────────────────────────────────
+ *
+ * O teto acompanha o DISPOSITIVO. Numa tela de 120 Hz o rAF roda a 120 quadros
+ * por segundo e o teto dobra, sem nenhuma mudança de código — é o que um
+ * `setInterval(16)` fixo não daria.
+ */
+export function saltoMinimoInevitavel(valor: number, intervaloMs: number): number {
+  const porSegundo = taxaMaximaPorSegundo(valor)
+  // O PIOR quadro: `Date.now()` é inteiro, então um intervalo de 16,667 ms
+  // cai em quadros de 16 e de 17. Ver `intervaloEfetivoDoQuadro`.
+  return Math.floor((porSegundo * Math.ceil(intervaloMs)) / 1000)
+}
+
 /* ========================================================================= *
  * A PROJEÇÃO DE UM VALOR
  * ========================================================================= */

@@ -5,7 +5,7 @@ import {
 } from 'react'
 import { fracaoDoCiclo, type Ciclo } from '@/lib/projecao-intradiaria'
 import {
-  assinar, medirDesvio, segundoCorrente, semCliente,
+  assinar, medirDesvio, instanteCorrente, semCliente,
 } from '@/lib/relogio-ciclo'
 
 /**
@@ -13,18 +13,18 @@ import {
  *
  * ── POR QUE UM PROVEDOR, E NÃO UM TIMER POR NÚMERO ──────────────────────
  *
- * A Home tem cinco números projetados e o Conselho, cinco. Um `setInterval`
- * por número seriam dez timers acordando em instantes ligeiramente diferentes
- * — dez re-renderizações por segundo, e números do mesmo painel atualizando
- * fora de passo.
+ * A Home tem cinco números projetados e o Conselho, cinco. Um laço por número
+ * seriam dez laços acordando em quadros ligeiramente diferentes — e números do
+ * mesmo painel atualizando fora de passo, que é pior que o salto que esta
+ * rodada conserta.
  *
- * Aqui há UM intervalo, em escopo de módulo, compartilhado por todos os
- * provedores montados. Ele é criado no primeiro assinante e DESTRUÍDO no
- * último a sair: sem isso, navegar entre Home e Conselho deixaria um timer
- * vivo por tela visitada.
+ * Aqui há UM laço, em escopo de módulo, compartilhado por todos os provedores
+ * montados. Ele é criado no primeiro assinante e DESTRUÍDO no último a sair:
+ * sem isso, navegar entre Home e Conselho deixaria um laço vivo por tela
+ * visitada.
  *
- * O intervalo em si vive em `lib/relogio-ciclo.ts`, fora do React: é a parte
- * arriscada — vazamento de timer, instantâneo instável, desvio remedido — e
+ * O laço em si vive em `lib/relogio-ciclo.ts`, fora do React: é a parte
+ * arriscada — vazamento de laço, instantâneo instável, desvio remedido — e
  * fora de um componente ela é verificável sem navegador.
  *
  * ── POR QUE `useSyncExternalStore`, E NÃO `useEffect` + `setState` ──────
@@ -34,10 +34,23 @@ import {
  * cada segundo produz renderizações em cascata — as duas coisas que as regras
  * do React proíbem, e por boas razões.
  *
- * O instantâneo da store é o SEGUNDO corrente (um número). Entre dois ticks
- * dentro do mesmo segundo ele é idêntico, então o React não re-renderiza
- * nada; quando muda, só os consumidores da fração se re-renderizam. É o mesmo
- * padrão que `DashboardCharts` já usa para a ordem dos gráficos.
+ * O instantâneo da store é o INSTANTE corrente em milissegundos (um número),
+ * atualizado a cada quadro de animação. Entre dois quadros ele é idêntico,
+ * então o React não re-renderiza nada; quando muda, só os consumidores da
+ * fração se re-renderizam. É o mesmo padrão que `DashboardCharts` já usa para
+ * a ordem dos gráficos.
+ *
+ * ── A CADÊNCIA É DE QUADRO, E ISSO É O CONSERTO DO SALTO ───────────────
+ *
+ * Era de um SEGUNDO, e por isso o número avançava de um salto o crescimento de
+ * um segundo inteiro: +7 transações, +R$ 3.001,55. Amostrando por quadro, o
+ * passo cai para 0,117 transação — oito quadros por inteiro, e a contagem sai
+ * 1, 2, 3, 4, 5, 6.
+ *
+ * Nada é interpolado: cada quadro recalcula `fracaoDoCiclo` do relógio, pela
+ * mesma função pura. A tela nunca divergiu do instante atual e continua não
+ * divergindo — o que mudou é só a FINURA da amostragem. Ver
+ * `lib/relogio-ciclo` para o limite e a prova.
  *
  * `getServerSnapshot` devolve `null`: no servidor e no primeiro quadro do
  * cliente a fração vem do instante do SERVIDOR, que é o que está no HTML.
@@ -45,10 +58,11 @@ import {
  *
  * ── A FRAÇÃO VEM DO RELÓGIO, NÃO DE UM CONTADOR ─────────────────────────
  *
- * Nada aqui acumula. A cada segundo a fração é RECALCULADA do zero, pela
- * mesma função pura que o servidor usa. É isso que faz o número sobreviver a
+ * Nada aqui acumula. A cada quadro a fração é RECALCULADA do zero, pela mesma
+ * função pura que o servidor usa. É isso que faz o número sobreviver a
  * recarregar a página, trocar de tela, voltar de uma aba suspensa e abrir em
- * outro dispositivo: não existe estado a preservar.
+ * outro dispositivo: não existe estado a preservar, e não existe animação
+ * atrasada a tocar.
  *
  * ── O DESVIO DE RELÓGIO ─────────────────────────────────────────────────
  *
@@ -124,15 +138,17 @@ export default function ProjecaoProvider({
     return assinar(aviso)
   }, [ativo, agoraServidor])
 
-  const segundo = useSyncExternalStore(assinatura, segundoCorrente, semCliente)
+  const instante = useSyncExternalStore(assinatura, instanteCorrente, semCliente)
 
   const valor = useMemo<EstadoProjecao>(() => {
-    const agora = segundo === null ? new Date(agoraServidor) : new Date(segundo * 1000)
+    // `null` só no servidor e no primeiro quadro do cliente: aí o instante é o
+    // do SERVIDOR, que é o que está no HTML.
+    const agora = instante === null ? new Date(agoraServidor) : new Date(instante)
     return {
       fracao: ativo ? fracaoDoCiclo(agora, ciclo) : 1,
       encerrado: agora.getTime() >= ciclo.fim.getTime(),
     }
-  }, [segundo, agoraServidor, ativo, ciclo])
+  }, [instante, agoraServidor, ativo, ciclo])
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }
