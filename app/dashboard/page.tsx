@@ -3,6 +3,9 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { getSession } from '@/lib/auth'
 import {
+  cicloDeProjecao, incrementoDoCiclo, referenciaDoCiclo,
+} from '@/lib/projecao'
+import {
   kpisDoPeriodo, indicadoresEstrutura, seriesCockpit,
   comparacaoMensal, rotuloComparacao,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
@@ -15,6 +18,8 @@ import DashboardCharts from '@/components/dashboard/DashboardCharts'
 import PageHeader from '@/components/dashboard/PageHeader'
 import HairlineGrid from '@/components/ui/HairlineGrid'
 import StatTile from '@/components/ui/StatTile'
+import ProjecaoProvider from '@/components/projecao/ProjecaoProvider'
+import NotaProjecao from '@/components/projecao/NotaProjecao'
 import Panel from '@/components/ui/Panel'
 import { PanelHeader } from '@/components/ui/Panel'
 import Badge from '@/components/ui/Badge'
@@ -80,6 +85,38 @@ export default async function DashboardPage() {
    * ao corrente. A última barra fica mais baixa que as outras porque o mês
    * ainda não acabou — e isso é verdade, não distorção.
    */
+  /**
+   * O CICLO DE PROJEÇÃO INTRADIÁRIA.
+   *
+   * Os quatro KPIs de volume — receita tarifária, TPV, transações e MEDs —
+   * deixam de saltar para o total no instante do lançamento e passam a crescer
+   * ao longo do ciclo de 10h às 10h, com ritmo dobrado entre 18h e 20h.
+   *
+   * O que cresce é só o INCREMENTO do ciclo: o volume que entrou no painel
+   * agora. O resto do acumulado do mês é dado fechado e aparece inteiro — ver
+   * `valorExibido`, em lib/projecao-intradiaria, para por que a conta não pode
+   * ser "acumulado × fração".
+   *
+   * O recorte de competência é o MÊS CORRENTE, porque é o que estes KPIs
+   * acumulam. Sem ele, um lançamento retroativo registrado hoje seria
+   * subtraído de um acumulado onde ele nunca esteve.
+   *
+   * Nenhum outro indicador desta tela é projetado: saldo médio, take rate e a
+   * estrutura da carteira continuam exibindo o valor real. As SETAS também —
+   * a comparação temporal segue usando os números reais, pela regra que já
+   * existia.
+   */
+  const ciclo = await cicloDeProjecao()
+  const incremento = incrementoDoCiclo(ciclo, periodo)
+  const referencia = referenciaDoCiclo(ciclo, periodo)
+  const temIncremento =
+    incremento.tpv !== 0 || incremento.receita !== 0
+    || incremento.transacoes !== 0 || incremento.med !== 0
+
+  /** A projeção de um KPI, ou `undefined` quando não há valor real a exibir. */
+  const proj = (real: number | null, inc: number, grandeza: 'moeda' | 'contagem') =>
+    real === null ? undefined : { real, incremento: inc, grandeza }
+
   const spark = (pick: (k: KpisPeriodo) => number | null) => serie.map((k) => pick(k) ?? 0)
   const varDe = (pick: (k: KpisPeriodo) => number | null) =>
     anterior ? variacao(pick(kpis), pick(anterior)) : null
@@ -97,14 +134,17 @@ export default async function DashboardPage() {
   const principais = [
     { label: 'Receita', fig: kpis.receitaTarifaria === null ? null : figuraMoeda(kpis.receitaTarifaria),
       primary: true, delta: varDe((k) => k.receitaTarifaria), spark: spark((k) => k.receitaTarifaria),
-      note: 'Receita tarifária do lançamento diário' },
+      note: 'Receita tarifária do lançamento diário',
+      projecao: proj(kpis.receitaTarifaria, incremento.receita, 'moeda') },
     { label: 'TPV geral', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv),
-      delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv), note: 'Lançamento diário' },
+      delta: varDe((k) => k.tpv), spark: spark((k) => k.tpv), note: 'Lançamento diário',
+      projecao: proj(kpis.tpv, incremento.tpv, 'moeda') },
     { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
       delta: varDe((k) => k.qtdTransacoes), spark: spark((k) => k.qtdTransacoes),
       note: comparacao.emCurso && comparacao.ateDia !== null
         ? `${formatMesRef(periodo)} · até o dia ${String(comparacao.ateDia).padStart(2, '0')}`
-        : `Mês vigente · ${formatMesRef(periodo)}` },
+        : `Mês vigente · ${formatMesRef(periodo)}`,
+      projecao: proj(kpis.qtdTransacoes, incremento.transacoes, 'contagem') },
     { label: 'Saldo médio em conta', fig: kpis.saldoMedio === null ? null : figuraMoeda(kpis.saldoMedio),
       delta: varDe((k) => k.saldoMedio), spark: spark((k) => k.saldoMedio), note: 'Média do período' },
   ]
@@ -119,7 +159,8 @@ export default async function DashboardPage() {
   const qualificadores = [
     { label: 'MED', fig: kpis.qtdMed === null ? null : figuraQuantidade(kpis.qtdMed),
       delta: varDe((k) => k.qtdMed),
-      note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações` },
+      note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações`,
+      projecao: proj(kpis.qtdMed, incremento.med, 'contagem') },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3),
       delta: varDe((k) => k.takeRate), note: 'Receita ÷ TPV' },
   ]
@@ -169,33 +210,66 @@ export default async function DashboardPage() {
         </Panel>
       )}
 
-      <HairlineGrid cols={4}>
-        {principais.map((c) => (
-          <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta}
-            note={c.note} primary={c.primary} spark={c.spark} />
-        ))}
-      </HairlineGrid>
+      {/* ── OS KPIs DE VOLUME, SOB O RELÓGIO DA PROJEÇÃO ─────────────────
+          Um provedor, um timer, cinco números derivados da mesma fração. Os
+          `children` vêm do servidor como um elemento estável, então o tick
+          re-renderiza só as figuras projetadas — não a grade inteira.
 
-      {/* A JANELA DA COMPARAÇÃO, DECLARADA.
-          As setas comparam janelas EQUIVALENTES — 01–07 contra 01–07 do mês
-          anterior —, e não o mês parcial contra o mês anterior inteiro, que
-          era o que fazia toda seta ficar vermelha no começo do mês. Sem esta
-          linha, "+33,3%" é um número sem referência, e foi justamente a
-          ausência de referência que deixou o defeito anterior invisível. */}
-      {anterior && (
-        <p className="t-sm text-subtle -mt-2">
-          Variações comparam {notaComparacao}
-          {comparacao.ateDia !== null && (
-            <> — o mês corrente está em curso, e a janela é a mesma nos dois lados</>
-          )}.
-        </p>
-      )}
+          A NOTA vem logo abaixo, e não é decorativa: um número que cresce
+          sozinho é lido como "dado chegando agora", e a Bass Pago não recebe
+          eventos transacionais. A linha diz a competência do volume e quando
+          ele foi registrado. */}
+      <ProjecaoProvider
+        inicio={ciclo.inicio}
+        fim={ciclo.fim}
+        agoraServidor={ciclo.agoraServidor}
+        ativo={temIncremento}
+      >
+        <div className="space-y-8">
+          <HairlineGrid cols={4}>
+            {principais.map((c) => (
+              <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta}
+                note={c.note} primary={c.primary} spark={c.spark} projecao={c.projecao} />
+            ))}
+          </HairlineGrid>
 
-      <HairlineGrid cols={2}>
-        {qualificadores.map((c) => (
-          <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta} note={c.note} size="sm" />
-        ))}
-      </HairlineGrid>
+          {/* A JANELA DA COMPARAÇÃO, DECLARADA.
+              As setas comparam janelas EQUIVALENTES — 01–07 contra 01–07 do
+              mês anterior —, e não o mês parcial contra o mês anterior
+              inteiro, que era o que fazia toda seta ficar vermelha no começo
+              do mês. Sem esta linha, "+33,3%" é um número sem referência, e
+              foi justamente a ausência de referência que deixou o defeito
+              anterior invisível.
+
+              AS SETAS NÃO SÃO PROJETADAS. A comparação temporal continua
+              lendo os valores REAIS dos dois lados — projetar a base tornaria
+              a variação dependente da hora do dia, e uma seta que muda de
+              cor às 18h não informa nada sobre desempenho. */}
+          {anterior && (
+            <p className="t-sm text-subtle -mt-2">
+              Variações comparam {notaComparacao}
+              {comparacao.ateDia !== null && (
+                <> — o mês corrente está em curso, e a janela é a mesma nos dois lados</>
+              )}.
+            </p>
+          )}
+
+          <HairlineGrid cols={2}>
+            {qualificadores.map((c) => (
+              <StatTile key={c.label} label={c.label} figura={c.fig} delta={c.delta}
+                note={c.note} size="sm" projecao={c.projecao} />
+            ))}
+          </HairlineGrid>
+
+          {kpis.temDados && (
+            <NotaProjecao
+              referencia={referencia}
+              inicio={ciclo.inicio}
+              quantos={ciclo.lancamentos.filter((l) => l.competencia.startsWith(periodo)).length}
+            />
+          )}
+        </div>
+      </ProjecaoProvider>
 
       <section className="space-y-4">
         <PanelHeader

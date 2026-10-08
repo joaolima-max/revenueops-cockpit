@@ -19,6 +19,12 @@ import HairlineGrid, { HairlineCell } from '@/components/ui/HairlineGrid'
 import EmptyState, { NoData } from '@/components/ui/EmptyState'
 import Figure, { Delta, Contexto } from '@/components/ui/Figure'
 import ConselhoEvolucao from '@/components/dashboard/ConselhoEvolucao'
+import ProjecaoProvider from '@/components/projecao/ProjecaoProvider'
+import FiguraProjetada from '@/components/projecao/FiguraProjetada'
+import NotaProjecao from '@/components/projecao/NotaProjecao'
+import {
+  cicloDeProjecao, incrementoDoCiclo, referenciaDoCiclo,
+} from '@/lib/projecao'
 
 export default async function ConselhoPage() {
   /**
@@ -78,6 +84,32 @@ export default async function ConselhoPage() {
    * a própria base comparável é como elas passam a discordar — e aqui o custo
    * seria alto: o Conselho é onde os sócios leem o desempenho da empresa.
    */
+  /**
+   * O CICLO DE PROJEÇÃO INTRADIÁRIA — a MESMA função e a MESMA curva da Home.
+   *
+   * `cicloDeProjecao` é a única consulta, e `lib/projecao-intradiaria` é a
+   * única matemática. Duas telas com fórmulas próprias é como elas passam a
+   * discordar — e aqui o custo seria alto: o Conselho é onde os sócios leem o
+   * desempenho da empresa.
+   *
+   * ── DOIS RECORTES, PORQUE A TELA TEM DOIS ACUMULADOS ──────────────────
+   *
+   * O nível 1 soma TODOS os meses lançados; o nível 2 é o mês corrente. O
+   * incremento do ciclo tem de ser subtraído do acumulado CERTO em cada caso,
+   * senão o número cai: subtrair um incremento de outubro de um total que não
+   * o contém daria um valor menor que o do ciclo anterior.
+   *
+   * Um ciclo, uma consulta, dois recortes somados em memória.
+   */
+  const ciclo = await cicloDeProjecao()
+  const incTodos = incrementoDoCiclo(ciclo)
+  const incMes = incrementoDoCiclo(ciclo, periodo)
+  const referencia = referenciaDoCiclo(ciclo)
+  const temIncremento = ciclo.lancamentos.length > 0 && (
+    incTodos.tpv !== 0 || incTodos.receita !== 0
+    || incTodos.transacoes !== 0 || incTodos.med !== 0
+  )
+
   const comparacao = await comparacaoMensal(periodo, serie)
   const kpis = comparacao.atual
   const anterior = comparacao.anterior
@@ -85,13 +117,44 @@ export default async function ConselhoPage() {
     anterior ? variacao(pick(kpis), pick(anterior)) : null
   const notaComparacao = rotuloComparacao(comparacao)
 
-  /* NÍVEL 2 — os números estratégicos. */
+  /**
+   * NÍVEL 2 — os números estratégicos.
+   *
+   * `projecao` só nos TRÊS que carregam volume do ciclo: TPV do mês,
+   * Faturamento (pela parcela tarifária dele) e Transações.
+   *
+   * Take Rate, % de MEDs e MRR ficam de fora, e não por omissão: os dois
+   * primeiros são RAZÕES — receita ÷ TPV e MEDs ÷ transações — e projetar o
+   * numerador e o denominador pela mesma fração não os move, enquanto
+   * projetar um só mentiria sobre a eficiência da operação. O MRR é contrato
+   * assinado, não volume: ele não "cresce ao longo do dia".
+   */
   const estrategicos = [
-    { label: 'TPV do mês', fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv), delta: varDe(k => k.tpv) },
-    { label: 'Faturamento', fig: receita ? figuraMoeda(receita.total) : null },
+    {
+      label: 'TPV do mês',
+      fig: kpis.tpv === null ? null : figuraMoeda(kpis.tpv),
+      delta: varDe(k => k.tpv),
+      proj: kpis.tpv === null ? undefined
+        : { real: kpis.tpv, incremento: incMes.tpv, grandeza: 'moeda' as const },
+    },
+    {
+      label: 'Faturamento',
+      fig: receita ? figuraMoeda(receita.total) : null,
+      // A PARCELA TARIFÁRIA é a única projetável do faturamento. Float,
+      // sustentação e setup não vêm do lançamento diário de volume.
+      proj: receita
+        ? { real: receita.total, incremento: incMes.receita, grandeza: 'moeda' as const }
+        : undefined,
+    },
     { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3), delta: varDe(k => k.takeRate) },
     { label: 'MRR', fig: figuraMoeda(estrutura.mrr.total) },
-    { label: 'Transações', fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes), delta: varDe(k => k.qtdTransacoes) },
+    {
+      label: 'Transações',
+      fig: kpis.qtdTransacoes === null ? null : figuraQuantidade(kpis.qtdTransacoes),
+      delta: varDe(k => k.qtdTransacoes),
+      proj: kpis.qtdTransacoes === null ? undefined
+        : { real: kpis.qtdTransacoes, incremento: incMes.transacoes, grandeza: 'contagem' as const },
+    },
     { label: '% de MEDs', fig: kpis.percentMed === null ? null : figuraPercentual(kpis.percentMed, 2), delta: varDe(k => k.percentMed) },
   ]
 
@@ -132,13 +195,31 @@ export default async function ConselhoPage() {
         sub={<>Indicadores consolidados · <span className="capitalize">{formatMesRef(periodo)}</span></>}
       />
 
+      {/* ── OS DOIS NÍVEIS DE VOLUME, SOB O RELÓGIO DA PROJEÇÃO ───────────
+          Um provedor para os dois, e o mesmo relógio compartilhado com a Home
+          (o timer vive em escopo de módulo). Dois usuários, duas telas e dois
+          dispositivos chegam no mesmo número para o mesmo segundo. */}
+      <ProjecaoProvider
+        inicio={ciclo.inicio}
+        fim={ciclo.fim}
+        agoraServidor={ciclo.agoraServidor}
+        ativo={temIncremento}
+      >
+      <div className="space-y-10">
       {/* ── NÍVEL 1 · HEADLINE ────────────────────────────────────────────
-          Uma faixa, três números acumulados. É a resposta a "o que aconteceu". */}
+          Uma faixa, três números acumulados. É a resposta a "o que aconteceu".
+
+          O INCREMENTO DO CICLO É SUBTRAÍDO DO ACUMULADO DE TODOS OS MESES,
+          que é o que estes três números somam. O histórico fechado aparece
+          inteiro; só a fatia que entrou neste ciclo cresce. */}
       <section className="rounded-3xl border border-line bg-surface overflow-hidden">
         <div className="px-6 sm:px-10 pt-9 sm:pt-12 pb-8">
           <p className="t-label text-subtle">TPV acumulado</p>
           <div className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
-            <Figure figura={temHistorico ? figuraMoeda(histTpv) : null} size="hero" />
+            {temHistorico
+              ? <FiguraProjetada real={histTpv} incremento={incTodos.tpv}
+                  grandeza="moeda" size="hero" />
+              : <Figure figura={null} size="hero" />}
             {temHistorico && <Delta v={varDe(k => k.tpv)} sufixo="no mês corrente" className="pb-2" />}
           </div>
           <div className="flex items-center gap-3 mt-6">
@@ -153,12 +234,27 @@ export default async function ConselhoPage() {
 
         <div className="grid sm:grid-cols-2 gap-px bg-line border-t border-line">
           {[
-            { label: 'Faturamento acumulado', fig: temHistorico ? figuraMoeda(histFat) : null },
-            { label: 'Transações acumuladas', fig: temHistorico ? figuraQuantidade(histTx) : null },
+            {
+              label: 'Faturamento acumulado',
+              real: histFat,
+              // SÓ A PARCELA TARIFÁRIA é projetável: `histFat` soma receita
+              // tarifária + Float, e o Float não vem do volume lançado.
+              incremento: incTodos.receita,
+              grandeza: 'moeda' as const,
+            },
+            {
+              label: 'Transações acumuladas',
+              real: histTx,
+              incremento: incTodos.transacoes,
+              grandeza: 'contagem' as const,
+            },
           ].map((h) => (
             <div key={h.label} className="bg-surface px-6 sm:px-10 py-7 transition-colors duration-[380ms] hover:bg-surface-2">
               <p className="t-label text-subtle mb-3">{h.label}</p>
-              <Figure figura={h.fig} />
+              {temHistorico
+                ? <FiguraProjetada real={h.real} incremento={h.incremento}
+                    grandeza={h.grandeza} />
+                : <Figure figura={null} />}
             </div>
           ))}
         </div>
@@ -186,14 +282,30 @@ export default async function ConselhoPage() {
           {estrategicos.map((m) => (
             <HairlineCell key={m.label} className="gap-3">
               <p className="t-label text-subtle">{m.label}</p>
-              <Figure figura={m.fig} />
+              {m.proj
+                ? <FiguraProjetada real={m.proj.real} incremento={m.proj.incremento}
+                    grandeza={m.proj.grandeza} />
+                : <Figure figura={m.fig} />}
               <div className="min-h-[1.125rem]">
+                {/* A SETA NÃO É PROJETADA: a comparação temporal continua
+                    lendo os valores reais dos dois lados. */}
                 {m.delta && <Delta v={m.delta} sufixo={notaComparacao} />}
               </div>
             </HairlineCell>
           ))}
         </HairlineGrid>
       </section>
+
+      {/* A DECLARAÇÃO DA ORIGEM, fechando os dois níveis de volume. */}
+      {temHistorico && (
+        <NotaProjecao
+          referencia={referencia}
+          inicio={ciclo.inicio}
+          quantos={ciclo.lancamentos.length}
+        />
+      )}
+      </div>
+      </ProjecaoProvider>
 
       {/* ── NÍVEL 3 · TENDÊNCIA ──────────────────────────────────────────── */}
       <section className="space-y-4">

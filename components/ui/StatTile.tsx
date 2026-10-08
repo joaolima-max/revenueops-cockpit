@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import type { Figura, Variacao } from '@/lib/format-financeiro'
 import Figure, { Delta } from './Figure'
+import FiguraProjetada from '@/components/projecao/FiguraProjetada'
 
 /**
  * Célula de indicador. Hierarquia em quatro níveis:
@@ -13,7 +14,8 @@ import Figure, { Delta } from './Figure'
  * oito cores de valor diferentes lêem como aleatório, não como hierarquia.
  */
 export default function StatTile({
-  label, figura, valorTexto, delta, note, primary = false, spark, size = 'md', className,
+  label, figura, valorTexto, delta, note, primary = false, spark, size = 'md',
+  projecao, className,
 }: {
   label: string
   /** null = ausência de dado. Nunca substituir por zero. */
@@ -29,6 +31,20 @@ export default function StatTile({
   primary?: boolean
   spark?: number[]
   size?: 'md' | 'sm'
+  /**
+   * PROJEÇÃO INTRADIÁRIA — o número cresce ao longo do ciclo operacional.
+   *
+   * Quando presente, substitui a `figura` por um valor que avança do
+   * acumulado consolidado até o acumulado real, distribuindo o INCREMENTO do
+   * ciclo pela curva ponderada (ver `lib/projecao-intradiaria`).
+   *
+   * Reservado aos quatro KPIs de volume — transações, TPV, MEDs e receita
+   * tarifária. Qualquer outro indicador continua exibindo o valor real, e é
+   * por isso que isto é um campo opcional e não o comportamento padrão da
+   * célula: um saldo médio ou uma contagem de clientes ativos não "cresce ao
+   * longo do dia", e animá-los seria afirmar algo falso.
+   */
+  projecao?: { real: number; incremento: number; grandeza: 'moeda' | 'contagem' }
   className?: string
 }) {
   const max = spark && spark.length ? Math.max(...spark, 1) : 1
@@ -47,6 +63,14 @@ export default function StatTile({
           'tabular-nums bp-truncate',
           primary ? 'text-accent-soft' : 'text-fg',
         )}>{valorTexto}</span>
+      ) : projecao ? (
+        <FiguraProjetada
+          real={projecao.real}
+          incremento={projecao.incremento}
+          grandeza={projecao.grandeza}
+          size={size === 'sm' ? 'sm' : 'md'}
+          tone={primary ? 'accent' : 'default'}
+        />
       ) : (
         <Figure figura={figura} size={size === 'sm' ? 'sm' : 'md'} tone={primary ? 'accent' : 'default'} />
       )}
