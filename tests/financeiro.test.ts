@@ -25,6 +25,7 @@ import { podeVisualizar } from '../lib/storage'
 // de soma, que sao puras.
 import {
   somaNoTotal, TIPOS_QUE_SOMAM, TIPOS_RECEITA_CONSELHO, TIPO_RECEITA_LABEL,
+  repartirTransacional, calcularTakeRate,
 } from '../lib/kpi'
 
 /**
@@ -293,16 +294,20 @@ test('o total materializado de um parcelado é a soma das parcelas', () => {
  * RECEITA REALIZADA × MRR — a dupla contagem
  * ========================================================================= */
 
-test('MENSALIDADES nao soma no total da receita do Conselho', () => {
-  // As mensalidades de API ja estao embutidas na tarifa transacional — e
-  // assim que a Bass Pago cobra hoje. Soma-las contaria o mesmo dinheiro
-  // duas vezes. A linha continua aparecendo como indicador de recorrencia.
-  assert.equal(somaNoTotal('MENSALIDADES'), false)
-})
-
-test('as outras cinco linhas SOMAM', () => {
-  for (const t of ['TRANSACIONAL', 'SETUP', 'SUSTENTACAO', 'SERVICOS', 'BAAS'] as const) {
-    assert.equal(somaNoTotal(t), true, `${t} deveria somar`)
+test('as SEIS linhas somam — a duplicidade morreu na reparticao, nao no total', () => {
+  /**
+   * A REGRA MUDOU DE LUGAR, e o diagnostico continua o mesmo.
+   *
+   * Sustentacao e mensalidade de API ja estao dentro da tarifa transacional, e
+   * somar as duas ao transacional INTEGRO contava o mesmo dinheiro duas vezes.
+   * Antes, a correcao era tirar MENSALIDADES do total — o que deixava duas
+   * figuras do mesmo milhao lado a lado e a barra de composicao abaixo de 100%.
+   *
+   * Agora o MRR e DESCONTADO do transacional, e as seis linhas somam porque
+   * sao FATIAS da mesma receita. Ver `repartirTransacional`.
+   */
+  for (const t of TIPOS_RECEITA_CONSELHO) {
+    assert.equal(somaNoTotal(t), true, `${t} deixou de somar`)
   }
 })
 
@@ -323,11 +328,118 @@ test('TARIFARIA nao aparece como tipo separado — Transacional E a tarifaria', 
   }
 })
 
-test('TIPOS_QUE_SOMAM e subconjunto proprio dos seis tipos', () => {
-  assert.equal(TIPOS_QUE_SOMAM.length, TIPOS_RECEITA_CONSELHO.length - 1)
+test('TIPOS_QUE_SOMAM cobre os seis tipos, e nenhum tipo de fora', () => {
+  assert.equal(TIPOS_QUE_SOMAM.length, TIPOS_RECEITA_CONSELHO.length)
   for (const t of TIPOS_QUE_SOMAM) {
     assert.ok(TIPOS_RECEITA_CONSELHO.includes(t))
   }
+})
+
+/* ========================================================================= *
+ * A REPARTIÇÃO DO TRANSACIONAL — o MRR sai de dentro, nao por cima
+ * ========================================================================= */
+
+test('o exemplo da especificacao: 1 milhao com 100 mil de MRR da 900 mil + 100 mil', () => {
+  const r = repartirTransacional(1_000_000, 100_000, 0)
+  assert.equal(r.transacional, 900_000)
+  assert.equal(r.sustentacao, 100_000)
+  assert.equal(r.mensalidades, 0)
+  // A SOMA CONTINUA EM 1 MILHAO. E a frase da especificacao, e e a razao de a
+  // sustentacao voltar a somar no total em vez de ficar fora dele.
+  assert.equal(r.transacional + r.sustentacao + r.mensalidades, 1_000_000)
+  assert.equal(r.excedente, 0)
+})
+
+test('a mesma logica vale para as mensalidades de API', () => {
+  const r = repartirTransacional(1_000_000, 0, 100_000)
+  assert.equal(r.transacional, 900_000)
+  assert.equal(r.mensalidades, 100_000)
+  assert.equal(r.transacional + r.sustentacao + r.mensalidades, 1_000_000)
+})
+
+test('as duas juntas saem das duas de uma vez', () => {
+  const r = repartirTransacional(1_000_000, 100_000, 40_000)
+  assert.equal(r.transacional, 860_000)
+  assert.equal(r.sustentacao, 100_000)
+  assert.equal(r.mensalidades, 40_000)
+  assert.equal(r.transacional + r.sustentacao + r.mensalidades, 1_000_000)
+})
+
+test('A INVARIANTE: a reparticao nunca cria nem destroi receita', () => {
+  // E ela que torna a divisao verificavel — qualquer que seja o MRR, a
+  // contribuicao do transacional ao faturamento e sempre o que foi lancado.
+  const casos: Array<[number, number, number]> = [
+    [1_000_000, 100_000, 40_000],
+    [0, 0, 0],
+    [0, 100_000, 50_000],
+    [50_000, 100_000, 0],
+    [120_000, 100_000, 50_000],
+    [100_000, 100_000, 0],
+    [7, 3, 2],
+  ]
+  for (const [bruto, sust, mens] of casos) {
+    const r = repartirTransacional(bruto, sust, mens)
+    assert.equal(
+      r.transacional + r.sustentacao + r.mensalidades, Math.max(bruto, 0),
+      `a reparticao de (${bruto}, ${sust}, ${mens}) nao fecha com o bruto`,
+    )
+    assert.ok(r.transacional >= 0, 'transacional negativo')
+  }
+})
+
+test('MRR maior que a tarifa lancada NAO inventa receita — vira excedente', () => {
+  // Comeco de mes, ou mes sem lancamento diario: ha contrato vigente e nao ha
+  // tarifa de onde separar a fatia.
+  const r = repartirTransacional(0, 100_000, 50_000)
+  assert.equal(r.transacional, 0)
+  assert.equal(r.sustentacao, 0)
+  assert.equal(r.mensalidades, 0)
+  // O MRR apurado continua visivel, para a tela poder declarar que existe.
+  assert.equal(r.mrr, 150_000)
+  assert.equal(r.excedente, 150_000)
+})
+
+test('a SUSTENTACAO sai primeiro quando o bruto nao cabe os dois', () => {
+  // E piso contratual; a mensalidade de API varia com a carteira.
+  const r = repartirTransacional(120_000, 100_000, 50_000)
+  assert.equal(r.sustentacao, 100_000)
+  assert.equal(r.mensalidades, 20_000)
+  assert.equal(r.transacional, 0)
+  assert.equal(r.excedente, 30_000)
+})
+
+/* ========================================================================= *
+ * TAKE RATE — receita elegível sobre o TPV
+ * ========================================================================= */
+
+test('o exemplo da especificacao: 10 milhoes sobre 1 bilhao da 1%', () => {
+  assert.equal(calcularTakeRate(10_000_000, 1_000_000_000), 1)
+})
+
+test('o take rate conta tarifas MAIS BaaS, sem setup, sustentacao nem mensalidade', () => {
+  /**
+   * A composicao do numerador, montada como `baseTakeRate` a monta:
+   *
+   *   tarifa lancada        1.000.000
+   *   − sustentacao (MRR)    −100.000
+   *   − mensalidades (MRR)    −40.000
+   *   + lancamentos BaaS      +500.000
+   *   setup                    ignorado
+   *   = elegivel             1.360.000
+   */
+  const r = repartirTransacional(1_000_000, 100_000, 40_000)
+  const elegivel = r.transacional + 500_000
+  assert.equal(elegivel, 1_360_000)
+  // Tolerancia: 1,36% nao e exato em ponto flutuante binario.
+  assert.ok(Math.abs(calcularTakeRate(elegivel, 100_000_000)! - 1.36) < 1e-9)
+})
+
+test('sem TPV o take rate e AUSENTE, nunca zero nem divisao por zero', () => {
+  assert.equal(calcularTakeRate(10_000, null), null)
+  assert.equal(calcularTakeRate(10_000, 0), null)
+  assert.equal(calcularTakeRate(0, 0), null)
+  // Com TPV e sem receita elegivel, zero e o resultado matematico correto.
+  assert.equal(calcularTakeRate(0, 1_000_000), 0)
 })
 
 /* ========================================================================= *
