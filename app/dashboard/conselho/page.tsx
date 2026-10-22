@@ -6,7 +6,7 @@ import { podeVerConselho } from '@/lib/autorizacao'
 import { formatMesRef } from '@/lib/utils'
 import {
   kpisDoPeriodo, linhasReceita, indicadoresEstrutura, composicaoReceitaConselho,
-  comparacaoMensal, rotuloComparacao,
+  comparacaoMensal, rotuloComparacao, baseTakeRate,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import {
@@ -124,6 +124,23 @@ export default async function ConselhoPage() {
   const notaComparacao = rotuloComparacao(comparacao)
 
   /**
+   * TAKE RATE — fonte própria, e a MESMA janela dos outros indicadores.
+   *
+   * Ele saiu de `KpisPeriodo`: não é mais `receitaTarifaria ÷ tpv`, e sim a
+   * receita ELEGÍVEL (tarifa transacional sem o MRR embutido, mais os
+   * lançamentos de BaaS) sobre o TPV. Três fontes, uma função —
+   * `baseTakeRate` —, que o Cockpit e o realizado da meta também usam.
+   *
+   * `comparacao.ateDia` é a janela já EQUALIZADA pelos dois lados, então a
+   * seta continua comparando períodos comparáveis: o mesmo recorte de dias
+   * aqui e no mês anterior.
+   */
+  const [takeRate, takeRateAnterior] = await Promise.all([
+    baseTakeRate(periodo, comparacao.ateDia),
+    anterior ? baseTakeRate(anterior.periodo, comparacao.ateDia) : null,
+  ])
+
+  /**
    * NÍVEL 2 — os números estratégicos.
    *
    * `projecao` só nos TRÊS que carregam volume do ciclo: TPV do mês,
@@ -152,7 +169,13 @@ export default async function ConselhoPage() {
         ? { real: receita.total, incremento: incMes.receita, pendente: pendMes.receita, grandeza: 'moeda' as const }
         : undefined,
     },
-    { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3), delta: varDe(k => k.takeRate) },
+    {
+      label: 'Take Rate',
+      fig: takeRate.takeRate === null ? null : figuraPercentual(takeRate.takeRate, 3),
+      delta: takeRateAnterior
+        ? variacao(takeRate.takeRate, takeRateAnterior.takeRate)
+        : null,
+    },
     { label: 'MRR', fig: figuraMoeda(estrutura.mrr.total) },
     {
       label: 'Transações',
@@ -179,7 +202,10 @@ export default async function ConselhoPage() {
    * exatamente uma, e a natureza da categoria classifica antes do vínculo com
    * o parceiro (um setup cobrado de um BaaS é setup).
    *
-   * MENSALIDADES não soma: já está embutida no transacional.
+   * SUSTENTAÇÃO E MENSALIDADES SÃO FATIAS DO TRANSACIONAL, não acréscimos a
+   * ele: as duas já estão dentro da tarifa, e são SEPARADAS de lá antes de a
+   * linha Transacional ser exibida. Por isso as seis somam e a barra fecha em
+   * 100% — ver `repartirTransacional`, em lib/kpi.
    */
   const linhasQueSomam = composicao.linhas.filter((l) => l.soma)
 
@@ -187,6 +213,10 @@ export default async function ConselhoPage() {
   const maiorLinha = composicao.total > 0
     ? [...linhasQueSomam].sort((a, b) => b.valor - a.valor)[0]
     : null
+
+  /** O MRR que foi SEPARADO de dentro da tarifa — o que a nota declara. */
+  const mrrNaTarifa =
+    composicao.reparticao.sustentacao + composicao.reparticao.mensalidades
 
   const evolucao = periodos.map((p, i) => ({
     mes: formatMesRef(p),
@@ -333,7 +363,8 @@ export default async function ConselhoPage() {
           title="Onde está a receita"
           sub={maiorLinha
             ? `${maiorLinha.label} concentra ${((maiorLinha.valor / composicao.total) * 100).toFixed(1)}% da receita do período.`
-            : 'Transacional, Setup, Sustentação, Serviços e BaaS somam a receita do período.'}
+            : 'Transacional, Setup, Mensalidades, Sustentação, Serviços e BaaS '
+              + 'somam a receita do período.'}
         />
         {composicao.total === 0 ? (
           <Panel padded={false}>
@@ -344,8 +375,9 @@ export default async function ConselhoPage() {
             {/* Barra de composição: proporção antes do detalhe. */}
             <div className="flex h-2 rounded-full overflow-hidden gap-px bg-line" role="img"
               aria-label="Composição proporcional da receita">
-              {/* Só as linhas que SOMAM entram na barra: uma fatia de
-                  Mensalidades faria a proporção passar de 100%. */}
+              {/* As seis linhas somam, e por isso a barra fecha em 100%:
+                  Sustentação e Mensalidades são fatias separadas de dentro do
+                  Transacional, não receita somada por cima dele. */}
               {composicao.linhas.filter((l) => l.soma).map((l, i) => (
                 <span key={l.tipo} title={`${l.label}: ${moedaCheia(l.valor)}`}
                   className="transition-opacity duration-[380ms] hover:opacity-80"
@@ -374,19 +406,36 @@ export default async function ConselhoPage() {
               <span className="t-label text-subtle">Receita total do período</span>
               <Figure figura={figuraMoeda(composicao.total)} />
             </Panel>
-            {/* MENSALIDADES é INDICADOR, não parcela — e isso é dito em voz
-                alta. Elas já estão embutidas na tarifa transacional (é como a
-                Bass Pago cobra hoje), e somá-las ao total contaria o mesmo
-                dinheiro duas vezes. Omitir a linha seria pior: a pergunta
-                "quanto é recorrente" não teria resposta na composição. */}
-            {composicao.mensalidadesIndicador > 0 && (
+            {/* A DIVISÃO É DECLARADA, não deduzida.
+                Sustentação e mensalidade de API já estão dentro da tarifa
+                transacional — é como a Bass Pago cobra. Elas aparecem como
+                indicadores de recorrência DENTRO da divisão da receita, e o
+                transacional é exibido já sem elas, de modo que o faturamento
+                do período não muda por causa de como ele é dividido. */}
+            {mrrNaTarifa > 0 && (
               <p className="t-sm text-subtle">
-                <span className="text-fg">Mensalidades de API é indicador</span>, não parcela:{' '}
+                <span className="text-fg">Sustentação e mensalidades são MRR</span>, e já estavam
+                dentro da tarifa transacional:{' '}
+                <span className="tabular-nums text-fg">{moedaCheia(mrrNaTarifa)}</span>{' '}
+                foram separados dos{' '}
+                <span className="tabular-nums text-fg">{moedaCheia(composicao.reparticao.bruto)}</span>{' '}
+                lançados, e por isso o Transacional aparece como{' '}
                 <span className="tabular-nums text-fg">
-                  {moedaCheia(composicao.mensalidadesIndicador)}
+                  {moedaCheia(composicao.reparticao.transacional)}
+                </span>. A soma não muda — o mesmo dinheiro não é contado duas vezes.
+              </p>
+            )}
+            {/* O MRR QUE NÃO CABE NA TARIFA é declarado em vez de sumir.
+                Acontece no começo do mês e em mês sem lançamento diário: há
+                contrato vigente e ainda não há tarifa de onde separar a fatia.
+                Inventá-la criaria receita que ninguém faturou. */}
+            {composicao.reparticao.excedente > 0 && (
+              <p className="t-sm text-subtle">
+                <span className="tabular-nums text-fg">
+                  {moedaCheia(composicao.reparticao.excedente)}
                 </span>{' '}
-                já estão embutidos na receita transacional, e por isso ficam fora do total.
-                O número aparece porque é a base da recorrência.
+                de MRR contratado ainda não apareceram na tarifa transacional do período, e
+                por isso não entram nas linhas acima.
               </p>
             )}
           </>

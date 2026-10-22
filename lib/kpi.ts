@@ -20,8 +20,8 @@ import { calcularFloat, type SaldoDia, type VigenciaMultiplicador } from '@/lib/
 import { minimoContratadoDoPeriodo } from '@/lib/volumetria'
 import {
   calcularMrr, contagensParceiros, evolucaoParceiros, primeiroMesComParceiros,
-  receitaPorNatureza, realizadoReceitaPrevisao,
-  sustentacaoVigente,
+  parcelasDoMrr, receitaPorNatureza, receitaLancadaPorLinha,
+  realizadoReceitaPrevisao, sustentacaoVigente,
   type Mrr, type ContagensParceiros, type RealizadoReceitaPrevisao,
 } from '@/lib/financeiro'
 import {
@@ -59,7 +59,19 @@ export interface KpisPeriodo {
   qtdMed: number | null
   saldoMedio: number | null
   float: number | null
-  takeRate: number | null
+  /**
+   * `takeRate` SAIU daqui.
+   *
+   * Ele era `receitaTarifaria ÷ tpv`, e esta interface só conhece o
+   * Lançamento Diário. O take rate passou a depender de três fontes — a
+   * tarifa transacional, a apuração dos parceiros e o MRR a descontar —, e
+   * calculá-lo aqui obrigaria cada leitor desta interface a ter as outras
+   * duas. Ver `baseTakeRate`, que é a fonte única.
+   *
+   * A série DIÁRIA mantém o seu `takeRate` (ver `PontoDiario`): é a razão
+   * tarifa ÷ TPV DO DIA, um indicador operacional de outra granularidade —
+   * não existe apuração de parceiro nem mensalidade com resolução diária.
+   */
   percentMed: number | null
   /**
    * Clientes ativos do mês. É FOTOGRAFIA: o valor do último dia lançado que
@@ -138,7 +150,7 @@ export async function kpisDoPeriodo(
       periodo, temDados: false, diasLancados: 0,
       ateDia: ateDia ?? null,
       tpv: null, receitaTarifaria: null, qtdTransacoes: null, qtdMed: null,
-      saldoMedio: null, float: null, takeRate: null, percentMed: null,
+      saldoMedio: null, float: null, percentMed: null,
       clientesAtivos: null,
     }
   }
@@ -165,7 +177,6 @@ export async function kpisDoPeriodo(
     qtdMed,
     saldoMedio,
     float: calcularFloat(saldos, vigencias),
-    takeRate: tpv > 0 ? (receitaTarifaria / tpv) * 100 : null,
     percentMed: qtdTransacoes > 0 ? (qtdMed / qtdTransacoes) * 100 : null,
     clientesAtivos,
   }
@@ -303,15 +314,20 @@ export async function comparacaoMensal(
 }
 
 export interface LinhasReceita {
+  /** A tarifa transacional JÁ SEM o MRR embutido. Ver a repartição abaixo. */
   tarifario: number
   float: number
+  /** Sustentação — fatia separada de dentro do tarifário, não acréscimo. */
   sustentacao: number
+  /** Mensalidade de API — a outra fatia do MRR, pela mesma razão. */
+  mensalidades: number
   setup: number
+  /** `tarifário bruto + float + setup`. O faturamento do período. */
   total: number
 }
 
 /**
- * As QUATRO linhas de receita. Cada uma tem origem única, e a soma é o
+ * As CINCO linhas de receita. Cada uma tem origem única, e a soma é o
  * faturamento do período — não há nenhuma linha lançada em dois lugares.
  *
  * A vertical "Serviços" saiu da composição e nada entrou no lugar dela. Ela
@@ -327,16 +343,33 @@ export interface LinhasReceita {
  * que a dupla contagem apareceria.
  *
  * Setup não tem derivação: ou foi lançado, ou é zero.
+ *
+ * ── O FATURAMENTO SOMAVA A SUSTENTAÇÃO DUAS VEZES ───────────────────────
+ *
+ * O total era `tarifário + float + sustentação + setup`, com o tarifário
+ * ÍNTEGRO. Mas sustentação e mensalidade de API já estão DENTRO da tarifa —
+ * então o mesmo dinheiro entrava uma vez no tarifário e outra na sua própria
+ * linha, e o tile "Faturamento" do Conselho vinha inflado pelo MRR inteiro.
+ *
+ * É o MESMO defeito que a composição do Conselho tinha, no segundo lugar onde
+ * ele morava. A correção é a mesma e vem da MESMA função pura: o MRR é
+ * SEPARADO do tarifário (`repartirTransacional`), e o total volta a ser o
+ * tarifário BRUTO mais float e setup — cada real uma vez só.
+ *
+ * As MENSALIDADES passaram a ser uma linha própria. Antes não apareciam aqui
+ * de forma alguma: ficavam silenciosamente dentro do tarifário, e tirá-las de
+ * lá sem lhes dar linha faria o faturamento encolher sem explicação.
  */
 export async function linhasReceita(periodo: string): Promise<LinhasReceita | null> {
   const referencia = new Date(intervaloMes(periodo).fim.getTime() - 1)
-  const [kpis, lancado, parceiros] = await Promise.all([
+  const [kpis, lancado, parceiros, mrr] = await Promise.all([
     kpisDoPeriodo(periodo),
     receitaPorNatureza(periodo),
     prisma.condicaoComercial.findMany({
       where: { ativo: true },
       select: { sustentacao: true, sustentacaoInicio: true },
     }),
+    calcularMrr(periodo),
   ])
 
   const sustentacaoCadastro = parceiros.reduce(
@@ -344,15 +377,205 @@ export async function linhasReceita(periodo: string): Promise<LinhasReceita | nu
     0,
   )
 
-  const tarifario = kpis.receitaTarifaria ?? 0
   const flt = lancado.FLOAT > 0 ? lancado.FLOAT : (kpis.float ?? 0)
   const sustentacao = lancado.SUSTENTACAO > 0 ? lancado.SUSTENTACAO : sustentacaoCadastro
   const setup = lancado.SETUP
-  const total = tarifario + flt + sustentacao + setup
+
+  // A MESMA repartição da composição do Conselho — uma função, dois leitores.
+  // A invariante dela garante que o total abaixo é o tarifário BRUTO mais
+  // float e setup, qualquer que seja o MRR.
+  const rep = repartirTransacional(
+    kpis.receitaTarifaria ?? 0, sustentacao, parcelasDoMrr(mrr).mensalidades,
+  )
+
+  const total = rep.transacional + rep.sustentacao + rep.mensalidades + flt + setup
 
   if (!kpis.temDados && total === 0) return null
 
-  return { tarifario, float: flt, sustentacao, setup, total }
+  return {
+    tarifario: rep.transacional,
+    float: flt,
+    sustentacao: rep.sustentacao,
+    mensalidades: rep.mensalidades,
+    setup,
+    total,
+  }
+}
+
+/* ========================================================================= *
+ * A REPARTIÇÃO DO TRANSACIONAL — o MRR sai de dentro dele, não por cima
+ *
+ * ── A REGRA ─────────────────────────────────────────────────────────────
+ *
+ * A sustentação de BaaS e a mensalidade de API JÁ ESTÃO DENTRO da tarifa
+ * transacional: é assim que a Bass Pago cobra, e é na apuração das tarifas que
+ * esses valores são contabilizados. Então eles não são receita NOVA — são uma
+ * FATIA da que já foi lançada.
+ *
+ * R$ 1 milhão de tarifa transacional com R$ 100 mil de MRR de sustentação
+ * exibe R$ 900 mil de transacional e R$ 100 mil de sustentação. A soma continua
+ * R$ 1 milhão, e cada real aparece uma vez só.
+ *
+ * ── O QUE ESTAVA ERRADO ─────────────────────────────────────────────────
+ *
+ * A sustentação era SOMADA ao transacional íntegro: o mesmo milhão virava
+ * R$ 1,1 milhão de faturamento. E as mensalidades, embora já ficassem fora do
+ * total, eram exibidas ao lado do transacional íntegro — o mesmo dinheiro
+ * aparecendo duas vezes na tela, ainda que uma vez só na soma.
+ *
+ * ── A INVARIANTE QUE ESTA FUNÇÃO GARANTE ────────────────────────────────
+ *
+ *   transacional + sustentacao + mensalidades === bruto
+ *
+ * É ela que torna a repartição verificável: qualquer que seja o MRR, a
+ * contribuição do transacional ao faturamento é sempre o que foi lançado.
+ *
+ * ── A ORDEM E O TETO ────────────────────────────────────────────────────
+ *
+ * O MRR pode ser MAIOR que a tarifa lançada — começo de mês, ou mês sem
+ * lançamento diário, com contratos vigentes. Não há de onde tirar a fatia, e
+ * inventá-la criaria receita que ninguém faturou. Então a repartição é capada
+ * no bruto, a SUSTENTAÇÃO primeiro (é piso contratual; a mensalidade de API
+ * varia com a carteira), e o que não couber vira `excedente` — devolvido para
+ * que a tela possa DECLARAR que existe contrato ainda não refletido na tarifa,
+ * em vez de deixar o número simplesmente faltar.
+ * ========================================================================= */
+
+export interface ReparticaoTransacional {
+  /** A tarifa transacional LANÇADA, íntegra. A base de toda a repartição. */
+  bruto: number
+  /** A tarifa que sobra depois de separar o MRR. É a linha "Transacional". */
+  transacional: number
+  /** A fatia de sustentação que o bruto comporta. Entra no total. */
+  sustentacao: number
+  /** A fatia de mensalidades que o bruto comporta. Entra no total. */
+  mensalidades: number
+  /** Sustentação + mensalidades APURADAS, sem teto. O MRR do período. */
+  mrr: number
+  /** O MRR que não cabe no bruto. Zero no caso normal. */
+  excedente: number
+}
+
+/** A repartição. PURA — a invariante acima é verificável sem banco. */
+export function repartirTransacional(
+  bruto: number, sustentacao: number, mensalidades: number,
+): ReparticaoTransacional {
+  const base = Math.max(bruto, 0)
+  const sust = Math.min(Math.max(sustentacao, 0), base)
+  const mens = Math.min(Math.max(mensalidades, 0), base - sust)
+  const mrr = Math.max(sustentacao, 0) + Math.max(mensalidades, 0)
+  return {
+    bruto: base,
+    transacional: base - sust - mens,
+    sustentacao: sust,
+    mensalidades: mens,
+    mrr,
+    excedente: mrr - sust - mens,
+  }
+}
+
+/* ========================================================================= *
+ * TAKE RATE — a receita ELEGÍVEL sobre o TPV
+ *
+ * ── A REGRA ─────────────────────────────────────────────────────────────
+ *
+ *   take rate = (tarifa transacional + lançamentos de BaaS) ÷ TPV
+ *
+ * ENTRAM: a tarifa transacional do Lançamento Diário e a apuração dos
+ * parceiros (os lançamentos de receita vinculados a uma condição BaaS).
+ *
+ * FICAM FORA: setup, sustentação e mensalidades. Setup é implantação, não
+ * tarifa sobre volume. Sustentação e mensalidades são MRR — e, por serem uma
+ * FATIA da tarifa transacional (ver a repartição acima), ficar de fora aqui
+ * significa DESCONTÁ-LAS do numerador, não apenas não somá-las.
+ *
+ * TPV de R$ 1 bilhão com receita elegível de R$ 10 milhões dá 1%.
+ *
+ * ── O QUE ESTAVA ERRADO ─────────────────────────────────────────────────
+ *
+ * O take rate era `receitaTarifaria ÷ tpv`, direto do Lançamento Diário. Ele
+ * incluía o MRR embutido na tarifa (inflando a eficiência tarifária com
+ * recorrência que não depende de volume) e ignorava a apuração dos parceiros
+ * inteira — num mês com lançamento BaaS, a maior linha de receita do período
+ * não aparecia no indicador que mede justamente a receita sobre o volume.
+ *
+ * ── A JANELA ────────────────────────────────────────────────────────────
+ *
+ * `ateDia` trunca TPV, tarifa e lançamentos de BaaS na MESMA janela, para que
+ * o mês em curso possa ser comparado com a mesma janela do mês anterior — é a
+ * regra de `comparacaoMensal`, e o take rate não tem motivo para fugir dela.
+ *
+ * O MRR NÃO É TRUNCADO: é contrato do mês, não volume acumulado, e ratear uma
+ * mensalidade por dias decorridos seria inventar um número que nenhum contrato
+ * do sistema conhece. Como ele entra IGUAL nos dois lados da comparação, não
+ * distorce a variação.
+ *
+ * ── UMA FONTE ───────────────────────────────────────────────────────────
+ *
+ * `KpisPeriodo` deixou de ter `takeRate`. Cockpit, Conselho, a API do Cockpit
+ * e o realizado da meta TAKE_RATE leem desta função — um take rate calculado
+ * em quatro lugares é como eles passam a discordar, e aqui o número depende de
+ * três fontes diferentes, o que torna a divergência mais fácil, não menos.
+ * ========================================================================= */
+
+export interface BaseTakeRate {
+  periodo: string
+  /** A janela usada: `null` = mês inteiro. */
+  ateDia: number | null
+  /** TPV da janela. `null` quando o período não tem lançamento diário. */
+  tpv: number | null
+  /** Tarifa transacional da janela, JÁ SEM o MRR embutido. */
+  tarifas: number
+  /** Apuração dos parceiros — os lançamentos de BaaS da janela. */
+  lancamentosBaas: number
+  /** `tarifas + lancamentosBaas`. O numerador. */
+  receitaElegivel: number
+  /** `receitaElegivel ÷ tpv × 100`. `null` sem TPV. */
+  takeRate: number | null
+  /** O MRR descontado das tarifas, aberto — para a tela poder declará-lo. */
+  excluido: { sustentacao: number; mensalidades: number }
+}
+
+/** O percentual. PURO. `null` sem TPV — nunca uma divisão por zero. */
+export function calcularTakeRate(receitaElegivel: number, tpv: number | null): number | null {
+  if (tpv === null || tpv <= 0) return null
+  return (receitaElegivel / tpv) * 100
+}
+
+/**
+ * O take rate de um período, com o numerador aberto.
+ *
+ * Três fontes, em paralelo: o Lançamento Diário (TPV e tarifa), os lançamentos
+ * de receita (a linha BaaS da partição) e as condições comerciais mais a
+ * carteira (o MRR, via `calcularMrr` — a mesma função do Cockpit).
+ */
+export async function baseTakeRate(
+  periodo: string, ateDia?: number | null,
+): Promise<BaseTakeRate> {
+  const [kpis, linhas, mrr] = await Promise.all([
+    kpisDoPeriodo(periodo, ateDia),
+    receitaLancadaPorLinha(periodo, ateDia),
+    calcularMrr(periodo),
+  ])
+
+  const { sustentacao, mensalidades } = parcelasDoMrr(mrr)
+  // A SUSTENTAÇÃO LANÇADA tem precedência sobre a do cadastro, pela mesma
+  // regra de `linhasReceita` e da composição do Conselho: ou foi lançada, ou é
+  // derivada — nunca as duas, que é onde a dupla contagem apareceria.
+  const sust = linhas.sustentacao > 0 ? linhas.sustentacao : sustentacao
+  const rep = repartirTransacional(kpis.receitaTarifaria ?? 0, sust, mensalidades)
+
+  const receitaElegivel = rep.transacional + linhas.baas
+  return {
+    periodo,
+    ateDia: ateDia ?? null,
+    tpv: kpis.tpv,
+    tarifas: rep.transacional,
+    lancamentosBaas: linhas.baas,
+    receitaElegivel,
+    takeRate: calcularTakeRate(receitaElegivel, kpis.tpv),
+    excluido: { sustentacao: rep.sustentacao, mensalidades: rep.mensalidades },
+  }
 }
 
 /* ========================================================================= *
@@ -374,17 +597,30 @@ export const TIPO_RECEITA_LABEL: Record<TipoReceitaConselho, string> = {
 }
 
 /**
- * Os tipos que SOMAM no total da receita realizada.
+ * Os tipos que SOMAM no total da receita realizada — agora os SEIS.
  *
- * MENSALIDADES fica fora: ela já está embutida na tarifa transacional (é como
- * a Bass Pago cobra hoje), e somá-la contaria o mesmo dinheiro duas vezes. A
- * linha continua aparecendo como indicador de recorrência.
+ * ── MENSALIDADES E SUSTENTAÇÃO VOLTARAM À SOMA, E NÃO É UM RECUO ────────
  *
- * FLOAT entra: é receita realizada e não está dentro de nenhuma outra linha.
+ * Antes, MENSALIDADES ficava fora porque somá-la ao transacional ÍNTEGRO
+ * contaria o mesmo dinheiro duas vezes — o diagnóstico estava certo, e a
+ * correção estava no lugar errado. Tirá-la do total deixava o leitor com duas
+ * figuras do mesmo milhão lado a lado, e mantinha a barra de composição
+ * abaixo de 100%.
+ *
+ * Agora o MRR é DESCONTADO do transacional (ver `repartirTransacional`): a
+ * linha Transacional mostra R$ 900 mil, Sustentação mostra R$ 100 mil, e as
+ * duas somam o R$ 1 milhão que foi lançado. Elas somam porque são FATIAS da
+ * mesma receita, não acréscimos a ela — e é a repartição, não a exclusão do
+ * total, que impede a duplicidade.
+ *
+ * A consequência visível é a que se quer: a barra de composição fecha em
+ * 100%, cada linha tem um percentual legítimo, e o faturamento do período não
+ * muda por causa de como ele é dividido.
+ *
+ * FLOAT entra, como sempre entrou: é receita realizada e não está dentro de
+ * nenhuma outra linha (viaja junto de SERVIÇOS, ver `composicaoReceitaConselho`).
  */
-export const TIPOS_QUE_SOMAM: readonly TipoReceitaConselho[] = [
-  'TRANSACIONAL', 'SETUP', 'SUSTENTACAO', 'SERVICOS', 'BAAS',
-]
+export const TIPOS_QUE_SOMAM: readonly TipoReceitaConselho[] = TIPOS_RECEITA_CONSELHO
 
 export function somaNoTotal(tipo: TipoReceitaConselho): boolean {
   return TIPOS_QUE_SOMAM.includes(tipo)
@@ -396,19 +632,30 @@ export interface ComposicaoReceita {
     label: string
     valor: number
     /**
-     * A linha entra no total? `false` só em MENSALIDADES, que já está dentro
-     * da tarifa transacional. A tela precisa saber para não somar à mão e
-     * para poder dizer ao leitor por que a soma não fecha com as linhas.
+     * A linha entra no total? Hoje as SEIS entram — ver `TIPOS_QUE_SOMAM`.
+     *
+     * O campo continua porque é ele que a tela consulta para montar a barra
+     * de composição e os percentuais; um `true` constante lido de uma fonte
+     * é melhor que a tela presumindo que todas somam.
      */
     soma: boolean
   }>
-  /** Soma apenas dos tipos que somam — nunca inclui Mensalidades. */
+  /** Soma das linhas que somam. É o faturamento do período. */
   total: number
   /**
-   * Mensalidades de API, como INDICADOR de recorrência.
+   * A REPARTIÇÃO do transacional, para a tela poder explicar a divisão.
    *
-   * Fora do total de propósito. É a mesma parcela que compõe o MRR, e já está
-   * embutida na receita tarifária: somá-la aqui duplicaria o dinheiro.
+   * `bruto` é a tarifa lançada; `transacional`, o que sobra dela depois de
+   * separar o MRR; `sustentacao` e `mensalidades`, as fatias separadas. A
+   * invariante é `transacional + sustentacao + mensalidades === bruto`.
+   */
+  reparticao: ReparticaoTransacional
+  /**
+   * Mensalidades de API — a parcela do MRR, íntegra, antes do teto do bruto.
+   *
+   * Mantido com o nome que as telas já usavam. Agora ele é IGUAL à linha
+   * MENSALIDADES no caso normal, e MAIOR que ela quando o MRR não cabe na
+   * tarifa lançada (ver `ReparticaoTransacional.excedente`).
    */
   mensalidadesIndicador: number
 }
@@ -422,22 +669,26 @@ export interface ComposicaoReceita {
  *
  * ── A REGRA QUE ESTA FUNÇÃO EXISTE PARA CUMPRIR ─────────────────────────
  *
- * AS MENSALIDADES DE API JÁ ESTÃO DENTRO DA TARIFA TRANSACIONAL. É assim que
- * a Bass Pago cobra hoje: a mensalidade é apurada junto com o transacional, e
- * o que chega ao Lançamento Diário como `receitaTarifaria` já a contém.
+ * SUSTENTAÇÃO E MENSALIDADE DE API JÁ ESTÃO DENTRO DA TARIFA TRANSACIONAL. É
+ * assim que a Bass Pago cobra: as duas são apuradas junto com o transacional, e
+ * o que chega ao Lançamento Diário como `receitaTarifaria` já as contém.
  *
- * Por isso a linha "Mensalidades" é um INDICADOR, e NÃO é somada ao total:
- * somá-la contaria o mesmo dinheiro duas vezes. O número aparece porque a
- * recorrência precisa ser visível — é a base do MRR —, mas entra marcado como
- * fora da soma.
+ * Então elas não são somadas ao faturamento — são SEPARADAS de dentro dele.
+ * R$ 1 milhão de tarifa lançada com R$ 100 mil de MRR de sustentação exibe
+ * R$ 900 mil de transacional e R$ 100 mil de sustentação, e o faturamento do
+ * período continua R$ 1 milhão. A conta está em `repartirTransacional`, que é
+ * pura e é a mesma que o take rate usa.
  *
- * Omitir a linha seria pior: o executivo pergunta quanto é recorrente, e a
- * resposta não estaria em lugar nenhum da composição.
+ * O QUE ESTAVA ERRADO: a sustentação era somada ao transacional ÍNTEGRO, e o
+ * mesmo milhão virava R$ 1,1 milhão de faturamento. As mensalidades já ficavam
+ * fora do total, mas eram exibidas ao lado do transacional íntegro — o mesmo
+ * dinheiro em duas figuras da mesma tela.
  *
- * ── A PARTIÇÃO ──────────────────────────────────────────────────────────
+ * ── A PARTIÇÃO DOS LANÇAMENTOS ──────────────────────────────────────────
  *
- * Cada real dos LANÇAMENTOS entra em exatamente uma linha. A regra, aplicada
- * em ordem sobre os lançamentos de receita do período:
+ * Cada real dos LANÇAMENTOS entra em exatamente uma linha, pela ordem de
+ * `linhaDaReceitaLancada` (lib/financeiro) — que é agora a única cópia dessa
+ * regra, compartilhada com o realizado das metas de receita:
  *
  *   1. categoria com natureza SETUP        → Setup
  *   2. categoria com natureza SUSTENTACAO  → Sustentação
@@ -456,64 +707,44 @@ export interface ComposicaoReceita {
  * vigente das condições. Nunca as duas, que é onde a dupla contagem apareceria.
  */
 export async function composicaoReceitaConselho(periodo: string): Promise<ComposicaoReceita> {
-  const { inicio, fim } = intervaloMes(periodo)
-  const referencia = new Date(fim.getTime() - 1)
+  const referencia = new Date(intervaloMes(periodo).fim.getTime() - 1)
 
-  const [kpis, mrr, parceiros, lancamentos] = await Promise.all([
+  const [kpis, mrr, parceiros, lancadas] = await Promise.all([
     kpisDoPeriodo(periodo),
     calcularMrr(periodo),
     prisma.condicaoComercial.findMany({
       where: { ativo: true },
-      select: { id: true, tipo: true, sustentacao: true, sustentacaoInicio: true },
+      select: { sustentacao: true, sustentacaoInicio: true },
     }),
-    prisma.lancamentoFinanceiro.findMany({
-      where: {
-        tipo: 'RECEITA',
-        data: { gte: inicio, lt: fim },
-        status: { not: 'CANCELADO' },
-      },
-      select: {
-        valor: true, condicaoId: true,
-        categoria: { select: { natureza: true } },
-      },
-    }),
+    // A MESMA partição que o realizado da meta de Serviços lê.
+    receitaLancadaPorLinha(periodo),
   ])
-
-  const tipoDaCondicao = new Map(parceiros.map((p) => [p.id, p.tipo]))
-
-  let setup = 0
-  let sustentacaoLancada = 0
-  let baas = 0
-  let servicos = 0
-  let floatLancado = 0
-
-  for (const l of lancamentos) {
-    const n = l.categoria.natureza
-    if (n === 'SETUP') { setup += l.valor; continue }
-    if (n === 'SUSTENTACAO') { sustentacaoLancada += l.valor; continue }
-    if (n === 'FLOAT') { floatLancado += l.valor; continue }
-    if (l.condicaoId && tipoDaCondicao.get(l.condicaoId) === 'BAAS') { baas += l.valor; continue }
-    servicos += l.valor
-  }
 
   const sustentacaoCadastro = parceiros.reduce(
     (a, p) => a + (sustentacaoVigente(p.sustentacaoInicio, referencia) ? (p.sustentacao ?? 0) : 0),
     0,
   )
 
-  const mensalidades = mrr.apiMensalParceiros + mrr.apiMensalCarteira
+  const { mensalidades } = parcelasDoMrr(mrr)
+  const sustentacao = lancadas.sustentacao > 0 ? lancadas.sustentacao : sustentacaoCadastro
+
+  // O MRR SAI DE DENTRO DO TRANSACIONAL. A invariante da repartição garante
+  // que `transacional + sustentacao + mensalidades` volta a dar o bruto, então
+  // o total abaixo é sempre o que foi lançado — não muda com a divisão.
+  const reparticao = repartirTransacional(
+    kpis.receitaTarifaria ?? 0, sustentacao, mensalidades,
+  )
 
   const valores: Record<TipoReceitaConselho, number> = {
-    TRANSACIONAL: kpis.receitaTarifaria ?? 0,
-    SETUP: setup,
-    // INDICADOR, não parcela: já está embutida no transacional acima.
-    MENSALIDADES: mensalidades,
-    SUSTENTACAO: sustentacaoLancada > 0 ? sustentacaoLancada : sustentacaoCadastro,
+    TRANSACIONAL: reparticao.transacional,
+    SETUP: lancadas.setup,
+    MENSALIDADES: reparticao.mensalidades,
+    SUSTENTACAO: reparticao.sustentacao,
     // Serviços recebe o Float junto: as duas são receita realizada que não
     // pertence a nenhuma das outras linhas, e o Conselho tem seis tipos —
     // criar um sétimo para o Float contrariaria a lista oficial.
-    SERVICOS: servicos + floatLancado,
-    BAAS: baas,
+    SERVICOS: lancadas.servicos + lancadas.float,
+    BAAS: lancadas.baas,
   }
 
   const linhas = TIPOS_RECEITA_CONSELHO.map((t) => ({
@@ -525,8 +756,8 @@ export async function composicaoReceitaConselho(periodo: string): Promise<Compos
 
   return {
     linhas,
-    // Só o que soma. Mensalidades fica de fora para não contar duas vezes.
     total: linhas.filter((l) => l.soma).reduce((a, l) => a + l.valor, 0),
+    reparticao,
     mensalidadesIndicador: mensalidades,
   }
 }
@@ -593,6 +824,7 @@ export interface MetaVsRealizado extends Avaliacao {
  */
 export function realizadoPorTipo(
   kpis: KpisPeriodo, unidade: MetaUnidade = 'VALOR',
+  takeRate: BaseTakeRate | null = null,
 ): Record<string, number | null> {
   return {
     RECEITA_TARIFARIA: kpis.receitaTarifaria,
@@ -607,17 +839,30 @@ export function realizadoPorTipo(
     MEDS: unidade === 'PERCENTUAL' ? kpis.percentMed : kpis.qtdMed,
     /** Legado: metas antigas gravadas antes de MED virar um indicador só. */
     MED_PERCENTUAL: kpis.percentMed,
-    TAKE_RATE: kpis.takeRate,
+    /**
+     * TAKE RATE tem FONTE PRÓPRIA, e por isso entra por parâmetro.
+     *
+     * Ele deixou de ser `receitaTarifaria ÷ tpv` do Lançamento Diário: passou
+     * a ser a receita ELEGÍVEL (tarifa sem o MRR, mais os lançamentos de BaaS)
+     * sobre o TPV — três fontes, que `KpisPeriodo` não conhece. `null` aqui
+     * significa "ninguém apurou a base", e a meta aparece como SEM_REALIZADO
+     * em vez de ser avaliada contra zero. Ver `baseTakeRate`.
+     */
+    TAKE_RATE: takeRate ? takeRate.takeRate : null,
   }
 }
 
 /**
  * Os tipos de meta cuja receita realizada NÃO sai do Lançamento Diário.
  *
- * As três linhas que alimentam a Previsão de Receita têm fonte própria —
- * `LancamentoBaas` para a apuração dos parceiros e a natureza SETUP das
- * categorias para implantação. Serviços não tem fonte, e por isso o realizado
- * dele é ausente, nunca zero (ver `realizadoReceitaPrevisao`).
+ * As três linhas que alimentam a Previsão de Receita têm fonte própria:
+ * `LancamentoBaas` para a apuração dos parceiros, e a partição dos lançamentos
+ * de receita para setup e serviços — a natureza SETUP das categorias e o RESTO
+ * da partição, respectivamente (ver `receitaLancadaPorLinha`).
+ *
+ * SERVIÇOS DEIXOU DE SER AUSENTE. O realizado dele era `null` fixo, e a meta
+ * nunca saía de SEM_REALIZADO por mais lançamentos que entrassem. Ver
+ * `RealizadoReceitaPrevisao.servicos` para o porquê da mudança.
  *
  * Exportada pela mesma razão de `META_TIPOS_PIPELINE`: a API de metas precisa
  * saber quais tipos têm realizado apurável, e uma segunda cópia da lista lá é
@@ -1132,9 +1377,13 @@ export async function metasDoPeriodo(periodo: string): Promise<MetaVsRealizado[]
   // daquele tipo no período — não se paga por nada.
   const temPipeline = metas.some((m) => ehMetaDePipeline(m.tipo))
   const temReceita = metas.some((m) => ehMetaDeReceitaDaPrevisao(m.tipo))
-  const [pipeline, receita] = await Promise.all([
+  // TAKE_RATE também tem fonte própria desde que deixou de sair do Lançamento
+  // Diário — e, como as outras duas, só é consultada se houver meta do tipo.
+  const temTakeRate = metas.some((m) => m.tipo === 'TAKE_RATE')
+  const [pipeline, receita, takeRate] = await Promise.all([
     temPipeline ? realizadoPipeline(periodo) : null,
     temReceita ? realizadoReceitaPrevisao(periodo) : null,
+    temTakeRate ? baseTakeRate(periodo) : null,
   ])
 
   return metas.map((m) => {
@@ -1143,7 +1392,7 @@ export async function metasDoPeriodo(periodo: string): Promise<MetaVsRealizado[]
       ? (pipeline ? realizadoDeMetaPipeline(pipeline, m.tipo, m.unidade) : null)
       : ehMetaDeReceitaDaPrevisao(m.tipo)
         ? (receita ? realizadoDeMetaDeReceita(receita, m.tipo) : null)
-        : (realizadoPorTipo(kpis, m.unidade)[m.tipo] ?? null)
+        : (realizadoPorTipo(kpis, m.unidade, takeRate)[m.tipo] ?? null)
     const avaliacao = avaliarMeta(m.valor, realizado, m.direcao)
     return {
       tipo: m.tipo,

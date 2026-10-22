@@ -13,7 +13,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { intervaloMes } from '@/lib/periodo'
+import { intervaloMes, intervaloParcial } from '@/lib/periodo'
 
 /* ========================================================================= *
  * MRR / ARR
@@ -403,6 +403,103 @@ export async function receitaPorNatureza(periodo: string): Promise<ReceitaPorNat
 }
 
 /* ========================================================================= *
+ * A PARTIÇÃO DOS LANÇAMENTOS DE RECEITA — uma implementação, dois leitores
+ *
+ * A composição do Conselho e o realizado das metas de receita classificavam os
+ * MESMOS lançamentos, e só uma das duas sabia fazê-lo: a regra morava dentro
+ * de `composicaoReceitaConselho`, e o realizado de Serviços — que é o resto
+ * dessa mesma partição — era `null` por não ter onde ler.
+ *
+ * Agora a regra é UMA FUNÇÃO, e as duas telas leem dela. Duas cópias da
+ * ordem de classificação é como elas passam a discordar sobre o que é um
+ * setup cobrado de um parceiro BaaS.
+ * ========================================================================= */
+
+/** As cinco linhas em que um lançamento de receita pode cair. Exclusivas. */
+export interface ReceitaLancadaLinhas {
+  setup: number
+  sustentacao: number
+  float: number
+  baas: number
+  /** O RESTO: o que não é natureza reconhecida nem vem de um parceiro BaaS. */
+  servicos: number
+}
+
+export type LinhaReceitaLancada = keyof ReceitaLancadaLinhas
+
+/**
+ * Em qual linha cai um lançamento de receita. PURA, e é a ordem que importa.
+ *
+ *   1. natureza SETUP        → setup
+ *   2. natureza SUSTENTACAO  → sustentacao
+ *   3. natureza FLOAT        → float
+ *   4. vínculo com BaaS      → baas
+ *   5. o que sobra           → servicos
+ *
+ * A NATUREZA CLASSIFICA ANTES DO VÍNCULO: um setup cobrado de um parceiro
+ * BaaS é setup, não "receita de BaaS". Sem essa ordem a mesma linha contaria
+ * nas duas, e é por isso que a ordem está aqui e não repetida em cada laço.
+ */
+export function linhaDaReceitaLancada(
+  natureza: Natureza | null | undefined, ehCondicaoBaas: boolean,
+): LinhaReceitaLancada {
+  if (natureza === 'SETUP') return 'setup'
+  if (natureza === 'SUSTENTACAO') return 'sustentacao'
+  if (natureza === 'FLOAT') return 'float'
+  if (ehCondicaoBaas) return 'baas'
+  return 'servicos'
+}
+
+/**
+ * Os lançamentos de RECEITA do período, repartidos pelas cinco linhas.
+ *
+ * CANCELADO fica fora — lançamento que não aconteceu. PENDENTE entra, pela
+ * mesma razão do Resultado: a tela de Lançamentos é de competência.
+ *
+ * `ateDia` trunca a janela no dia informado (inclusivo), para que o take rate
+ * do mês em curso possa ser comparado com a mesma janela do mês anterior.
+ * Ausente = mês inteiro.
+ */
+export async function receitaLancadaPorLinha(
+  periodo: string, ateDia?: number | null,
+): Promise<ReceitaLancadaLinhas> {
+  const { inicio, fim } = intervaloParcial(periodo, ateDia)
+
+  const [lancamentos, condicoesBaas] = await Promise.all([
+    prisma.lancamentoFinanceiro.findMany({
+      where: {
+        tipo: 'RECEITA',
+        data: { gte: inicio, lt: fim },
+        status: { not: 'CANCELADO' },
+      },
+      select: {
+        valor: true, condicaoId: true,
+        categoria: { select: { natureza: true } },
+      },
+    }),
+    prisma.condicaoComercial.findMany({
+      where: { tipo: 'BAAS' },
+      select: { id: true },
+    }),
+  ])
+
+  // O VÍNCULO É COM A CONDIÇÃO, não com o estado dela. Uma condição BaaS
+  // desativada depois da apuração não devolve a receita dela para Serviços —
+  // filtrar por `ativo` aqui reclassificaria o passado a cada desativação.
+  const ehBaas = new Set(condicoesBaas.map((c) => c.id))
+
+  const linhas: ReceitaLancadaLinhas = {
+    setup: 0, sustentacao: 0, float: 0, baas: 0, servicos: 0,
+  }
+  for (const l of lancamentos) {
+    linhas[linhaDaReceitaLancada(
+      l.categoria.natureza, !!l.condicaoId && ehBaas.has(l.condicaoId),
+    )] += l.valor
+  }
+  return linhas
+}
+
+/* ========================================================================= *
  * REALIZADO DAS METAS DE RECEITA DA PREVISÃO
  * ========================================================================= */
 
@@ -410,26 +507,33 @@ export interface RealizadoReceitaPrevisao {
   /** Apuração dos parceiros BaaS / White Label fechada no mês. */
   lancamentosWlBaas: number
   /**
-   * Receita de SERVIÇOS. `null` de propósito, e não zero.
+   * Receita de SERVIÇOS — as tarifas de serviço efetivamente LANÇADAS.
    *
-   * ── POR QUE NÃO HÁ NÚMERO AQUI ────────────────────────────────────────
+   * ── O INDICADOR NÃO SE ATUALIZAVA ─────────────────────────────────────
    *
-   * Não existe, no sistema, nada que diga qual receita é "de serviços".
-   * `CategoriaFinanceira.natureza` reconhece três papéis — FLOAT, SETUP e
-   * SUSTENTAÇÃO — e serviços não é nenhum deles. Somar receitas por NOME de
-   * categoria ("Serviços", "Serviço", "Prestação de serviços") é
-   * exactamente o acoplamento que `natureza` existe para evitar.
+   * Este campo era `null` fixo, e a meta de Receita de Serviços aparecia
+   * eternamente como `SEM_REALIZADO`: lançar a receita no Financeiro não
+   * movia o indicador. O argumento era que nada no sistema dizia qual receita
+   * é "de serviços", porque `CategoriaFinanceira.natureza` só reconhece
+   * FLOAT, SETUP e SUSTENTAÇÃO.
    *
-   * Então o realizado é AUSENTE, e a meta aparece como `SEM_REALIZADO` na
-   * tela. Devolver zero afirmaria que nada foi faturado, que é uma afirmação
-   * diferente de "o sistema não sabe" — e é a confusão que a série diária e
-   * os gráficos mensais desta mesma rodada também recusam.
+   * Mas a resposta já existia — e estava sendo calculada. A composição do
+   * Conselho reparte os lançamentos de receita em cinco linhas exclusivas, e
+   * SERVIÇOS é o RESTO dessa partição: o que não tem natureza reconhecida e
+   * não vem de um parceiro BaaS. É a MESMA definição, agora lida da MESMA
+   * função (`receitaLancadaPorLinha`) — não de uma soma por nome de
+   * categoria, que é o acoplamento que `natureza` existe para evitar.
    *
-   * O que falta é uma DECISÃO de produto: qual natureza (ou qual categoria)
-   * conta como serviços. No dia em que ela existir, o número entra aqui e a
-   * meta passa a ser avaliada sem mais nenhuma mudança.
+   * ZERO AGORA SIGNIFICA ZERO, e é uma afirmação legítima: a partição foi
+   * feita e nada sobrou para serviços. Não é mais "o sistema não sabe".
+   *
+   * O FLOAT FICA FORA. Ele é natureza própria e tem a sua linha; a composição
+   * do Conselho o exibe junto de Serviços porque a lista oficial do Conselho
+   * tem seis tipos e não há um sétimo para o Float — mas a META é de
+   * serviços, e somar Float nela faria o rendimento do saldo em conta contar
+   * como serviço contratado.
    */
-  servicos: null
+  servicos: number
   /** Receita de SETUP — as categorias com `natureza = SETUP`. */
   setup: number
 }
@@ -444,7 +548,11 @@ export interface RealizadoReceitaPrevisao {
  *                        `receitaBaas`, em lib/lancamento-baas). RASCUNHO
  *                        fica fora: rascunho não gerou título nenhum.
  *
- *   SERVIÇOS             ausente. Ver `RealizadoReceitaPrevisao.servicos`.
+ *   SERVIÇOS             `receitaLancadaPorLinha(periodo).servicos` — o RESTO
+ *                        da partição dos lançamentos de receita, a mesma que
+ *                        a composição do Conselho usa. Ver
+ *                        `RealizadoReceitaPrevisao.servicos` para por que
+ *                        deixou de ser ausente.
  *
  *   SETUP                `receitaPorNatureza(periodo).SETUP` — as categorias
  *                        marcadas como setup. É a mesma fonte que o gráfico
@@ -461,7 +569,7 @@ export async function realizadoReceitaPrevisao(
 ): Promise<RealizadoReceitaPrevisao> {
   const { inicio, fim } = intervaloMes(periodo)
 
-  const [baas, natureza] = await Promise.all([
+  const [baas, linhas] = await Promise.all([
     prisma.lancamentoBaas.aggregate({
       where: {
         status: { not: 'RASCUNHO' },
@@ -469,13 +577,16 @@ export async function realizadoReceitaPrevisao(
       },
       _sum: { saldoInicial: true },
     }),
-    receitaPorNatureza(periodo),
+    // UMA consulta serve SETUP e SERVIÇOS: as duas são linhas da mesma
+    // partição. `receitaPorNatureza` dava só o setup e não tinha como dar o
+    // resto, que é justamente o que faltava a serviços.
+    receitaLancadaPorLinha(periodo),
   ])
 
   return {
     lancamentosWlBaas: baas._sum.saldoInicial ?? 0,
-    servicos: null,
-    setup: natureza.SETUP,
+    servicos: linhas.servicos,
+    setup: linhas.setup,
   }
 }
 

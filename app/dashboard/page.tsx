@@ -8,7 +8,7 @@ import {
 } from '@/lib/projecao'
 import {
   kpisDoPeriodo, indicadoresEstrutura, seriesCockpit,
-  comparacaoMensal, rotuloComparacao,
+  comparacaoMensal, rotuloComparacao, baseTakeRate,
   periodoAtual, ultimosPeriodos, type KpisPeriodo,
 } from '@/lib/kpi'
 import { formatMesRef } from '@/lib/utils'
@@ -134,6 +134,20 @@ export default async function DashboardPage() {
   const notaComparacao = rotuloComparacao(comparacao)
 
   /**
+   * TAKE RATE — fonte própria, a MESMA do Conselho.
+   *
+   * Ele saiu de `KpisPeriodo`: deixou de ser `receitaTarifaria ÷ tpv` e passou
+   * a ser a receita ELEGÍVEL (tarifa transacional já sem o MRR embutido, mais
+   * os lançamentos de BaaS) sobre o TPV. `baseTakeRate` é a única
+   * implementação; o Cockpit e o Conselho leem dela, com a janela já
+   * equalizada por `comparacaoMensal` nos dois lados da seta.
+   */
+  const [takeRate, takeRateAnterior] = await Promise.all([
+    baseTakeRate(periodo, comparacao.ateDia),
+    anterior ? baseTakeRate(anterior.periodo, comparacao.ateDia) : null,
+  ])
+
+  /**
    * NÍVEL 1 — o resultado do mês.
    *
    * O indicador de Float saiu do Cockpit: sobrou "Saldo médio em conta", que é
@@ -170,8 +184,12 @@ export default async function DashboardPage() {
       delta: varDe((k) => k.qtdMed),
       note: kpis.percentMed === null ? undefined : `${figuraPercentual(kpis.percentMed, 2).completo} das transações`,
       projecao: proj(kpis.qtdMed, incremento.med, pendente.med, 'contagem') },
-    { label: 'Take Rate', fig: kpis.takeRate === null ? null : figuraPercentual(kpis.takeRate, 3),
-      delta: varDe((k) => k.takeRate), note: 'Receita ÷ TPV' },
+    { label: 'Take Rate',
+      fig: takeRate.takeRate === null ? null : figuraPercentual(takeRate.takeRate, 3),
+      delta: takeRateAnterior ? variacao(takeRate.takeRate, takeRateAnterior.takeRate) : null,
+      // A NOTA DIZ O NUMERADOR. "Receita ÷ TPV" era vago desde que a receita
+      // elegível deixou de ser toda a receita tarifária.
+      note: 'Tarifas + BaaS ÷ TPV' },
   ]
 
   /**
